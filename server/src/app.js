@@ -4,11 +4,13 @@ const createQuestionRouter = require("./routes/questions");
 const createEvaluateRouter = require("./routes/evaluate");
 const createUserRouter = require("./routes/users");
 const requireAuth = require("./middleware/requireAuth");
+const createSessionRouter = require("./routes/sessions");
 
 const {
   questionRepository,
   evaluationRepository,
   userRepository,
+  sessionRepository,
 } = require("./repositories");
 
 const app = express();
@@ -55,6 +57,14 @@ app.use(
   })
 );
 
+app.use(
+  "/api/sessions",
+  requireAuth,
+  createSessionRouter({
+    sessionRepository,
+  })
+);
+
 app.use((error, req, res, next) => {
   console.error(error);
 
@@ -62,6 +72,7 @@ app.use((error, req, res, next) => {
     error:
       "The Interview Buddy server could not complete the request.",
   });
+
 });
 
 module.exports = app;
