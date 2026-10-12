@@ -1,5 +1,4 @@
 const SessionRepository = require("../contracts/SessionRepository");
-const { db } = require("../firebaseAdmin");
 
 class FirestoreSessionRepository extends SessionRepository {
 constructor({ db, admin }) {
@@ -15,25 +14,25 @@ mode,
 jobRole,
 experienceLevel,
 status: "in_progress",
-createdAt: new Date(),
+createdAt: this.admin.firestore.FieldValue.serverTimestamp(),
 completedAt: null,
 };
 
-```
 const docRef = await this.sessions.add(sessionData);
+const savedDoc = await docRef.get();
 
 return {
-  id: docRef.id,
-  ...sessionData,
+  id: savedDoc.id,
+  ...savedDoc.data(),
 };
-```
+
 
 }
 
 async findById(sessionId) {
 const doc = await this.sessions.doc(sessionId).get();
 
-```
+
 if (!doc.exists) {
   return null;
 }
@@ -42,7 +41,7 @@ return {
   id: doc.id,
   ...doc.data(),
 };
-```
+
 
 }
 
@@ -52,12 +51,12 @@ const snapshot = await this.sessions
 .orderBy("createdAt", "desc")
 .get();
 
-```
+
 return snapshot.docs.map((doc) => ({
   id: doc.id,
   ...doc.data(),
 }));
-```
+
 
 }
 
@@ -65,18 +64,18 @@ async completeSession(sessionId) {
 const sessionRef = this.sessions.doc(sessionId);
 const doc = await sessionRef.get();
 
-```
+
 if (!doc.exists) {
   throw new Error("Session not found.");
 }
 
 await sessionRef.update({
   status: "completed",
-  completedAt: new Date(),
+  completedAt: this.admin.firestore.FieldValue.serverTimestamp(),
 });
 
 return this.findById(sessionId);
-```
+
 
 }
 }
