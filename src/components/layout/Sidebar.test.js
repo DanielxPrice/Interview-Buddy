@@ -40,6 +40,7 @@ beforeEach(() => {
   authService.logout.mockResolvedValue(undefined);
 });
 
+
 function renderSidebar(currentPage = PAGES.SETTINGS) {
   const onNavigate = jest.fn();
 
@@ -50,11 +51,12 @@ function renderSidebar(currentPage = PAGES.SETTINGS) {
     />
   );
 
-  return onNavigate;
+  return { onNavigate };
 }
 
+
 test("renders the logo, graduate badge and username", () => {
-  renderSidebar();
+  const { onNavigate } = renderSidebar();
 
   expect(
     screen.getByRole("button", {
@@ -75,7 +77,7 @@ test("renders the logo, graduate badge and username", () => {
 });
 
 test("highlights the current page and preserves navigation", () => {
-  const onNavigate = renderSidebar(PAGES.SETTINGS);
+  const { onNavigate } = renderSidebar(PAGES.SETTINGS);
 
   expect(
     screen.getByRole("button", { name: "Settings" })
@@ -113,7 +115,7 @@ test("allows the user to cancel logout", () => {
 });
 
 test("logs out through the existing auth service", async () => {
-  const onNavigate = renderSidebar();
+  const { onNavigate } = renderSidebar();
 
   fireEvent.click(
     screen.getByRole("button", { name: "Logout" })
@@ -123,10 +125,13 @@ test("logs out through the existing auth service", async () => {
     screen.getByRole("button", { name: "Yes, log out" })
   );
 
-  await waitFor(() => {
-    expect(authService.logout).toHaveBeenCalledTimes(1);
+  
+    await waitFor(() => {
     expect(onNavigate).toHaveBeenCalledWith(PAGES.LOGIN);
-  });
+    });
+
+    expect(authService.logout).toHaveBeenCalledTimes(1);
+
 });
 
 test("does not navigate to login if logout fails", async () => {
@@ -134,7 +139,7 @@ test("does not navigate to login if logout fails", async () => {
     new Error("Unable to sign out")
   );
 
-  const onNavigate = renderSidebar();
+  const { onNavigate } = renderSidebar();
 
   fireEvent.click(
     screen.getByRole("button", { name: "Logout" })

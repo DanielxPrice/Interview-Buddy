@@ -73,6 +73,7 @@ beforeEach(() => {
   settingsService.updateSettings.mockResolvedValue({});
 });
 
+
 function renderPage(onNavigate = jest.fn()) {
   render(
     <SettingsPage
@@ -81,8 +82,9 @@ function renderPage(onNavigate = jest.fn()) {
     />
   );
 
-  return onNavigate;
+  return { onNavigate };
 }
+
 
 
 
@@ -171,13 +173,15 @@ test("saves selected theme", async () => {
     screen.getByRole("button", { name: "Dark" })
   );
 
-  await waitFor(() => {
+  
+    await waitFor(() => {
     expect(
-      settingsService.updateSettings
+        settingsService.updateSettings
     ).toHaveBeenCalledWith({ theme: "dark" });
+    });
 
     expect(mockSetTheme).toHaveBeenCalledWith("Dark");
-  });
+
 });
 
 test("does not change theme when saving fails", async () => {
@@ -205,7 +209,7 @@ test("does not change theme when saving fails", async () => {
 
 
 test("renders inline password fields and disables unfinished actions", async () => {
-  const onNavigate = renderPage();
+  const { onNavigate } = renderPage();
 
   await screen.findByDisplayValue("original_name");
 
