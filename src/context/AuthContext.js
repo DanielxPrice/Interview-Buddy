@@ -18,6 +18,7 @@ const AuthContext =
     loading: true,
     refreshProfile:
       async () => null,
+    updateProfileCache: () => {},
   });
 
 function hasPasswordProvider(
@@ -103,6 +104,21 @@ export function AuthProvider({
       }
     }, [loadCurrentProfile]);
 
+  
+  const updateProfileCache = useCallback((updates) => {
+    setProfile((currentProfile) => {
+      if (!currentProfile) {
+        return currentProfile;
+      }
+
+      return {
+        ...currentProfile,
+        ...updates,
+      };
+    });
+  }, []);
+
+  
   useEffect(() => {
     let active = true;
 
@@ -190,6 +206,7 @@ export function AuthProvider({
         profileError,
         loading,
         refreshProfile,
+        updateProfileCache,
       }}
     >
       {children}
