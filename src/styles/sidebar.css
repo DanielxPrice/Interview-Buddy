@@ -1,0 +1,381 @@
+
+/* ========================================
+   Interview Buddy Sidebar Redesign
+   ======================================== */
+
+.appLayout {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+/* Fixed-on-scroll sidebar using sticky positioning */
+.sidebar {
+  position: sticky;
+  top: 0;
+
+  width: 216px;
+  flex: 0 0 216px;
+  height: 100vh;
+  height: 100dvh;
+
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+
+  padding: 16px 12px;
+
+  background: var(--ib-sidebar);
+  color: var(--ib-text-inverse);
+
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  z-index: 20;
+}
+
+/* Prevent narrow content from overflowing */
+.appLayout > .mainContent {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ========================================
+   Brand Logo
+   ======================================== */
+
+.sidebarTop {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebarBrand {
+  width: 100%;
+  height: 88px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--ib-radius-md);
+  overflow: hidden;
+}
+
+.sidebarBrand picture {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebarBrandLogo {
+  width: 100%;
+  max-width: 150px;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.sidebarBrand:focus-visible {
+  outline: 2px solid var(--ib-accent);
+  outline-offset: 2px;
+}
+
+/* ========================================
+   Mascot Profile Badge
+   ======================================== */
+
+.sidebarBadgeArea {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 26px;
+  flex-shrink: 0;
+}
+
+.sidebarProfileBadge {
+  width: 180px;
+  height: 180px;
+  padding: 3px;
+  border: 2px solid var(--ib-accent-500);
+  border-radius: 50%;
+
+  background: var(--ib-sidebar-active);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  overflow: hidden;
+  box-shadow: 0 0 0 4px rgba(245, 158, 91, 0.09);
+}
+
+.sidebarProfileBadgeImage {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.sidebarProfileBadgeFallback {
+  color: var(--ib-text-inverse);
+  font-size: 18px;
+  font-weight: var(--ib-font-weight-bold);
+}
+
+/* ========================================
+   Navigation
+   ======================================== */
+
+.sidebarNav {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sidebarButton,
+.sidebarLogoutButton {
+  position: relative;
+
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 13px;
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 13px;
+
+  background: transparent;
+  color: #aab6c9;
+
+  border: 0;
+  border-radius: var(--ib-radius-md);
+  text-align: left;
+
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-medium);
+
+  transition:
+    background var(--ib-transition-fast),
+    color var(--ib-transition-fast);
+}
+
+.sidebarNavIcon {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+}
+
+.sidebarNavLabel {
+  white-space: nowrap;
+}
+
+.sidebarButton:hover,
+.sidebarLogoutButton:hover {
+  background: var(--ib-sidebar-hover);
+  color: #ffffff;
+}
+
+/* Current route */
+.sidebarButton.active {
+  background: var(--ib-sidebar-active);
+  color: #ffffff;
+  font-weight: var(--ib-font-weight-semibold);
+}
+
+.sidebarButton.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--ib-accent);
+}
+
+/* Keyboard accessibility */
+.sidebarButton:focus-visible,
+.sidebarLogoutButton:focus-visible {
+  outline: 2px solid var(--ib-accent);
+  outline-offset: 2px;
+}
+
+/* ========================================
+   Bottom Profile and Logout
+   ======================================== */
+
+.sidebarBottom {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.sidebarUserInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+
+  padding: 0 12px 13px;
+  min-width: 0;
+}
+
+.sidebarUserCaption {
+  color: #8996ae;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+}
+
+.sidebarUsername {
+  display: block;
+  width: 100%;
+  color: #ffffff;
+
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-semibold);
+
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sidebarLogoutButton {
+  color: #e0e6f0;
+}
+
+/* ========================================
+   Logout Confirmation Modal
+   ======================================== */
+
+.ib-logout-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+  background: rgba(5, 13, 31, 0.65);
+}
+
+.ib-logout-dialog {
+  width: 100%;
+  max-width: 430px;
+
+  padding: 28px;
+  background: var(--ib-surface);
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-xl);
+  box-shadow: var(--ib-shadow-modal);
+
+  color: var(--ib-text);
+}
+
+.ib-logout-dialog h2 {
+  font-size: var(--ib-font-size-xl);
+  font-weight: var(--ib-font-weight-bold);
+  margin-bottom: 12px;
+}
+
+.ib-logout-dialog p {
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+}
+
+.ib-logout-error {
+  margin-top: 12px;
+  color: var(--ib-danger) !important;
+}
+
+.ib-logout-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+/* ========================================
+   Responsive Sidebar
+   ======================================== */
+
+@media (max-width: 760px) {
+  .sidebar {
+    width: 78px;
+    flex-basis: 78px;
+    padding: 12px 8px;
+  }
+
+  .sidebarBrand {
+    height: 66px;
+  }
+
+  .sidebarBrandLogo {
+    width: 62px;
+    max-width: 62px;
+  }
+
+  .sidebarBadgeArea {
+    margin: 12px 0 20px;
+  }
+
+  .sidebarProfileBadge {
+    width: 54px;
+    height: 54px;
+  }
+
+  .sidebarButton,
+  .sidebarLogoutButton {
+    justify-content: center;
+    padding: 11px 8px;
+  }
+
+  .sidebarNavLabel,
+  .sidebarLogoutLabel,
+  .sidebarUserCaption {
+    display: none;
+  }
+
+  .sidebarUserInfo {
+    align-items: center;
+    padding: 0 0 12px;
+  }
+
+  .sidebarUsername {
+    font-size: 10px;
+    text-align: center;
+  }
+
+  .sidebarButton.active::before {
+    top: 7px;
+    bottom: 7px;
+  }
+
+  .appLayout > .mainContent {
+    padding: 20px;
+  }
+}
+
+@media (max-height: 550px) {
+  .sidebarBadgeArea {
+    margin-bottom: 12px;
+  }
+
+  .sidebarNav {
+    gap: 2px;
+  }
+}

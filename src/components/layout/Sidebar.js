@@ -1,155 +1,357 @@
-import React, { useState } from "react";
+
+import React, { useEffect, useRef, useState } from "react";
+
 import { PAGES } from "../../utils/constants";
 import { authService } from "../../services/authService";
+import { useAuth } from "../../context/AuthContext";
+import ProfileBadge from "../common/ProfileBadge";
 
-function Sidebar({ currentPage, onNavigate }) {
-  // Local state — controls the UC13 logout confirmation modal.
-  // Kept inside Sidebar so every page that already passes onNavigate
-  // automatically inherits the new flow with no extra wiring.
-  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+// Centralized navigation configuration.
+// This keeps all sidebar destinations in one place.
+const NAV_ITEMS = [
+  {
+    label: "Home",
+    icon: "home",
+    path: PAGES.DASHBOARD,
+    activePaths: [PAGES.DASHBOARD],
+  },
+  {
+    label: "Practice",
+    icon: "practice",
+    path: PAGES.INTERVIEW,
+    activePaths: [
+      PAGES.INTERVIEW,
+      PAGES.INTERVIEW_SETUP,
+      PAGES.SESSION_RESULTS,
+    ],
+  },
+  {
+    label: "History",
+    icon: "history",
+    path: PAGES.HISTORY,
+    activePaths: [PAGES.HISTORY],
+  },
+  {
+    label: "Ranking",
+    icon: "ranking",
+    path: PAGES.LEADERBOARD,
+    activePaths: [PAGES.LEADERBOARD],
+  },
+  {
+    label: "Stats",
+    icon: "stats",
+    path: PAGES.ANALYTICS,
+    activePaths: [PAGES.ANALYTICS],
+  },
+  {
+    label: "Settings",
+    icon: "settings",
+    path: PAGES.SETTINGS,
+    activePaths: [
+      PAGES.SETTINGS,
+      PAGES.CHANGE_PASSWORD,
+    ],
+  },
+];
+
+// Local SVG icons avoid adding another npm dependency.
+function SidebarIcon({ name }) {
+  const icons = {
+    home: (
+      <>
+        <path d="m3 10 9-7 9 7" />
+        <path d="M5 9v12h14V9" />
+        <path d="M9 21v-7h6v7" />
+      </>
+    ),
+    practice: (
+      <>
+        <path d="m6 7 4-4 4 4-4 4z" />
+        <path d="m10 11 4-4 4 4-4 4z" />
+        <path d="m14 15 4-4 4 4-4 4z" />
+        <path d="M3 14 7 10M17 6l4 4" />
+      </>
+    ),
+    history: (
+      <>
+        <path d="M3 12a9 9 0 1 0 3-6.7" />
+        <path d="M3 3v6h6" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    ranking: (
+      <>
+        <path d="M3 21h18" />
+        <rect x="5" y="12" width="4" height="9" rx="1" />
+        <rect x="10" y="5" width="4" height="16" rx="1" />
+        <rect x="15" y="9" width="4" height="12" rx="1" />
+      </>
+    ),
+    stats: (
+      <>
+        <path d="M3 17 8 12l4 3 5-9 4 2" />
+        <path d="M3 21h18" />
+        <circle cx="8" cy="12" r="1" />
+        <circle cx="17" cy="6" r="1" />
+      </>
+    ),
+    settings: (
+      <>
+        <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" />
+        <path d="M10 2h4l.6 2.5 2 .9 2.2-1.3 2.8 2.8-1.3 2.2.9 2L23.5 12l-2.3 1-.9 2 1.3 2.2-2.8 2.8-2.2-1.3-2 .9L14 22h-4l-.6-2.4-2-.9-2.2 1.3-2.8-2.8 1.3-2.2-.9-2L.5 12l2.3-1 .9-2-1.3-2.2 2.8-2.8 2.2 1.3 2-.9z" />
+      </>
+    ),
+    logout: (
+      <>
+        <path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" />
+        <path d="M14 7l5 5-5 5" />
+        <path d="M19 12H9" />
+      </>
+    ),
+  };
+
+  return (
+    <svg
+      className="sidebarNavIcon"
+      width="19"
+      height="19"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {icons[name]}
+    </svg>
+  );
+}
+
+function Sidebar({ currentPage, onNavigate, badgeSrc }) {
+  const { user, profile } = useAuth();
+
+  const [showLogoutDialog, setShowLogoutDialog] =
+    useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
+
+  const cancelButtonRef = useRef(null);
+
+  // Use the profile username rather than hardcoded initials.
+  const username =
+    profile?.username ||
+    user?.username ||
+    user?.email?.split("@")[0] ||
+    "User";
 
   function handleLogoutClick() {
+    setLogoutError("");
     setShowLogoutDialog(true);
   }
 
-  async function handleConfirmLogout() {
-    await authService.logout();
+  function handleCancelLogout() {
+    if (isLoggingOut) return;
+
     setShowLogoutDialog(false);
-    onNavigate(PAGES.LOGIN);
+    setLogoutError("");
   }
 
-  function handleCancelLogout() {
-    setShowLogoutDialog(false);
+  async function handleConfirmLogout() {
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
+    setLogoutError("");
+
+    try {
+      // Preserve the existing Firebase logout service.
+      await authService.logout();
+
+      setShowLogoutDialog(false);
+      onNavigate(PAGES.LOGIN);
+    } catch (error) {
+      // Do not navigate away if logout fails.
+      setLogoutError(
+        error?.message ||
+          "Unable to log out. Please try again."
+      );
+    } finally {
+      setIsLoggingOut(false);
+    }
   }
+
+  // Support Escape and keyboard focus in the dialog.
+  useEffect(() => {
+    if (!showLogoutDialog) return undefined;
+
+    cancelButtonRef.current?.focus();
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape" && !isLoggingOut) {
+        setShowLogoutDialog(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+    };
+  }, [showLogoutDialog, isLoggingOut]);
 
   return (
     <>
-      <aside className="sidebar">
+      <aside className="sidebar" aria-label="Application sidebar">
+
+        {/* Horizontal Interview Buddy logo */}
         <div className="sidebarTop">
-          <div className="profileCircle">DP</div>
+          <button
+            type="button"
+            className="sidebarBrand"
+            onClick={() => onNavigate(PAGES.DASHBOARD)}
+            aria-label="Go to Interview Buddy dashboard"
+          >
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcSet="/IBlogo-dark.png"
+              />
+              <img
+                src="/IBlogo-dark-horizontal.png"
+                alt=""
+                className="sidebarBrandLogo"
+              />
+            </picture>
+          </button>
         </div>
 
-        <nav className="sidebarNav">
-          <button
-            className={currentPage === PAGES.DASHBOARD ? "sidebarButton active" : "sidebarButton"}
-            onClick={() => onNavigate(PAGES.DASHBOARD)}
-          >
-            Home
-          </button>
+        {/* Reusable badge slot */}
+        <div className="sidebarBadgeArea">
+          <ProfileBadge
+            imageSrc={badgeSrc}
+            username={username}
+          />
+        </div>
 
-          <button
-            className={currentPage === PAGES.INTERVIEW ? "sidebarButton active" : "sidebarButton"}
-            onClick={() => onNavigate(PAGES.INTERVIEW)}
-          >
-            Practice
-          </button>
+        {/* Primary navigation */}
+        <nav
+          className="sidebarNav"
+          aria-label="Primary navigation"
+        >
+          {NAV_ITEMS.map((item) => {
+            const isActive =
+              item.activePaths.includes(currentPage);
 
-          <button
-            className={currentPage === PAGES.HISTORY ? "sidebarButton active" : "sidebarButton"}
-            onClick={() => onNavigate(PAGES.HISTORY)}
-          >
-            History
-          </button>
+            return (
+              <button
+                key={item.path}
+                type="button"
+                className={
+                  isActive
+                    ? "sidebarButton active"
+                    : "sidebarButton"
+                }
+                aria-label={item.label}
+                aria-current={isActive ? "page" : undefined}
+                title={item.label}
+                onClick={() => onNavigate(item.path)}
+              >
+                <SidebarIcon name={item.icon} />
 
-          <button
-            className={currentPage === PAGES.LEADERBOARD ? "sidebarButton active" : "sidebarButton"}
-            onClick={() => onNavigate(PAGES.LEADERBOARD)}
-          >
-            Ranking
-          </button>
-
-          <button
-            className={currentPage === PAGES.ANALYTICS ? "sidebarButton active" : "sidebarButton"}
-            onClick={() => onNavigate(PAGES.ANALYTICS)}
-          >
-            Stats
-          </button>
-
-          <button
-            className={currentPage === PAGES.SETTINGS ? "sidebarButton active" : "sidebarButton"}
-            onClick={() => onNavigate(PAGES.SETTINGS)}
-          >
-            Settings
-          </button>
+                <span className="sidebarNavLabel">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
         </nav>
 
+        {/* Always at the bottom of the sidebar */}
         <div className="sidebarBottom">
-          <button className="sidebarLogoutButton" onClick={handleLogoutClick}>
-            Logout
+          <div className="sidebarUserInfo">
+            <span className="sidebarUserCaption">
+              SIGNED IN AS
+            </span>
+
+            <span
+              className="sidebarUsername"
+              title={username}
+            >
+              {username}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            className="sidebarLogoutButton"
+            onClick={handleLogoutClick}
+            aria-label="Logout"
+          >
+            <SidebarIcon name="logout" />
+            <span className="sidebarLogoutLabel">
+              Logout
+            </span>
           </button>
         </div>
       </aside>
 
+      {/* Existing logout confirmation, restyled */}
       {showLogoutDialog && (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="logoutDialogTitle"
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
+          className="ib-logout-overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              handleCancelLogout();
+            }
           }}
-          onClick={handleCancelLogout}
         >
           <div
-            // stopPropagation so clicking inside the card doesn't close it.
-            // Easy detail to overlook — without it the modal feels broken.
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "white",
-              borderRadius: "16px",
-              padding: "28px 28px 22px",
-              width: "min(420px, 92vw)",
-              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.25)",
-              border: "2px solid #d8dee8",
-            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logoutDialogTitle"
+            aria-describedby="logoutDialogDescription"
+            className="ib-logout-dialog"
           >
-            <h2
-              id="logoutDialogTitle"
-              style={{
-                fontSize: "1.4rem",
-                marginBottom: "10px",
-                color: "#16325c",
-              }}
-            >
+            <h2 id="logoutDialogTitle">
               Log out of Interview Buddy?
             </h2>
-            <p
-              style={{
-                color: "#5b6470",
-                lineHeight: 1.5,
-                marginBottom: "20px",
-              }}
-            >
-              Are you sure you want to log out? You will need to sign back in
-              to continue practicing.
+
+            <p id="logoutDialogDescription">
+              Are you sure you want to log out? You
+              will need to sign back in to continue
+              practicing.
             </p>
 
-            <div
-              style={{
-                display: "flex",
-                gap: "10px",
-                justifyContent: "flex-end",
-              }}
-            >
+            {logoutError && (
+              <p className="ib-logout-error" role="alert">
+                {logoutError}
+              </p>
+            )}
+
+            <div className="ib-logout-actions">
               <button
-                className="secondaryButton"
-                style={{ padding: "8px 16px" }}
+                ref={cancelButtonRef}
+                type="button"
+                className="ib-button ib-button--secondary"
                 onClick={handleCancelLogout}
+                disabled={isLoggingOut}
               >
                 Cancel
               </button>
+
               <button
-                className="primaryButton"
-                style={{ padding: "8px 16px" }}
+                type="button"
+                className="ib-button ib-button--primary"
                 onClick={handleConfirmLogout}
+                disabled={isLoggingOut}
               >
-                Yes, log out
+                {isLoggingOut
+                  ? "Logging out..."
+                  : "Yes, log out"}
               </button>
             </div>
           </div>
