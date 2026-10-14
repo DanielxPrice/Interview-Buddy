@@ -245,4 +245,131 @@ describe("POST /api/evaluate route", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  //Reject empty response
+  it.each([
+    undefined,
+    "",
+    "   ",
+  ])("rejects an empty candidate response: %p", async (candidateResponse) => {
+    const req = {
+      user: { uid: "test-user" },
+      body: {
+        questionId: privateQuestion.id,
+        candidateResponse,
+        metadata: { sessionId: "session-1" },
+      },
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.error).toBe("candidateResponse is required.");
+
+    expect(questionRepository.findById).not.toHaveBeenCalled();
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  //Reject inactive question
+  it("rejects submissions for inactive questions", async () => {
+    questionRepository.findById.mockResolvedValue({
+      ...privateQuestion,
+      active: false,
+    });
+
+    const req = {
+      user: { uid: "test-user" },
+      body: {
+        questionId: privateQuestion.id,
+        candidateResponse: "Candidate answer",
+        metadata: { sessionId: "session-1" },
+      },
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.payload.error).toBe("This question is inactive.");
+
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  //If DB fails, error should be propagated
+  it("propagates evaluation persistence failures", async () => {
+    const evaluation = {
+      score: 85,
+      feedback: "Good answer.",
+      strengths: [],
+      weaknesses: [],
+      suggestions: [],
+      criterionResults: [],
+    };
+
+    aiService.generateEvaluation.mockResolvedValue(evaluation);
+
+    const databaseError = new Error("Firestore write failed.");
+
+    evaluationRepository.saveEvaluation.mockRejectedValue(databaseError);
+
+    const req = {
+      user: { uid: "test-user" },
+      body: {
+        questionId: privateQuestion.id,
+        candidateResponse: "Candidate answer",
+        metadata: { sessionId: "session-1" },
+      },
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(aiService.generateEvaluation).toHaveBeenCalledTimes(1);
+    expect(evaluationRepository.saveEvaluation).toHaveBeenCalledTimes(1);
+
+    expect(next).toHaveBeenCalledWith(databaseError);
+    expect(res.payload).toBeNull();
+  });
+
+  //If AI fails, error should be propagated and no evaluation should be persisted
+  it("does not persist an answer if AI evaluation fails", async () => {
+    const aiError = new Error("AI evaluation unavailable.");
+    aiError.statusCode = 503;
+
+    aiService.generateEvaluation.mockRejectedValue(aiError);
+
+    const req = {
+      user: { uid: "test-user" },
+      body: {
+        requestId: "request-failed",
+        questionId: privateQuestion.id,
+        candidateResponse: "Candidate answer",
+        metadata: { sessionId: "session-1" },
+      },
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.payload).toEqual({
+      error: "AI evaluation unavailable.",
+      requestId: "request-failed",
+    });
+
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
 });
