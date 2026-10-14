@@ -153,7 +153,7 @@ function collectTagsByFrequency(questions) {
  */
 function buildQuestionSetupOptions(questions) {
   const activeQuestions = questions.filter(
-    (question) => question.active !== false
+    (question) => question && question.active !== false
   );
 
   return {
@@ -188,7 +188,7 @@ function selectQuestions(questions, setup, limit = 10) {
   }
 
   return questions
-    .filter((question) => question.active !== false)
+    .filter((question) => question && question.active !== false)
     .filter((question) => matchesRequiredSetup(question, setup))
     .map((question) => ({
       question,
