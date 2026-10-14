@@ -40,8 +40,10 @@ function App() {
   const currentPage =
     location.pathname;
 
+  const authenticatedUid = user?.uid;
+
   useEffect(() => {
-    if (!user || loading) return undefined;
+    if (!authenticatedUid || loading) return undefined;
     const refresh = () => interviewService.refreshSetupMetadata().catch(() => {
       // Bundled metadata remains usable while Firestore/network is unavailable.
     });
@@ -56,7 +58,7 @@ function App() {
       document.removeEventListener("visibilitychange", onVisibility);
       interviewService.resetMetadataVerification();
     };
-  }, [user?.uid, loading]);
+  }, [authenticatedUid, loading]);
 
   const [
     selectedMode,
