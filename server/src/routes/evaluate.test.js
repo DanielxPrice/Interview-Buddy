@@ -42,6 +42,7 @@ const privateQuestion = {
 describe("POST /api/evaluate route", () => {
   let questionRepository;
   let evaluationRepository;
+  let sessionRepository;
   let router;
   let handler;
 
@@ -53,9 +54,17 @@ describe("POST /api/evaluate route", () => {
     evaluationRepository = {
       saveEvaluation: jest.fn().mockResolvedValue(undefined),
     };
+    sessionRepository = {
+      findById: jest.fn().mockResolvedValue({
+        id: "session-1",
+        userId: "test-user",
+        status: "active",
+      }),
+    };
     router = createEvaluateRouter({
       questionRepository,
       evaluationRepository,
+      sessionRepository,
     });
     handler = getPostHandler(router);
   });
@@ -72,6 +81,7 @@ describe("POST /api/evaluate route", () => {
     aiService.generateEvaluation.mockResolvedValue(evaluation);
 
     const req = {
+      user: { uid: "test-user" },
       body: {
         requestId: "request-1",
         questionId: privateQuestion.id,
@@ -139,4 +149,100 @@ describe("POST /api/evaluate route", () => {
     expect(res.statusCode).toBe(400);
     expect(res.payload.error).toBe("questionId is required.");
   });
+
+  //Additional tests, check sessionId
+  it("rejects evaluations for nonexistent sessions", async () => {
+    sessionRepository.findById.mockResolvedValue(null);
+
+    const req = {
+      user: { uid: "test-user" },
+      body: {
+        questionId: privateQuestion.id,
+        candidateResponse: "Candidate answer",
+        metadata: {
+          sessionId: "missing-session",
+        },
+      },
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(404);
+
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  //Checks that the evaluation is rejected if the session belongs to another user
+  it("rejects evaluations belonging to another user", async () => {
+    sessionRepository.findById.mockResolvedValue({
+      id: "session-1",
+      userId: "another-user",
+      status: "active",
+    });
+
+    const req = {
+      user: { uid: "test-user" },
+      body: {
+        questionId: privateQuestion.id,
+        candidateResponse: "Candidate answer",
+        metadata: {
+          sessionId: "session-1",
+        },
+      },
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(403);
+
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  //Reject completed sessions
+  it("rejects evaluations for completed sessions", async () => {
+    sessionRepository.findById.mockResolvedValue({
+      id: "session-1",
+      userId: "test-user",
+      status: "completed",
+    });
+
+    const req = {
+      user: { uid: "test-user" },
+      body: {
+        questionId: privateQuestion.id,
+        candidateResponse: "Candidate answer",
+        metadata: {
+          sessionId: "session-1",
+        },
+      },
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(409);
+
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(next).not.toHaveBeenCalled();
+  });
+
 });

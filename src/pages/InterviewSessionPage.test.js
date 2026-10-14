@@ -51,6 +51,9 @@ jest.mock("../services", () => ({
 
     checkQuizAnswer:
       jest.fn(),
+
+    endSession:
+      jest.fn(),
   },
 }));
 
@@ -782,6 +785,12 @@ describe(
     test(
       "generates quiz results from answered questions when the interview ends",
       async () => {
+        interviewService.endSession.mockResolvedValue({
+          id: "session-123",
+          status: "completed",
+          completedAt: "2026-10-13T12:00:00.000Z",
+        });
+
         await loadQuizSession();
 
 
@@ -816,55 +825,61 @@ describe(
           )
         );
 
+        await waitFor(() => {
+          expect(
+            onEndInterview
+          ).toHaveBeenCalledWith(
+            expect.objectContaining({
+              mode:
+                "Quiz Style",
 
-        expect(
-          onEndInterview
-        ).toHaveBeenCalledWith(
-          expect.objectContaining({
-            mode:
-              "Quiz Style",
+              score:
+                "100%",
 
-            score:
-              "100%",
+              questionsAnswered:
+                1,
 
-            questionsAnswered:
-              1,
+              eloChange:
+                "+2",
 
-            eloChange:
-              "+2",
+              isCorrect:
+                true,
 
-            isCorrect:
-              true,
+              answerSubmitted:
+                true,
 
-            answerSubmitted:
-              true,
+              jobRole:
+                "Software Engineer",
 
-            jobRole:
-              "Software Engineer",
+              experienceLevel:
+                "Intermediate",
 
-            experienceLevel:
-              "Intermediate",
+              tags: [
+                "algorithms",
+              ],
 
-            tags: [
-              "algorithms",
-            ],
+              perQuestion: [
+                expect.objectContaining({
+                  questionId:
+                    "quiz-test-001",
 
-            perQuestion: [
-              expect.objectContaining({
-                questionId:
-                  "quiz-test-001",
+                  userAnswer:
+                    "Queue",
 
-                userAnswer:
-                  "Queue",
+                  isCorrect:
+                    true,
 
-                isCorrect:
-                  true,
+                  score:
+                    100,
+                }),
+              ],
+            })
+          );
+        });
 
-                score:
-                  100,
-              }),
-            ],
-          })
+        expect(interviewService.endSession).toHaveBeenCalledTimes(1);
+        expect(interviewService.endSession).toHaveBeenCalledWith(
+          "mock-session-1"
         );
       }
     );

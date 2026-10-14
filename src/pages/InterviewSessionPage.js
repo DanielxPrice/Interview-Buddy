@@ -162,6 +162,16 @@ function InterviewSessionPage({
     setAnsweredQuestions,
   ] = useState([]);
 
+  const [
+    isEndingSession, 
+    setIsEndingSession
+  ] = useState(false);
+
+  const [
+    endSessionError,
+    setEndSessionError
+  ] = useState("");
+
   const modeDetails =
     getModeDetails(
       selectedMode
@@ -649,57 +659,56 @@ function InterviewSessionPage({
     );
   }
 
-  function handleEndInterview() {
-    const averageScore =
-      calculateAverageScore(
-        answeredQuestions
+  
+  async function handleEndInterview() {
+    if (isEndingSession || isSubmitting) {
+      return;
+    }
+
+    setIsEndingSession(true);
+    setEndSessionError("");
+
+    try {
+      if (!setupData?.id) {
+        throw new Error("Session ID is missing.");
+      }
+
+      await interviewService.endSession(setupData.id);
+
+      const averageScore =
+        calculateAverageScore(answeredQuestions);
+
+      const lastAnswer =
+        answeredQuestions[answeredQuestions.length - 1];
+
+      onEndInterview({
+        mode: selectedMode,
+
+        score: `${averageScore}%`,
+
+        questionsAnswered: answeredQuestions.length,
+
+        eloChange: calculateEloChange(averageScore),
+
+        isCorrect: Boolean(lastAnswer?.isCorrect),
+
+        answerSubmitted: answeredQuestions.length > 0,
+
+        perQuestion: answeredQuestions,
+
+        jobRole: setupData?.jobRole || "",
+
+        experienceLevel: setupData?.experienceLevel || "",
+
+        tags: setupData?.tags || [],
+      });
+    } catch (error) {
+      setEndSessionError(
+        error.message || "Unable to complete the interview session."
       );
-
-    const lastAnswer =
-      answeredQuestions[
-        answeredQuestions.length -
-          1
-      ];
-
-    onEndInterview({
-      mode:
-        selectedMode,
-
-      score:
-        `${averageScore}%`,
-
-      questionsAnswered:
-        answeredQuestions.length,
-
-      eloChange:
-        calculateEloChange(
-          averageScore
-        ),
-
-      isCorrect:
-        Boolean(
-          lastAnswer?.isCorrect
-        ),
-
-      answerSubmitted:
-        answeredQuestions.length >
-        0,
-
-      perQuestion:
-        answeredQuestions,
-
-      jobRole:
-        setupData?.jobRole ||
-        "",
-
-      experienceLevel:
-        setupData?.experienceLevel ||
-        "",
-
-      tags:
-        setupData?.tags ||
-        [],
-    });
+    } finally {
+      setIsEndingSession(false);
+    }
   }
 
   function renderQuizAnswerArea() {
@@ -1640,17 +1649,19 @@ function InterviewSessionPage({
             {renderAiFeedback()}
 
             <div className="sessionQuestionActions">
+              {endSessionError && (
+                <p role="alert" className="sessionError">
+                  {endSessionError}
+                </p>
+              )}
+
               <button
                 type="button"
                 className="ib-button ib-button--secondary"
-                onClick={
-                  handleEndInterview
-                }
-                disabled={
-                  isSubmitting
-                }
+                onClick={handleEndInterview}
+                disabled={isSubmitting || isEndingSession}
               >
-                End Interview
+                {isEndingSession ? "Ending Session..." : "End Interview"}
               </button>
 
               <div className="sessionPrimaryActions">
@@ -1693,11 +1704,10 @@ function InterviewSessionPage({
                     <button
                       type="button"
                       className="ib-button ib-button--primary"
-                      onClick={
-                        handleEndInterview
-                      }
+                      onClick={handleEndInterview}
+                      disabled={isSubmitting || isEndingSession}
                     >
-                      Finish Session
+                      {isEndingSession ? "Ending Session..." : "Finish Session"}
                     </button>
                   )}
               </div>
