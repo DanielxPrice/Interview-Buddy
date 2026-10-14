@@ -348,29 +348,18 @@ describe("interviewService", () => {
     );
   });
 
-  test("getSetupOptions retrieves mode-specific metadata from the backend", async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        jobRoles: ["software engineer"],
-        experienceLevels: ["Intermediate"],
-        tags: ["tree", "bfs"],
-      }),
-    });
+  test("getSetupOptions reads mode metadata locally without a network request", async () => {
+    global.fetch = jest.fn();
 
     const result = await interviewService.getSetupOptions(
-      INTERVIEW_MODES.CODE
+      INTERVIEW_MODES.CODE,
+      { jobRole: "software engineer", experienceLevel: "Beginner" }
     );
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:5001/api/questions/options?mode=Code+Style",
-      {
-        headers: {
-          Authorization: "Bearer test-id-token",
-        },
-      }
-    );
-    expect(result.tags).toEqual(["tree", "bfs"]);
+    expect(result.jobRoles).toContain("software engineer");
+    expect(result.experienceLevels).toContain("Beginner");
+    expect(result.tags.length).toBeGreaterThan(0);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   test("getQuestions sends selected tags and the frontend limit to the backend", async () => {

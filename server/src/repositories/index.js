@@ -37,6 +37,12 @@ const FirestoreSessionRepository = require(
   "./firestore/FirestoreSessionRepository"
 );
 
+const FirestoreQuestionCatalogRepository = require(
+  "./firestore/FirestoreQuestionCatalogRepository"
+);
+
+const questionCatalogRepository = new FirestoreQuestionCatalogRepository({ db });
+
 const questionRepository =
   new FirestoreQuestionRepository({
     db,
@@ -69,6 +75,7 @@ const sessionRepository =
 
 module.exports = {
   questionRepository,
+  questionCatalogRepository,
 
   evaluationRepository,
 

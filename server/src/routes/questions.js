@@ -160,6 +160,7 @@ function buildReservationFingerprint({
 function createQuestionRouter({
   questionRepository,
   questionQuotaService,
+  questionMetadataService,
 }) {
   if (
     !questionRepository
@@ -209,6 +210,23 @@ function createQuestionRouter({
       }
     }
   );
+
+  // New metadata endpoint; existing /options remains a compatible fallback.
+  router.get("/metadata/version", async (req, res, next) => {
+    try {
+      if (!questionMetadataService) return res.status(503).json({ error: "Metadata unavailable." });
+      res.set("Cache-Control", "private, no-store");
+      return res.json({ version: await questionMetadataService.getVersion() });
+    } catch (error) { return next(error); }
+  });
+
+  router.get("/metadata", async (req, res, next) => {
+    try {
+      if (!questionMetadataService) return res.status(503).json({ error: "Metadata unavailable." });
+      res.set("Cache-Control", "private, no-store");
+      return res.json(await questionMetadataService.getMetadata());
+    } catch (error) { return next(error); }
+  });
 
   router.get(
     "/options",

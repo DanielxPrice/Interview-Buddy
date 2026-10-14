@@ -1,4 +1,10 @@
 import { auth } from "../config/firebase";
+import {
+  getCachedSetupOptions,
+  subscribeSetupMetadata,
+  refreshSetupMetadata,
+  resetMetadataVerification,
+} from "./questionMetadataCache";
 
 /**
  * React-facing interview/session service facade.
@@ -287,81 +293,14 @@ export const interviewService = {
     );
   },
 
-  /**
-   * Retrieve the available setup values
-   * from Firestore question metadata.
-   */
-  async getSetupOptions(
-    mode,
-    {
-      jobRole = "",
-      experienceLevel = "",
-    } = {}
-  ) {
-    validateMode(mode);
+  // Synchronous local lookups remove the format-switching loading delay.
+  getCachedSetupOptions,
+  subscribeSetupMetadata,
+  refreshSetupMetadata,
+  resetMetadataVerification,
 
-    const idToken =
-      await getIdToken();
-
-    const params =
-      new URLSearchParams({
-        mode,
-      });
-
-    if (jobRole) {
-      params.set(
-        "jobRole",
-        jobRole
-      );
-    }
-
-    if (experienceLevel) {
-      params.set(
-        "experienceLevel",
-        experienceLevel
-      );
-    }
-
-    const response =
-      await fetch(
-        `${API_BASE_URL}/questions/options?${params.toString()}`,
-        {
-          headers: {
-            Authorization:
-              `Bearer ${idToken}`,
-          },
-        }
-      );
-
-    const payload =
-      await readJsonResponse(
-        response
-      );
-
-    return {
-      jobRoles:
-        Array.isArray(
-          payload?.jobRoles
-        )
-          ? payload.jobRoles
-          : [],
-
-      experienceLevels:
-        Array.isArray(
-          payload
-            ?.experienceLevels
-        )
-          ? payload
-              .experienceLevels
-          : [],
-
-      tags:
-        Array.isArray(
-          payload?.tags
-        )
-          ? payload.tags
-          : [],
-    };
+  async getSetupOptions(mode, filters = {}) {
+    return getCachedSetupOptions(mode, filters);
   },
 
   /**

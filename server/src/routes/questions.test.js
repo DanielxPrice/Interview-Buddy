@@ -107,6 +107,30 @@ describe("Question retrieval API H-01 mock integration", () => {
     expect(questionRepository.findByMode).toHaveBeenCalledWith("Theoretical Style");
   });
 
+  test("returns current metadata revision and safe metadata", async () => {
+    const { buildQuestionMetadata } = require("../services/questionMetadataBuilder");
+    const metadata = buildQuestionMetadata(questionFixtures);
+    const metadataService = {
+      getVersion: jest.fn().mockResolvedValue(3),
+      getMetadata: jest.fn().mockResolvedValue({ version: 3, ...metadata }),
+    };
+    const safeApp = express();
+    safeApp.use((req, res, next) => {
+      req.user = { uid: "test-user" };
+      next();
+    });
+    safeApp.use("/api/questions", createQuestionRouter({
+      questionRepository, questionQuotaService, questionMetadataService: metadataService,
+    }));
+    const version = await request(safeApp).get("/api/questions/metadata/version");
+    const data = await request(safeApp).get("/api/questions/metadata");
+    expect(version.body).toEqual({ version: 3 });
+    expect(data.body.modes["Quiz Style"].all.tags).toEqual(["bfs", "trees"]);
+    expect(data.text).not.toContain("correctAnswer");
+    expect(data.text).not.toContain("referenceAnswer");
+    expect(metadataService.getMetadata).toHaveBeenCalledTimes(1);
+  });
+
   test("propagates repository read errors through controlled API failure", async () => {
     questionRepository.findByMode.mockRejectedValue(new Error("Firestore unavailable"));
     const response = await request(app).get("/api/questions").query({

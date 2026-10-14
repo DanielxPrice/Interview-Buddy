@@ -13,6 +13,7 @@ import "./App.css";
 import { PAGES } from "./utils/constants";
 
 import AppRoutes from "./utils/routes";
+import { interviewService } from "./services/interviewService";
 
 import { useAuth } from "./context/AuthContext";
 
@@ -38,6 +39,26 @@ function App() {
 
   const currentPage =
     location.pathname;
+
+  const authenticatedUid = user?.uid;
+
+  useEffect(() => {
+    if (!authenticatedUid || loading) return undefined;
+    const refresh = () => interviewService.refreshSetupMetadata().catch(() => {
+      // Bundled metadata remains usable while Firestore/network is unavailable.
+    });
+    refresh();
+    const timer = setInterval(refresh, 60000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      interviewService.resetMetadataVerification();
+    };
+  }, [authenticatedUid, loading]);
 
   const [
     selectedMode,

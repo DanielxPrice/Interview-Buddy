@@ -1,4 +1,6 @@
 const QuestionRepository = require("../contracts/QuestionRepository");
+const { randomUUID } = require("node:crypto");
+const { FieldValue } = require("firebase-admin/firestore");
 
 /**
  * Firestore implementation of the question data-access contract.
@@ -57,6 +59,11 @@ class FirestoreQuestionRepository extends QuestionRepository {
     // seed in one batch would fail. Keep each commit comfortably below the
     // platform limit and continue until every question has been upserted.
     const batchSize = 400;
+    // One operation ID per import distinguishes seed writes from manual edits.
+    // The Firestore trigger skips the version update for writes with a NEW ID,
+    // since each question batch updates the catalog atomically below.
+    const metadataSeedBatchId = randomUUID();
+    const catalogRef = this.db.collection("metadata").doc("questionCatalog");
 
     for (let start = 0; start < questions.length; start += batchSize) {
       const batch = this.db.batch();
@@ -74,12 +81,23 @@ class FirestoreQuestionRepository extends QuestionRepository {
           reference,
           {
             ...data,
+            _metadataSeedBatchId: metadataSeedBatchId,
             updatedAt,
           },
           { merge: true }
         );
       }
 
+      // Exactly one revision bump per committed batch, rather than one for
+      // each question-trigger event. Questions and revision commit together.
+      batch.set(
+        catalogRef,
+        {
+          version: FieldValue.increment(1),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
       await batch.commit();
     }
 
