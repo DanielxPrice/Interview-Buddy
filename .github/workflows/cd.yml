@@ -100,6 +100,19 @@ jobs:
           EXPECTED_VERSION: ${{ steps.build.outputs.version }}
         run: node scripts/smoke-test.mjs --backend-only
 
+      - name: Install Cloud Functions dependencies
+        working-directory: ./functions
+        run: npm install --no-audit --no-fund
+
+      - name: Deploy question metadata Cloud Function
+        if: ${{ vars.DEPLOY_METADATA_FUNCTIONS == 'true' }}
+        # This service account must also have Firebase Functions / Cloud Build / Eventarc permissions.
+        run: |
+          npx --yes firebase-tools@14.12.0 deploy \
+            --only functions:invalidateQuestionMetadata \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --non-interactive
+
       - name: Deploy tested frontend to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:

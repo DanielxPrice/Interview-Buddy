@@ -126,12 +126,24 @@ describe("FirestoreQuestionRepository", () => {
       await expect(repository.upsertMany(questions)).resolves.toBe(1500);
       expect(db.batch).toHaveBeenCalledTimes(4);
       expect(committedBatches).toHaveLength(4);
-      expect(setCalls).toHaveLength(1500);
+      expect(setCalls).toHaveLength(1504);
+      const questionWrites = setCalls.filter(([ref]) => ref.id !== "questionCatalog");
+      const catalogWrites = setCalls.filter(([ref]) => ref.id === "questionCatalog");
+      expect(questionWrites).toHaveLength(1500);
+      expect(catalogWrites).toHaveLength(4);
+      const operationId = questionWrites[0][1]._metadataSeedBatchId;
+      expect(operationId).toEqual(expect.any(String));
+      expect(operationId).toHaveLength(36);
+      expect(questionWrites.every(([, data]) => data._metadataSeedBatchId === operationId)).toBe(true);
+      expect(catalogWrites.every(([, data, options]) =>
+        data.version && data.updatedAt && options.merge === true
+      )).toBe(true);
       expect(setCalls[0][0]).toEqual({ id: "question-0" });
       expect(setCalls[0][1]).toEqual(expect.objectContaining({
         mode: "Quiz Style",
         prompt: "Question 0",
         updatedAt: expect.any(String),
+        _metadataSeedBatchId: expect.any(String),
       }));
       expect(setCalls[0][1]).not.toHaveProperty("id");
       expect(setCalls[0][2]).toEqual({ merge: true });

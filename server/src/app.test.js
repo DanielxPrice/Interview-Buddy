@@ -1,6 +1,7 @@
 /* HTTP-level test of the Express health endpoint, without Firebase credentials. */
 jest.mock("./repositories", () => ({
   questionRepository: {},
+  questionCatalogRepository: { getRevision: jest.fn().mockResolvedValue(0) },
   evaluationRepository: {},
   userRepository: {},
   questionUsageRepository: {},

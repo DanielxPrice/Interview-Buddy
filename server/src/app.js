@@ -52,6 +52,15 @@ const {
   "./repositories"
 );
 
+const { createQuestionMetadataService } = require(
+  "./services/questionMetadataService"
+);
+const { questionCatalogRepository } = require("./repositories");
+const questionMetadataService = createQuestionMetadataService({
+  questionRepository,
+  catalogRepository: questionCatalogRepository,
+});
+
 const questionQuotaService =
   createQuestionQuotaService({
     usageRepository:
@@ -95,6 +104,7 @@ app.use(
     questionRepository,
 
     questionQuotaService,
+    questionMetadataService,
   })
 );
 

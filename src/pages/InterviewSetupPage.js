@@ -109,16 +109,16 @@ function InterviewSetupPage({
   const [
     setupOptions,
     setSetupOptions,
-  ] = useState({
-    jobRoles: [],
-    experienceLevels: [],
-    tags: [],
-  });
+  ] = useState(() =>
+    selectedMode && interviewService.getCachedSetupOptions
+      ? interviewService.getCachedSetupOptions(selectedMode)
+      : { jobRoles: [], experienceLevels: [], tags: [] }
+  );
 
   const [
     isLoadingOptions,
     setIsLoadingOptions,
-  ] = useState(true);
+  ] = useState(false);
 
   const [
     optionsError,
@@ -401,78 +401,68 @@ function InterviewSetupPage({
     };
   }, [selectedMode]);
 
-  /*
-   * Load role, experience, and practice-goal
-   * options from the question database.
+  /* Setup metadata is packaged with React and filtered locally.
+   * A background refresh notifies the page when Firestore changes.
    */
   useEffect(() => {
-    let isCurrent = true;
-
-    async function loadSetupOptions() {
-      if (!selectedMode) {
-        if (isCurrent) {
-          setSetupOptions({
-            jobRoles: [],
-            experienceLevels: [],
-            tags: [],
-          });
-
-          setOptionsError(
-            "Select an interview mode before configuring a session."
-          );
-
-          setIsLoadingOptions(false);
-        }
-
-        return;
-      }
-
-      setIsLoadingOptions(true);
-      setOptionsError("");
-
-      try {
-        const options =
-          await interviewService.getSetupOptions(
-            selectedMode,
-            {
-              jobRole,
-              experienceLevel,
-            }
-          );
-
-        if (isCurrent) {
-          setSetupOptions(options);
-        }
-      } catch (error) {
-        if (isCurrent) {
-          setSetupOptions({
-            jobRoles: [],
-            experienceLevels: [],
-            tags: [],
-          });
-
-          setOptionsError(
-            error.message ||
-              "Unable to load interview setup options from Firebase."
-          );
-        }
-      } finally {
-        if (isCurrent) {
-          setIsLoadingOptions(false);
-        }
-      }
+    let current = true;
+    if (!selectedMode) {
+      setSetupOptions({ jobRoles: [], experienceLevels: [], tags: [] });
+      setOptionsError("Select an interview mode before configuring a session.");
+      setIsLoadingOptions(false);
+      return undefined;
     }
 
-    loadSetupOptions();
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [
-    selectedMode,
-    jobRole,
-    experienceLevel,
-  ]);
+    function applyOptions(fromRefresh = false) {
+      if (!current) return;
+      try {
+        if (interviewService.getCachedSetupOptions) {
+          const nextOptions = interviewService.getCachedSetupOptions(selectedMode, {
+            jobRole, experienceLevel,
+          });
+          setSetupOptions(nextOptions);
+          if (fromRefresh) {
+            // Remove selections invalidated by an admin's Firestore edit.
+            const exists = (items, value) => items.some((item) =>
+              item.toLowerCase() === value.toLowerCase()
+            );
+            if (jobRole && !exists(nextOptions.jobRoles, jobRole)) {
+              setJobRole("");
+              setJobRoleQuery("");
+              setExperienceLevel("");
+              setSelectedPracticeGoals([]);
+            } else if (experienceLevel && !exists(nextOptions.experienceLevels, experienceLevel)) {
+              setExperienceLevel("");
+              setSelectedPracticeGoals([]);
+            } else {
+              setSelectedPracticeGoals((previous) => previous.filter((tag) =>
+                exists(nextOptions.tags, tag)
+              ));
+            }
+          }
+          setOptionsError("");
+          setIsLoadingOptions(false);
+        } else {
+          // Compatibility for existing mock-based frontend tests.
+          setIsLoadingOptions(true);
+          interviewService.getSetupOptions(selectedMode, { jobRole, experienceLevel })
+            .then((options) => {
+              if (current) { setSetupOptions(options); setOptionsError(""); }
+            })
+            .catch((error) => {
+              if (current) setOptionsError(error.message || "Unable to load setup options.");
+            })
+            .finally(() => { if (current) setIsLoadingOptions(false); });
+        }
+      } catch (error) {
+        setOptionsError(error.message || "Unable to load interview setup options.");
+        setIsLoadingOptions(false);
+      }
+    }
+    applyOptions();
+    const unsubscribe = interviewService.subscribeSetupMetadata?.(() => applyOptions(true));
+    return () => { current = false; unsubscribe?.(); };
+  }, [selectedMode, jobRole, experienceLevel]);
 
   const filteredJobRoles =
     setupOptions.jobRoles.filter(

@@ -40,6 +40,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Verify bundled setup metadata matches the seed data
+        run: |
+          npm run generate:metadata
+          git diff --exit-code -- src/data/questionMetadata.json
+
+      - name: Test metadata generation and cache consistency
+        run: node --test scripts/questionMetadata.test.cjs
+
       - name: Run frontend lint
         run: npm run lint
 
@@ -90,6 +98,13 @@ jobs:
       - name: Install server dependencies
         working-directory: ./server
         run: npm ci
+
+      - name: Install Cloud Functions dependencies
+        working-directory: ./functions
+        run: npm install --no-audit --no-fund
+
+      - name: Test Firestore metadata invalidation logic
+        run: node --test functions/relevantMetadata.test.cjs
 
       - name: Run server lint
         working-directory: ./server
