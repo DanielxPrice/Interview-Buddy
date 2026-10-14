@@ -372,4 +372,54 @@ describe("POST /api/evaluate route", () => {
     expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
+    
+  //Verifies that backend uses the stored private question without returning reference as top level response field
+  //Protects raw private fields
+  it("does not expose stored reference answers in the evaluation response", async () => {
+    const evaluation = {
+      score: 90,
+      feedback: "Strong explanation.",
+      strengths: ["Clear reasoning"],
+      weaknesses: [],
+      suggestions: [],
+      criterionResults: [],
+    };
+
+    aiService.generateEvaluation.mockResolvedValue(evaluation);
+
+    const req = {
+      user: { uid: "test-user" },
+      body: {
+        requestId: "reference-test-1",
+        questionId: privateQuestion.id,
+        candidateResponse: "My explanation of the concept.",
+        metadata: {
+          sessionId: "session-1",
+        },
+      },
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(200);
+
+    expect(aiService.generateEvaluation).toHaveBeenCalledWith({
+      question: privateQuestion,
+      candidateResponse: "My explanation of the concept.",
+    });
+
+    expect(res.payload).toEqual({
+      requestId: "reference-test-1",
+      questionId: privateQuestion.id,
+      evaluation,
+    });
+
+    expect(res.payload).not.toHaveProperty("referenceAnswer");
+    expect(res.payload).not.toHaveProperty("gradingCriteria");
+
+    expect(next).not.toHaveBeenCalled();
+  });
 });
