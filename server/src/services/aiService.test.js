@@ -326,4 +326,23 @@ describe("aiService.generateEvaluation", () => {
       anthropicProvider.generateEvaluation
     ).toHaveBeenCalledTimes(1);
   });
+
+  //Checks whether validateRubric() rejects missing reference answers.
+  it("rejects questions missing a reference answer", async () => {
+    const questionWithoutReference = {
+      ...question,
+      referenceAnswer: "",
+    };
+
+    await expect(
+      aiService.generateEvaluation({
+        question: questionWithoutReference,
+        candidateResponse: "A closure captures variables.",
+      })
+    ).rejects.toThrow("not configured for AI grading");
+
+    expect(
+      anthropicProvider.generateEvaluation
+    ).not.toHaveBeenCalled();
+  });
 });

@@ -320,4 +320,147 @@ describe("anthropicProvider.generateEvaluation", () => {
 
     expect(mockCreate).not.toHaveBeenCalled();
   });
+
+  //Checks contents of the prompt sent to the provider
+  //Checks evaluaion package, rubric correctness, config and fail handling
+  //Uses mocked provider, DOES NOT consume paid tokens
+  const mockSuccessfulEvaluation = () => {
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            feedback: "Good answer.",
+            strengths: ["Correct approach"],
+            weaknesses: [],
+            suggestions: [],
+            criterionResults: [
+              {
+                name: "Correctness",
+                awardedPoints: 55,
+                feedback: "Mostly correct.",
+              },
+              {
+                name: "Explanation",
+                awardedPoints: 35,
+                feedback: "Clear explanation.",
+              },
+            ],
+          }),
+        },
+      ],
+    });
+  };
+
+  it("includes the question, candidate answer, and private reference answer in the evaluation package", async () => {
+    mockSuccessfulEvaluation();
+
+    const candidateResponse = "My proposed implementation.";
+
+    await generateEvaluation({
+      question,
+      candidateResponse,
+      gradingCriteria: question.gradingCriteria,
+    });
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+
+    const request = mockCreate.mock.calls[0][0];
+    const prompt = request.messages[0].content;
+
+    expect(prompt).toContain(question.prompt);
+    expect(prompt).toContain(candidateResponse);
+    expect(prompt).toContain(question.referenceAnswer);
+
+    expect(prompt).toContain("QUESTION");
+    expect(prompt).toContain("CANDIDATE RESPONSE");
+    expect(prompt).toContain("PRIVATE REFERENCE ANSWER");
+  });
+
+  it("includes the weighted grading rubric in the evaluation package", async () => {
+    mockSuccessfulEvaluation();
+
+    await generateEvaluation({
+      question,
+      candidateResponse: "A working implementation.",
+      gradingCriteria: question.gradingCriteria,
+    });
+
+    const request = mockCreate.mock.calls[0][0];
+    const prompt = request.messages[0].content;
+
+    expect(prompt).toContain("WEIGHTED GRADING RUBRIC");
+
+    expect(prompt).toContain("Correctness");
+    expect(prompt).toContain("Explanation");
+
+    expect(prompt).toContain("60");
+    expect(prompt).toContain("40");
+
+    expect(prompt).toContain("The solution is correct.");
+    expect(prompt).toContain(
+      "The solution is explained clearly."
+    );
+  });
+
+  it("includes question-specific evaluation instructions", async () => {
+    mockSuccessfulEvaluation();
+
+    const questionWithInstructions = {
+      ...question,
+      evaluationInstructions:
+        "Award credit for any valid iterative solution.",
+    };
+
+    await generateEvaluation({
+      question: questionWithInstructions,
+      candidateResponse: "An iterative solution.",
+      gradingCriteria: questionWithInstructions.gradingCriteria,
+    });
+
+    const request = mockCreate.mock.calls[0][0];
+    const prompt = request.messages[0].content;
+
+    expect(prompt).toContain(
+      "Award credit for any valid iterative solution."
+    );
+  });
+
+  it("sends the evaluation package using the configured Anthropic request structure", async () => {
+    mockSuccessfulEvaluation();
+
+    await generateEvaluation({
+      question,
+      candidateResponse: "Candidate solution.",
+      gradingCriteria: question.gradingCriteria,
+    });
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
+      max_tokens: 1200,
+      temperature: 0,
+      messages: [
+        {
+          role: "user",
+          content: expect.any(String),
+        },
+      ],
+    });
+  });
+
+  it("does not send a provider request when AI configuration fails", async () => {
+    getAiConfig.mockRejectedValue(
+      new Error("AI configuration unavailable.")
+    );
+
+    await expect(
+      generateEvaluation({
+        question,
+        candidateResponse: "Candidate answer.",
+        gradingCriteria: question.gradingCriteria,
+      })
+    ).rejects.toThrow("AI configuration unavailable.");
+
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });

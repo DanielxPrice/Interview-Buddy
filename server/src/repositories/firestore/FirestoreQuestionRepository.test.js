@@ -100,6 +100,56 @@ describe("FirestoreQuestionRepository", () => {
       const repository = new FirestoreQuestionRepository({ db });
       await expect(repository.findById("quiz-1")).rejects.toThrow("Read failed");
     });
+
+    //Verify that findById preserves the private reference answer and grading criteria.
+    test("retrieves stored reference answer and grading criteria", async () => {
+      const storedQuestion = {
+        mode: "Theoretical Style",
+        prompt: "Explain closures.",
+        referenceAnswer: "A closure retains access to its lexical scope.",
+        gradingCriteria: [
+          {
+            name: "Accuracy",
+            weight: 60,
+            description: "Correctly explains lexical scope.",
+          },
+          {
+            name: "Clarity",
+            weight: 40,
+            description: "Explains the concept clearly.",
+          },
+        ],
+      };
+
+      const get = jest.fn().mockResolvedValue({
+        exists: true,
+        id: "theory-123",
+        data: () => storedQuestion,
+      });
+
+      const doc = jest.fn().mockReturnValue({ get });
+      const collection = jest.fn().mockReturnValue({ doc });
+
+      const repository = new FirestoreQuestionRepository({
+        db: { collection },
+      });
+
+      const result = await repository.findById("theory-123");
+
+      expect(collection).toHaveBeenCalledWith("questions");
+      expect(doc).toHaveBeenCalledWith("theory-123");
+      expect(get).toHaveBeenCalledTimes(1);
+
+      expect(result).toEqual({
+        id: "theory-123",
+        ...storedQuestion,
+      });
+
+      expect(result.referenceAnswer)
+        .toBe("A closure retains access to its lexical scope.");
+
+      expect(result.gradingCriteria).toHaveLength(2);
+    });
   });
 
   describe("upsertMany", () => {
