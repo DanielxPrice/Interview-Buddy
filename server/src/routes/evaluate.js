@@ -12,6 +12,7 @@ const { AI_GRADABLE_MODES } = require("../services/evaluationContract");
 function createEvaluateRouter({
   questionRepository,
   evaluationRepository,
+  sessionRepository,
 }) {
   if (!questionRepository) {
     throw new Error("createEvaluateRouter requires questionRepository.");
@@ -19,6 +20,10 @@ function createEvaluateRouter({
 
   if (!evaluationRepository) {
     throw new Error("createEvaluateRouter requires evaluationRepository.");
+  }
+
+  if (!sessionRepository) {
+    throw new Error("createEvaluateRouter requires sessionRepository.");
   }
 
   const router = express.Router();
@@ -61,6 +66,30 @@ function createEvaluateRouter({
 
       if (question.active === false) {
         return res.status(409).json({ error: "This question is inactive." });
+      }
+            
+      if (metadata?.sessionId) {
+        const session = await sessionRepository.findById(
+          metadata.sessionId
+        );
+
+        if (!session) {
+          return res.status(404).json({
+            error: "Session not found.",
+          });
+        }
+
+        if (session.userId !== req.user.uid) {
+          return res.status(403).json({
+            error: "You do not have access to this session.",
+          });
+        }
+
+        if (session.status === "completed") {
+          return res.status(409).json({
+            error: "This session has already been completed.",
+          });
+        }
       }
 
       const evaluation = await aiService.generateEvaluation({

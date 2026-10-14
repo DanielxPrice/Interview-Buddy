@@ -19,6 +19,11 @@ const createUserRouter =
     "./routes/users"
   );
 
+const createSessionRouter = 
+  require(
+    "./routes/sessions"
+  );
+
 const requireAuth =
   require(
     "./middleware/requireAuth"
@@ -41,6 +46,8 @@ const {
   userRepository,
 
   questionUsageRepository,
+
+  sessionRepository,
 } = require(
   "./repositories"
 );
@@ -95,11 +102,13 @@ app.use(
   "/api/evaluate",
 
   requireAuth,
-
+  
   createEvaluateRouter({
     questionRepository,
 
     evaluationRepository,
+    
+    sessionRepository,
   })
 );
 
@@ -110,6 +119,14 @@ app.use(
 
   createUserRouter({
     userRepository,
+  })
+);
+
+app.use(
+  "/api/sessions",
+  requireAuth,
+  createSessionRouter({
+    sessionRepository,
   })
 );
 

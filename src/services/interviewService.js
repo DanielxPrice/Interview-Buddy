@@ -225,26 +225,33 @@ export const interviewService = {
       );
     }
 
+        
+    const idToken = await getIdToken();
+
+    const response = await fetch(
+      `${API_BASE_URL}/sessions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          mode,
+          jobRole,
+          experienceLevel,
+        }),
+      }
+    );
+
+    const session = await readJsonResponse(response);
+
     return {
-      id: `mock-session-${Date.now()}`,
-      mode,
-      jobRole,
-      experienceLevel,
+      ...session,
       tags: normalizedTags,
-
-      practiceGoals:
-        normalizedTags.join(", "),
-
-      codingLanguage:
-        codingLanguage || null,
-
-      questionCount:
-        normalizedQuestionCount,
-
-      status: "active",
-
-      startedAt:
-        new Date().toISOString(),
+      practiceGoals: normalizedTags.join(", "),
+      codingLanguage: codingLanguage || null,
+      questionCount: normalizedQuestionCount,
     };
   },
 
@@ -544,19 +551,24 @@ export const interviewService = {
     };
   },
 
+  
   async endSession(sessionId) {
     if (!sessionId) {
-      throw new Error(
-        "Session ID is required."
-      );
+      throw new Error("Session ID is required.");
     }
 
-    return {
-      sessionId,
-      status: "completed",
+    const idToken = await getIdToken();
 
-      completedAt:
-        new Date().toISOString(),
-    };
+    const response = await fetch(
+      `${API_BASE_URL}/sessions/${encodeURIComponent(sessionId)}/complete`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      }
+    );
+
+    return readJsonResponse(response);
   },
 };
