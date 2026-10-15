@@ -99,6 +99,10 @@ jobs:
         working-directory: ./server
         run: npm ci
 
+      # Validate all production seed questions before deployment.
+      - name: Validate production question seed data
+        run: node server/scripts/validateQuestionSeed.js
+
       - name: Install Cloud Functions dependencies
         working-directory: ./functions
         run: npm install --no-audit --no-fund
