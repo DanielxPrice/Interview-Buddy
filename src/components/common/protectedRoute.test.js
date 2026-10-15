@@ -51,6 +51,8 @@ describe("ProtectedRoute", () => {
         email: "test@example.com",
       },
       loading: false,
+      profileComplete: true,
+      profileError: "",
     });
 
     renderProtectedRoute();
@@ -68,6 +70,8 @@ describe("ProtectedRoute", () => {
     useAuth.mockReturnValue({
       user: null,
       loading: false,
+      profileComplete: false,
+      profileError: "",
     });
 
     renderProtectedRoute();
@@ -85,6 +89,8 @@ describe("ProtectedRoute", () => {
     useAuth.mockReturnValue({
       user: null,
       loading: true,
+      profileComplete: false,
+      profileError: "",
     });
 
     renderProtectedRoute();
@@ -101,4 +107,63 @@ describe("ProtectedRoute", () => {
       screen.queryByText("Login Page")
     ).not.toBeInTheDocument();
   });
+
+  test(
+    "redirects authenticated users without an application profile",
+    async () => {
+      useAuth.mockReturnValue({
+        user: {
+          uid: "google-user",
+          email: "google@example.com",
+        },
+        loading: false,
+        profileComplete: false,
+        profileError: "",
+      });
+
+      renderProtectedRoute();
+
+      expect(
+        await screen.findByText(
+          "Login Page"
+        )
+      ).toBeInTheDocument();
+
+      expect(
+        screen.queryByText(
+          "Protected Content"
+        )
+      ).not.toBeInTheDocument();
+    }
+  );
+
+  test(
+    "does not allow protected access when profile verification fails",
+    () => {
+      useAuth.mockReturnValue({
+        user: {
+          uid: "test-user",
+          email: "test@example.com",
+        },
+        loading: false,
+        profileComplete: false,
+        profileError:
+          "Profile service unavailable.",
+      });
+
+      renderProtectedRoute();
+
+      expect(
+        screen.getByRole("alert")
+      ).toHaveTextContent(
+        /unable to verify your interview buddy profile/i
+      );
+
+      expect(
+        screen.queryByText(
+          "Protected Content"
+        )
+      ).not.toBeInTheDocument();
+    }
+  );
 });

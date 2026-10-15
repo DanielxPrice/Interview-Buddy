@@ -1,4 +1,7 @@
 const UserRepository = require("../contracts/UserRepository");
+const {
+  DEFAULT_USER_ROLE,
+} = require("../../config/roles");
 
 class FirestoreUserRepository extends UserRepository {
   constructor({ db, admin }) {
@@ -60,6 +63,8 @@ class FirestoreUserRepository extends UserRepository {
       username: normalizedUsername,
       usernameLower,
       email: normalizedEmail,
+      role: DEFAULT_USER_ROLE,
+      settings: {theme: "light",},
       createdAt: timestamp,
       updatedAt: timestamp,
     };

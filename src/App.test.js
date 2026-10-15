@@ -54,7 +54,34 @@ describe("Interview Buddy application routing", () => {
         uid: "test-user",
         email: "test@example.com",
       },
+
+      profile: {
+        uid: "test-user",
+        username: "TestUser",
+        usernameLower: "testuser",
+        email: "test@example.com",
+        role: "user",
+        settings: {
+          theme: "light",
+        },
+      },
+
+      profileComplete: true,
+      profileError: "",
       loading: false,
+
+      refreshProfile: jest
+        .fn()
+        .mockResolvedValue({
+          uid: "test-user",
+          username: "TestUser",
+          usernameLower: "testuser",
+          email: "test@example.com",
+          role: "user",
+          settings: {
+            theme: "light",
+          },
+        }),
     });
   });
 

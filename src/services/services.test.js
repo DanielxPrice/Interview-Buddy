@@ -22,8 +22,29 @@ beforeEach(() => {
   auth.currentUser.getIdToken.mockResolvedValue("test-id-token");
 });
 
+const mockBackendSession = {
+  id: "session-123",
+  userId: "test-user",
+  mode: "Quiz Style",
+  jobRole: "Software Engineer",
+  experienceLevel: "Intermediate",
+  status: "active",
+  createdAt: "2026-10-13T12:00:00.000Z",
+  completedAt: null,
+};
+
+function mockSessionApiResponse(session = mockBackendSession) {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 201,
+    json: async () => session,
+  });
+}
+
 describe("interviewService", () => {
   test("startSession preserves the selected question count", async () => {
+    mockSessionApiResponse();
+
     const result =
       await interviewService.startSession({
         mode: INTERVIEW_MODES.QUIZ,
@@ -52,7 +73,163 @@ describe("interviewService", () => {
     );
   });
 
+  test(
+    "getQuestionQuota retrieves the current daily question allowance",
+    async () => {
+      global.fetch =
+        jest.fn()
+          .mockResolvedValue({
+            ok: true,
+            status: 200,
+
+            json: async () => ({
+              quota: {
+                role: "user",
+
+                unlimited: false,
+
+                limit: 20,
+
+                used: 7,
+
+                remaining: 13,
+
+                codeQuestionsUsed: 4,
+
+                theoreticalQuestionsUsed: 3,
+
+                dateKey:
+                  "2026-10-09",
+
+                timeZone:
+                  "America/Los_Angeles",
+              },
+            }),
+          });
+
+      const result =
+        await interviewService
+          .getQuestionQuota();
+
+      expect(
+        global.fetch
+      ).toHaveBeenCalledWith(
+        "http://localhost:5001/api/questions/quota",
+        {
+          headers: {
+            Authorization:
+              "Bearer test-id-token",
+          },
+        }
+      );
+
+      expect(result).toEqual({
+        role: "user",
+
+        unlimited: false,
+
+        limit: 20,
+
+        used: 7,
+
+        remaining: 13,
+
+        codeQuestionsUsed: 4,
+
+        theoreticalQuestionsUsed: 3,
+
+        dateKey:
+          "2026-10-09",
+
+        timeZone:
+          "America/Los_Angeles",
+      });
+    }
+  );
+
+  test(
+    "getQuestions preserves daily quota error information",
+    async () => {
+      global.fetch =
+        jest.fn()
+          .mockResolvedValue({
+            ok: false,
+            status: 429,
+
+            json: async () => ({
+              error:
+                "Daily AI question limit exceeded. 2 questions remain today.",
+
+              code:
+                "daily-question-limit-exceeded",
+
+              quota: {
+                limit: 20,
+                used: 18,
+                requested: 5,
+                remaining: 2,
+              },
+            }),
+          });
+
+      let receivedError;
+
+      try {
+        await interviewService
+          .getQuestions({
+            mode:
+              INTERVIEW_MODES.CODE,
+
+            jobRole:
+              "Software Engineer",
+
+            experienceLevel:
+              "Intermediate",
+
+            tags: [
+              "algorithms",
+            ],
+
+            limit: 5,
+          });
+      } catch (error) {
+        receivedError =
+          error;
+      }
+
+      expect(
+        receivedError
+      ).toBeDefined();
+
+      expect(
+        receivedError.code
+      ).toBe(
+        "daily-question-limit-exceeded"
+      );
+
+      expect(
+        receivedError.status
+      ).toBe(429);
+
+      expect(
+        receivedError.quota
+      ).toEqual({
+        limit: 20,
+        used: 18,
+        requested: 5,
+        remaining: 2,
+      });
+
+      expect(
+        receivedError.message
+      ).toBe(
+        "Daily AI question limit exceeded. 2 questions remain today."
+      );
+    }
+  );
+
   test("startSession defaults to 10 questions when no count is provided", async () => {
+    mockSessionApiResponse();
     const result =
       await interviewService.startSession({
         mode: INTERVIEW_MODES.QUIZ,
@@ -90,6 +267,7 @@ describe("interviewService", () => {
     }
   );
   test("startSession creates an active Quiz Style session", async () => {
+    mockSessionApiResponse();
     const result = await interviewService.startSession({
       mode: INTERVIEW_MODES.QUIZ,
       jobRole: "Software Engineer",
@@ -108,14 +286,16 @@ describe("interviewService", () => {
       })
     );
 
-    expect(result.id).toEqual(
-      expect.stringContaining("mock-session-")
-    );
+    expect(result.id).toBe("session-123");
 
-    expect(result.startedAt).toBeDefined();
+    expect(result.createdAt).toBeDefined();
   });
 
   test("startSession supports Code Style and coding language", async () => {
+    mockSessionApiResponse({
+      ...mockBackendSession,
+      mode: "Code Style",
+    });
     const result = await interviewService.startSession({
       mode: INTERVIEW_MODES.CODE,
       jobRole: "Backend Developer",
@@ -129,6 +309,10 @@ describe("interviewService", () => {
   });
 
   test("startSession supports Theoretical Style", async () => {
+    mockSessionApiResponse({
+      ...mockBackendSession,
+      mode: "Theoretical Style",
+    });
     const result = await interviewService.startSession({
       mode: INTERVIEW_MODES.THEORETICAL,
       jobRole: "Software Engineer",
@@ -164,29 +348,18 @@ describe("interviewService", () => {
     );
   });
 
-  test("getSetupOptions retrieves mode-specific metadata from the backend", async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        jobRoles: ["software engineer"],
-        experienceLevels: ["Intermediate"],
-        tags: ["tree", "bfs"],
-      }),
-    });
+  test("getSetupOptions reads mode metadata locally without a network request", async () => {
+    global.fetch = jest.fn();
 
     const result = await interviewService.getSetupOptions(
-      INTERVIEW_MODES.CODE
+      INTERVIEW_MODES.CODE,
+      { jobRole: "software engineer", experienceLevel: "Beginner" }
     );
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:5001/api/questions/options?mode=Code+Style",
-      {
-        headers: {
-          Authorization: "Bearer test-id-token",
-        },
-      }
-    );
-    expect(result.tags).toEqual(["tree", "bfs"]);
+    expect(result.jobRoles).toContain("software engineer");
+    expect(result.experienceLevels).toContain("Beginner");
+    expect(result.tags.length).toBeGreaterThan(0);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   test("getQuestions sends selected tags and the frontend limit to the backend", async () => {
@@ -254,13 +427,37 @@ describe("interviewService", () => {
     ).rejects.toThrow("An answer is required.");
   });
 
+  
   test("endSession returns a completed session", async () => {
+    const completedSession = {
+      id: "session-1",
+      userId: "test-user",
+      status: "completed",
+      completedAt: "2026-10-13T12:30:00.000Z",
+    };
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => completedSession,
+    });
+
     const result =
       await interviewService.endSession("session-1");
 
-    expect(result.sessionId).toBe("session-1");
+    expect(result.id).toBe("session-1");
     expect(result.status).toBe("completed");
     expect(result.completedAt).toBeDefined();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/sessions/session-1/complete",
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: "Bearer test-id-token",
+        },
+      }
+    );
   });
 });
 

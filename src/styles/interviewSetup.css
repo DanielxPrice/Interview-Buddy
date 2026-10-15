@@ -1015,3 +1015,207 @@
     width: 100%;
   }
 }
+/* ------------------------------------------------------------
+   Daily question quota
+   ------------------------------------------------------------ */
+
+.quotaSection {
+  border-top:
+    1px solid
+    var(--ib-border);
+}
+
+.quotaStatusBadge {
+  flex-shrink: 0;
+
+  padding:
+    5px
+    9px;
+
+  border:
+    1px solid
+    var(--ib-border);
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-accent-soft);
+
+  color:
+    var(--ib-accent-700);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.quotaStatusBadge--unlimited {
+  background:
+    var(--ib-surface-muted);
+
+  color:
+    var(--ib-text);
+}
+
+.quotaStatusBadge--empty {
+  border-color:
+    var(--ib-danger-border);
+
+  background:
+    var(--ib-danger-soft);
+
+  color:
+    var(--ib-danger);
+}
+
+.quotaMessage {
+  padding:
+    11px
+    12px;
+
+  border:
+    1px solid
+    var(--ib-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface-muted);
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-sm);
+}
+
+.quotaMessage--error {
+  border-color:
+    var(--ib-danger-border);
+
+  background:
+    var(--ib-danger-soft);
+
+  color:
+    var(--ib-danger);
+}
+
+.quotaCard {
+  display: flex;
+  flex-direction: column;
+
+  gap:
+    var(--ib-space-3);
+
+  padding:
+    var(--ib-space-4);
+
+  border:
+    1px solid
+    var(--ib-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface-muted);
+}
+
+.quotaCard--unlimited {
+  background:
+    var(--ib-accent-soft);
+}
+
+.quotaPrimary {
+  display: flex;
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+.quotaPrimary strong {
+  color:
+    var(--ib-text);
+
+  font-size:
+    var(--ib-font-size-sm);
+}
+
+.quotaPrimary span {
+  color:
+    var(--ib-text-muted);
+
+  font-size:
+    var(--ib-font-size-xs);
+}
+
+.quotaProgress {
+  width: 100%;
+  height: 8px;
+
+  overflow: hidden;
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-border);
+}
+
+.quotaProgress > span {
+  display: block;
+
+  height: 100%;
+
+  border-radius:
+    inherit;
+
+  background:
+    var(--ib-accent);
+
+  transition:
+    width
+      var(--ib-transition-fast);
+}
+
+.quotaBreakdown {
+  display: flex;
+  flex-wrap: wrap;
+
+  gap:
+    var(--ib-space-4);
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-xs);
+}
+
+.quotaBreakdown strong {
+  color:
+    var(--ib-text);
+}
+
+.quotaLimitReached,
+.questionQuotaWarning {
+  margin: 0;
+
+  color:
+    var(--ib-danger);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  font-weight:
+    var(--ib-font-weight-medium);
+}
+
+.questionQuotaWarning {
+  margin-top:
+    var(--ib-space-2);
+}

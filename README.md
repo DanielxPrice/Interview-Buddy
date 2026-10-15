@@ -1,3 +1,15 @@
+# Interview Buddy deployment and validation
+
+Interview Buddy uses Firebase Hosting for the React SPA and Google Cloud Run for its Express API. The `/api/**` Hosting rewrite connects the frontend to the backend. GitHub Actions handles CI, pull-request frontend previews and production CD.
+
+- [Hosting options and architecture decision (DEPLOY-1)](docs/DEPLOYMENT_HOSTING_DECISION.md)
+- [Versioned deployment workflow and setup (DEPLOY-2, DEPLOY-3)](docs/DEPLOYMENT_WORKFLOW.md)
+- [Automated and browser smoke testing (DEPLOY-4)](docs/POST_DEPLOYMENT_VALIDATION.md)
+
+The production pipeline publishes the frontend artifact produced by passing main-branch CI, deploys the Cloud Run API from the same commit, and verifies matching build metadata after deployment. Run `node scripts/smoke-test.mjs` with the environment variables described in the validation document when checking a live deployment.
+
+---
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).

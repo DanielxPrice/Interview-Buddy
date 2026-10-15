@@ -10,6 +10,17 @@ import { interviewService } from "../services";
 const DEFAULT_QUESTION_COUNT = 10;
 const MAX_QUESTION_COUNT = 20;
 
+/*
+ * Code and Theoretical interviews share
+ * the daily AI-question allowance.
+ *
+ * Quiz Style does not consume this quota.
+ */
+const DAILY_QUOTA_MODES = new Set([
+  "Code Style",
+  "Theoretical Style",
+]);
+
 function formatOptionLabel(value) {
   return String(value || "")
     .split(" ")
@@ -98,16 +109,16 @@ function InterviewSetupPage({
   const [
     setupOptions,
     setSetupOptions,
-  ] = useState({
-    jobRoles: [],
-    experienceLevels: [],
-    tags: [],
-  });
+  ] = useState(() =>
+    selectedMode && interviewService.getCachedSetupOptions
+      ? interviewService.getCachedSetupOptions(selectedMode)
+      : { jobRoles: [], experienceLevels: [], tags: [] }
+  );
 
   const [
     isLoadingOptions,
     setIsLoadingOptions,
-  ] = useState(true);
+  ] = useState(false);
 
   const [
     optionsError,
@@ -124,77 +135,334 @@ function InterviewSetupPage({
     setIsStartingSession,
   ] = useState(false);
 
+  /*
+   * Daily quota state.
+   *
+   * Only Code Style and Theoretical Style
+   * use this shared allowance.
+   */
+  const [
+    questionQuota,
+    setQuestionQuota,
+  ] = useState(null);
+
+  const [
+    isLoadingQuota,
+    setIsLoadingQuota,
+  ] = useState(false);
+
+  const [
+    quotaError,
+    setQuotaError,
+  ] = useState("");
+
   const modeDetails =
     getModeDetails(selectedMode);
 
+  const usesDailyQuota =
+    DAILY_QUOTA_MODES.has(
+      selectedMode
+    );
+
+  const isUnlimitedQuota =
+    Boolean(
+      questionQuota?.unlimited
+    );
+
+  const quotaRemaining =
+    usesDailyQuota &&
+    questionQuota &&
+    !isUnlimitedQuota
+      ? Math.max(
+          0,
+          Number(
+            questionQuota.remaining ||
+              0
+          )
+        )
+      : null;
+
+  const quotaLimit =
+    usesDailyQuota &&
+    questionQuota &&
+    !isUnlimitedQuota
+      ? Number(
+          questionQuota.limit || 0
+        )
+      : null;
+
+  /*
+   * A normal user cannot configure
+   * a session larger than the number
+   * of questions they have remaining.
+   *
+   * Admins remain capped only by the
+   * normal per-session maximum of 20.
+   */
+  const maxAllowedQuestionCount =
+    usesDailyQuota &&
+    questionQuota &&
+    !isUnlimitedQuota
+      ? Math.min(
+          MAX_QUESTION_COUNT,
+          quotaRemaining
+        )
+      : MAX_QUESTION_COUNT;
+
+  const dailyLimitReached =
+    usesDailyQuota &&
+    questionQuota &&
+    !isUnlimitedQuota &&
+    quotaRemaining <= 0;
+
+  const questionCountAboveQuota =
+    usesDailyQuota &&
+    questionQuota &&
+    !isUnlimitedQuota &&
+    Number(questionCount) >
+      maxAllowedQuestionCount;
+
+  /*
+   * Load the user's daily shared
+   * Code + Theoretical allowance.
+   *
+   * Quiz Style never requests the quota
+   * because Quiz questions do not count.
+   */
   useEffect(() => {
     let isCurrent = true;
 
-    async function loadSetupOptions() {
-      if (!selectedMode) {
+    async function loadQuestionQuota() {
+      if (
+        !DAILY_QUOTA_MODES.has(
+          selectedMode
+        )
+      ) {
         if (isCurrent) {
-          setSetupOptions({
-            jobRoles: [],
-            experienceLevels: [],
-            tags: [],
-          });
+          setQuestionQuota(null);
+          setQuotaError("");
+          setIsLoadingQuota(false);
 
-          setOptionsError(
-            "Select an interview mode before configuring a session."
+          /*
+           * A previous counted mode may
+           * have reduced the count to zero.
+           *
+           * Restore a normal usable count
+           * when returning to Quiz Style.
+           */
+          setQuestionCount(
+            (currentCount) => {
+              const parsed =
+                Number(
+                  currentCount
+                );
+
+              if (
+                !Number.isInteger(
+                  parsed
+                ) ||
+                parsed < 1
+              ) {
+                return DEFAULT_QUESTION_COUNT;
+              }
+
+              return Math.min(
+                parsed,
+                MAX_QUESTION_COUNT
+              );
+            }
           );
-
-          setIsLoadingOptions(false);
         }
 
         return;
       }
 
-      setIsLoadingOptions(true);
-      setOptionsError("");
+      setIsLoadingQuota(true);
+      setQuotaError("");
+      setQuestionQuota(null);
 
       try {
-        const options =
-          await interviewService.getSetupOptions(
-            selectedMode,
-            {
-              jobRole,
-              experienceLevel,
+        const quota =
+          await interviewService
+            .getQuestionQuota();
+
+        if (!isCurrent) {
+          return;
+        }
+
+        setQuestionQuota(
+          quota
+        );
+
+        /*
+         * Admin accounts have no daily
+         * question limit.
+         */
+        if (quota?.unlimited) {
+          setQuestionCount(
+            (currentCount) => {
+              const parsed =
+                Number(
+                  currentCount
+                );
+
+              if (
+                !Number.isInteger(
+                  parsed
+                ) ||
+                parsed < 1
+              ) {
+                return DEFAULT_QUESTION_COUNT;
+              }
+
+              return Math.min(
+                parsed,
+                MAX_QUESTION_COUNT
+              );
             }
           );
 
-        if (isCurrent) {
-          setSetupOptions(options);
+          return;
         }
+
+        const remaining =
+          Math.max(
+            0,
+            Number(
+              quota?.remaining ||
+                0
+            )
+          );
+
+        const allowedMaximum =
+          Math.min(
+            MAX_QUESTION_COUNT,
+            remaining
+          );
+
+        /*
+         * Automatically reduce the current
+         * session length if the user does
+         * not have enough quota remaining.
+         */
+        setQuestionCount(
+          (currentCount) => {
+            if (
+              allowedMaximum === 0
+            ) {
+              return 0;
+            }
+
+            const parsed =
+              Number(
+                currentCount
+              );
+
+            if (
+              !Number.isInteger(
+                parsed
+              ) ||
+              parsed < 1
+            ) {
+              return Math.min(
+                DEFAULT_QUESTION_COUNT,
+                allowedMaximum
+              );
+            }
+
+            return Math.min(
+              parsed,
+              allowedMaximum
+            );
+          }
+        );
       } catch (error) {
         if (isCurrent) {
-          setSetupOptions({
-            jobRoles: [],
-            experienceLevels: [],
-            tags: [],
-          });
+          setQuestionQuota(null);
 
-          setOptionsError(
+          setQuotaError(
             error.message ||
-              "Unable to load interview setup options from Firebase."
+              "Unable to load your daily question allowance."
           );
         }
       } finally {
         if (isCurrent) {
-          setIsLoadingOptions(false);
+          setIsLoadingQuota(
+            false
+          );
         }
       }
     }
 
-    loadSetupOptions();
+    loadQuestionQuota();
 
     return () => {
       isCurrent = false;
     };
-  }, [
-    selectedMode,
-    jobRole,
-    experienceLevel,
-  ]);
+  }, [selectedMode]);
+
+  /* Setup metadata is packaged with React and filtered locally.
+   * A background refresh notifies the page when Firestore changes.
+   */
+  useEffect(() => {
+    let current = true;
+    if (!selectedMode) {
+      setSetupOptions({ jobRoles: [], experienceLevels: [], tags: [] });
+      setOptionsError("Select an interview mode before configuring a session.");
+      setIsLoadingOptions(false);
+      return undefined;
+    }
+
+    function applyOptions(fromRefresh = false) {
+      if (!current) return;
+      try {
+        if (interviewService.getCachedSetupOptions) {
+          const nextOptions = interviewService.getCachedSetupOptions(selectedMode, {
+            jobRole, experienceLevel,
+          });
+          setSetupOptions(nextOptions);
+          if (fromRefresh) {
+            // Remove selections invalidated by an admin's Firestore edit.
+            const exists = (items, value) => items.some((item) =>
+              item.toLowerCase() === value.toLowerCase()
+            );
+            if (jobRole && !exists(nextOptions.jobRoles, jobRole)) {
+              setJobRole("");
+              setJobRoleQuery("");
+              setExperienceLevel("");
+              setSelectedPracticeGoals([]);
+            } else if (experienceLevel && !exists(nextOptions.experienceLevels, experienceLevel)) {
+              setExperienceLevel("");
+              setSelectedPracticeGoals([]);
+            } else {
+              setSelectedPracticeGoals((previous) => previous.filter((tag) =>
+                exists(nextOptions.tags, tag)
+              ));
+            }
+          }
+          setOptionsError("");
+          setIsLoadingOptions(false);
+        } else {
+          // Compatibility for existing mock-based frontend tests.
+          setIsLoadingOptions(true);
+          interviewService.getSetupOptions(selectedMode, { jobRole, experienceLevel })
+            .then((options) => {
+              if (current) { setSetupOptions(options); setOptionsError(""); }
+            })
+            .catch((error) => {
+              if (current) setOptionsError(error.message || "Unable to load setup options.");
+            })
+            .finally(() => { if (current) setIsLoadingOptions(false); });
+        }
+      } catch (error) {
+        setOptionsError(error.message || "Unable to load interview setup options.");
+        setIsLoadingOptions(false);
+      }
+    }
+    applyOptions();
+    const unsubscribe = interviewService.subscribeSetupMetadata?.(() => applyOptions(true));
+    return () => { current = false; unsubscribe?.(); };
+  }, [selectedMode, jobRole, experienceLevel]);
 
   const filteredJobRoles =
     setupOptions.jobRoles.filter(
@@ -237,13 +505,13 @@ function InterviewSetupPage({
     setJobRoleQuery(displayRole);
 
     /*
-    * Experience levels and practice
-    * goals depend on the selected role.
-    *
-    * Reset them whenever the user
-    * changes roles so stale selections
-    * cannot create an invalid session.
-    */
+     * Experience levels and practice
+     * goals depend on the selected role.
+     *
+     * Reset them whenever the user
+     * changes roles so stale selections
+     * cannot create an invalid session.
+     */
     setExperienceLevel("");
     setSelectedPracticeGoals([]);
 
@@ -300,6 +568,12 @@ function InterviewSetupPage({
   }
 
   function decreaseQuestionCount() {
+    if (
+      maxAllowedQuestionCount <= 0
+    ) {
+      return;
+    }
+
     setQuestionCount(
       (currentCount) =>
         Math.max(
@@ -312,10 +586,16 @@ function InterviewSetupPage({
   }
 
   function increaseQuestionCount() {
+    if (
+      maxAllowedQuestionCount <= 0
+    ) {
+      return;
+    }
+
     setQuestionCount(
       (currentCount) =>
         Math.min(
-          MAX_QUESTION_COUNT,
+          maxAllowedQuestionCount,
           Number(currentCount) + 1
         )
     );
@@ -341,6 +621,40 @@ function InterviewSetupPage({
       return;
     }
 
+    /*
+     * Code and Theoretical sessions require
+     * a successfully verified quota before
+     * they can start.
+     */
+    if (usesDailyQuota) {
+      if (isLoadingQuota) {
+        setErrorMessage(
+          "Please wait while your daily question allowance is checked."
+        );
+
+        return;
+      }
+
+      if (
+        quotaError ||
+        !questionQuota
+      ) {
+        setErrorMessage(
+          "Your daily question allowance could not be verified. Please try again."
+        );
+
+        return;
+      }
+
+      if (dailyLimitReached) {
+        setErrorMessage(
+          "You have reached your daily Code + Theoretical question limit."
+        );
+
+        return;
+      }
+    }
+
     const parsedQuestionCount =
       Number(questionCount);
 
@@ -359,10 +673,84 @@ function InterviewSetupPage({
       return;
     }
 
+    if (
+      usesDailyQuota &&
+      !isUnlimitedQuota &&
+      parsedQuestionCount >
+        quotaRemaining
+    ) {
+      setErrorMessage(
+        `You only have ${quotaRemaining} Code + Theoretical question${
+          quotaRemaining === 1
+            ? ""
+            : "s"
+        } remaining today.`
+      );
+
+      return;
+    }
+
     setErrorMessage("");
     setIsStartingSession(true);
 
     try {
+      /*
+       * Refresh the quota immediately before
+       * starting a counted session.
+       *
+       * This catches another tab/session using
+       * questions while this setup page was open.
+       */
+      if (usesDailyQuota) {
+        const latestQuota =
+          await interviewService
+            .getQuestionQuota();
+
+        setQuestionQuota(
+          latestQuota
+        );
+
+        if (
+          !latestQuota?.unlimited
+        ) {
+          const latestRemaining =
+            Math.max(
+              0,
+              Number(
+                latestQuota?.remaining ||
+                  0
+              )
+            );
+
+          if (
+            parsedQuestionCount >
+            latestRemaining
+          ) {
+            setQuestionCount(
+              latestRemaining
+            );
+
+            if (
+              latestRemaining === 0
+            ) {
+              setErrorMessage(
+                "You have reached your daily Code + Theoretical question limit."
+              );
+            } else {
+              setErrorMessage(
+                `Your remaining allowance changed. You now have ${latestRemaining} question${
+                  latestRemaining === 1
+                    ? ""
+                    : "s"
+                } available today.`
+              );
+            }
+
+            return;
+          }
+        }
+      }
+
       const session =
         await interviewService.startSession(
           {
@@ -632,9 +1020,9 @@ function InterviewSetupPage({
                     );
 
                     /*
-                    * Available practice goals depend
-                    * on both role and experience.
-                    */
+                     * Available practice goals depend
+                     * on both role and experience.
+                     */
                     setSelectedPracticeGoals([]);
 
                     setErrorMessage("");
@@ -760,6 +1148,166 @@ function InterviewSetupPage({
               </p>
             </fieldset>
 
+            {/* Daily question allowance */}
+            {usesDailyQuota && (
+              <div className="setupSection quotaSection">
+                <div className="setupSectionHeading">
+                  <div>
+                    <span className="setupSectionLabel">
+                      Daily Question
+                      Allowance
+                    </span>
+
+                    <p>
+                      Code and
+                      Theoretical questions
+                      share one daily
+                      allowance.
+                    </p>
+                  </div>
+
+                  {questionQuota &&
+                    !isLoadingQuota &&
+                    !quotaError && (
+                      <span
+                        className={`quotaStatusBadge${
+                          isUnlimitedQuota
+                            ? " quotaStatusBadge--unlimited"
+                            : dailyLimitReached
+                              ? " quotaStatusBadge--empty"
+                              : ""
+                        }`}
+                      >
+                        {isUnlimitedQuota
+                          ? "Unlimited"
+                          : `${quotaRemaining} remaining`}
+                      </span>
+                    )}
+                </div>
+
+                {isLoadingQuota && (
+                  <div
+                    className="quotaMessage"
+                    role="status"
+                  >
+                    Checking your daily
+                    question allowance...
+                  </div>
+                )}
+
+                {quotaError && (
+                  <div
+                    className="quotaMessage quotaMessage--error"
+                    role="alert"
+                  >
+                    {quotaError}
+                  </div>
+                )}
+
+                {questionQuota &&
+                  !isLoadingQuota &&
+                  !quotaError &&
+                  isUnlimitedQuota && (
+                    <div className="quotaCard quotaCard--unlimited">
+                      <strong>
+                        Unlimited
+                        questions
+                      </strong>
+
+                      <span>
+                        Admin accounts do
+                        not consume the
+                        standard daily
+                        Code + Theoretical
+                        allowance.
+                      </span>
+                    </div>
+                  )}
+
+                {questionQuota &&
+                  !isLoadingQuota &&
+                  !quotaError &&
+                  !isUnlimitedQuota && (
+                    <div className="quotaCard">
+                      <div className="quotaPrimary">
+                        <strong>
+                          {quotaRemaining}{" "}
+                          of {quotaLimit}{" "}
+                          remaining today
+                        </strong>
+
+                        <span>
+                          Resets daily in{" "}
+                          {questionQuota.timeZone ||
+                            "the configured time zone"}
+                          .
+                        </span>
+                      </div>
+
+                      <div
+                        className="quotaProgress"
+                        role="progressbar"
+                        aria-label="Daily question allowance remaining"
+                        aria-valuemin="0"
+                        aria-valuemax={
+                          quotaLimit
+                        }
+                        aria-valuenow={
+                          quotaRemaining
+                        }
+                      >
+                        <span
+                          style={{
+                            width:
+                              quotaLimit > 0
+                                ? `${Math.min(
+                                    100,
+                                    Math.max(
+                                      0,
+                                      (quotaRemaining /
+                                        quotaLimit) *
+                                        100
+                                    )
+                                  )}%`
+                                : "0%",
+                          }}
+                        />
+                      </div>
+
+                      <div className="quotaBreakdown">
+                        <span>
+                          Code used:{" "}
+                          <strong>
+                            {questionQuota.codeQuestionsUsed ||
+                              0}
+                          </strong>
+                        </span>
+
+                        <span>
+                          Theoretical used:{" "}
+                          <strong>
+                            {questionQuota.theoreticalQuestionsUsed ||
+                              0}
+                          </strong>
+                        </span>
+                      </div>
+
+                      {dailyLimitReached && (
+                        <p className="quotaLimitReached">
+                          Daily limit
+                          reached. Code and
+                          Theoretical
+                          sessions will be
+                          available again
+                          after the daily
+                          reset.
+                        </p>
+                      )}
+                    </div>
+                  )}
+              </div>
+            )}
+
             {/* Question count */}
             <div className="setupSection questionSection">
               <div className="setupSectionHeading">
@@ -772,8 +1320,9 @@ function InterviewSetupPage({
                   </label>
 
                   <p>
-                    Choose the length of
-                    this practice session.
+                    {usesDailyQuota
+                      ? "Choose a session length within your remaining daily allowance."
+                      : "Choose the length of this practice session."}
                   </p>
                 </div>
               </div>
@@ -787,6 +1336,8 @@ function InterviewSetupPage({
                     decreaseQuestionCount
                   }
                   disabled={
+                    maxAllowedQuestionCount <=
+                      0 ||
                     Number(
                       questionCount
                     ) <= 1
@@ -799,12 +1350,21 @@ function InterviewSetupPage({
                   id="questionCount"
                   className="questionCountInput"
                   type="number"
-                  min="1"
+                  min={
+                    maxAllowedQuestionCount ===
+                    0
+                      ? "0"
+                      : "1"
+                  }
                   max={
-                    MAX_QUESTION_COUNT
+                    maxAllowedQuestionCount
                   }
                   step="1"
                   value={questionCount}
+                  disabled={
+                    isLoadingQuota ||
+                    dailyLimitReached
+                  }
                   onChange={(event) => {
                     setQuestionCount(
                       event.target.value
@@ -824,23 +1384,44 @@ function InterviewSetupPage({
                     increaseQuestionCount
                   }
                   disabled={
+                    maxAllowedQuestionCount <=
+                      0 ||
                     Number(
                       questionCount
                     ) >=
-                    MAX_QUESTION_COUNT
+                      maxAllowedQuestionCount
                   }
                 >
                   +
                 </button>
 
                 <span className="questionCountLimit">
-                  1–
-                  {
-                    MAX_QUESTION_COUNT
-                  }{" "}
-                  questions
+                  {usesDailyQuota &&
+                  questionQuota &&
+                  !isUnlimitedQuota
+                    ? maxAllowedQuestionCount >
+                      0
+                      ? `1–${maxAllowedQuestionCount} available today`
+                      : "No questions remaining today"
+                    : `1–${MAX_QUESTION_COUNT} questions`}
                 </span>
               </div>
+
+              {questionCountAboveQuota && (
+                <p
+                  className="questionQuotaWarning"
+                  role="alert"
+                >
+                  You only have{" "}
+                  {quotaRemaining} shared
+                  Code + Theoretical
+                  question
+                  {quotaRemaining === 1
+                    ? ""
+                    : "s"}{" "}
+                  remaining today.
+                </p>
+              )}
             </div>
 
             {errorMessage && (
@@ -872,6 +1453,18 @@ function InterviewSetupPage({
                   isLoadingOptions ||
                   Boolean(
                     optionsError
+                  ) ||
+                  (
+                    usesDailyQuota &&
+                    (
+                      isLoadingQuota ||
+                      Boolean(
+                        quotaError
+                      ) ||
+                      !questionQuota ||
+                      dailyLimitReached ||
+                      questionCountAboveQuota
+                    )
                   )
                 }
               >
@@ -960,6 +1553,26 @@ function InterviewSetupPage({
                 {questionCount}
               </strong>
             </div>
+
+            {usesDailyQuota && (
+              <div className="setupSummaryItem">
+                <span>
+                  Daily Allowance
+                </span>
+
+                <strong>
+                  {isLoadingQuota
+                    ? "Checking..."
+                    : quotaError
+                      ? "Unavailable"
+                      : isUnlimitedQuota
+                        ? "Unlimited"
+                        : questionQuota
+                          ? `${quotaRemaining}/${quotaLimit} left`
+                          : "Unavailable"}
+                </strong>
+              </div>
+            )}
           </div>
 
           <div className="setupSummaryNote">

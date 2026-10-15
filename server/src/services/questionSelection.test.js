@@ -275,3 +275,72 @@ describe("questionSelection", () => {
     ).toEqual([]);
   });
 });
+
+describe("questionSelection H-01 negative and boundary cases", () => {
+  const dataset = [
+    { id: "active-1", active: true, jobRoles: ["software engineer"], experienceLevels: ["Intermediate"], tags: ["trees", "bfs"], priority: 5 },
+    { id: "active-2", active: true, jobRoles: ["software engineer"], experienceLevels: ["Intermediate"], tags: ["trees"], priority: 5 },
+    { id: "inactive", active: false, jobRoles: ["software engineer"], experienceLevels: ["Intermediate"], tags: ["trees", "bfs"], priority: 100 },
+    { id: "wrong-role", active: true, jobRoles: ["backend developer"], experienceLevels: ["Intermediate"], tags: ["trees", "bfs"], priority: 20 },
+    { id: "wrong-level", active: true, jobRoles: ["software engineer"], experienceLevels: ["Experienced"], tags: ["trees", "bfs"], priority: 20 },
+  ];
+  const setup = {
+    jobRole: " SOFTWARE ENGINEER ",
+    experienceLevel: " intermediate ",
+    tags: "trees,bfs",
+  };
+
+  test("rejects unknown job roles and experience levels", () => {
+    expect(selectQuestions(dataset, { ...setup, jobRole: "unknown role" })).toEqual([]);
+    expect(selectQuestions(dataset, { ...setup, experienceLevel: "invalid" })).toEqual([]);
+  });
+
+  test("returns no results for unmatched or empty tag combinations", () => {
+    expect(selectQuestions(dataset, { ...setup, tags: "graphs" })).toEqual([]);
+    expect(selectQuestions(dataset, { ...setup, tags: " , , " })).toEqual([]);
+    expect(parseSelectedTags([null, "tree,", "TREE"])).toEqual(["tree"]);
+  });
+
+  test("returns an empty result for an empty repository response", () => {
+    expect(selectQuestions([], setup)).toEqual([]);
+    expect(buildQuestionSetupOptions([])).toEqual({
+      jobRoles: [], experienceLevels: [], tags: [],
+    });
+  });
+
+  test("skips records missing filter metadata, including null documents", () => {
+    const invalidRecords = [
+      null,
+      { id: "missing-roles", active: true, experienceLevels: ["Intermediate"], tags: ["trees"] },
+      { id: "missing-levels", active: true, jobRoles: ["software engineer"], tags: ["trees"] },
+      { id: "missing-tags", active: true, jobRoles: ["software engineer"], experienceLevels: ["Intermediate"] },
+      { id: "wrong-type", active: true, jobRoles: "software engineer", experienceLevels: ["Intermediate"], tags: ["trees"] },
+    ];
+    expect(selectQuestions([...invalidRecords, dataset[0]], setup).map((q) => q.id))
+      .toEqual(["active-1"]);
+    expect(buildQuestionSetupOptions(invalidRecords)).toEqual({
+      jobRoles: ["software engineer"],
+      experienceLevels: ["Intermediate"],
+      tags: ["trees"],
+    });
+  });
+
+  test("does not return inactive questions even with better match and priority", () => {
+    expect(selectQuestions(dataset, setup).map((q) => q.id)).toEqual([
+      "active-1", "active-2",
+    ]);
+  });
+
+  test("breaks equal tag-count and priority ties by question ID", () => {
+    const matching = [
+      { ...dataset[1], id: "z" },
+      { ...dataset[1], id: "a" },
+    ];
+    expect(selectQuestions(matching, setup).map((q) => q.id)).toEqual(["a", "z"]);
+  });
+
+  test("limits the results after filtering, including a zero limit", () => {
+    expect(selectQuestions(dataset, setup, 1).map((q) => q.id)).toEqual(["active-1"]);
+    expect(selectQuestions(dataset, setup, 0)).toEqual([]);
+  });
+});

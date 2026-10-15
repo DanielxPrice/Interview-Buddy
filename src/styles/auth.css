@@ -244,3 +244,22 @@
     height: 64px;
   }
 }
+
+.ib-auth-google-account {
+  margin-bottom: 22px;
+  padding: 12px 14px;
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-md);
+  background: var(--ib-surface-muted);
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+  overflow-wrap: anywhere;
+}
+
+.ib-auth-field-help {
+  margin: 0;
+  color: var(--ib-text-muted);
+  font-size: var(--ib-font-size-xs);
+  line-height: var(--ib-line-height-normal);
+}

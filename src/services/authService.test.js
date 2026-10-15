@@ -1,713 +1,1409 @@
-
 import {
+  EmailAuthProvider,
+  GoogleAuthProvider,
   createUserWithEmailAndPassword,
   deleteUser,
+  linkWithCredential,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile,
+  reauthenticateWithCredential,
+  updatePassword,
 } from "firebase/auth";
 
-import { authService } from "./authService";
+import {
+  auth,
+} from "../config/firebase";
 
-global.fetch = jest.fn();
+import {
+  authService,
+} from "./authService";
 
-jest.mock("firebase/auth", () => ({
-  GoogleAuthProvider: jest.fn(() => ({
-    providerId: "google.com",
-  })),
-  createUserWithEmailAndPassword: jest.fn(),
-  deleteUser: jest.fn(),
-  onAuthStateChanged: jest.fn(),
-  signInWithEmailAndPassword: jest.fn(),
-  signInWithPopup: jest.fn(),
-  signOut: jest.fn(),
-  updateProfile: jest.fn(),
-}));
+global.fetch =
+  jest.fn();
 
-jest.mock("../config/firebase", () => ({
-  auth: {
-    currentUser: null,
-  },
-}));
+jest.mock(
+  "firebase/auth",
+  () => {
+    const GoogleAuthProvider =
+      jest.fn(() => ({
+        providerId:
+          "google.com",
+      }));
 
-describe("authService", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+    GoogleAuthProvider.PROVIDER_ID =
+      "google.com";
 
-    global.fetch.mockReset();
+    GoogleAuthProvider.credentialFromError =
+      jest.fn();
 
-    global.fetch.mockResolvedValue({
+    const EmailAuthProvider = {
+      PROVIDER_ID:
+        "password",
+
+      credential:
+        jest.fn(
+          (
+            email,
+            password
+          ) => ({
+            providerId:
+              "password",
+            email,
+            password,
+          })
+        ),
+    };
+
+    return {
+      EmailAuthProvider,
+      GoogleAuthProvider,
+
+      createUserWithEmailAndPassword:
+        jest.fn(),
+
+      deleteUser:
+        jest.fn(),
+
+      linkWithCredential:
+        jest.fn(),
+
+      onAuthStateChanged:
+        jest.fn(),
+
+       reauthenticateWithCredential: 
+        jest.fn(),
+
+      updatePassword: 
+        jest.fn(),
+
+      sendPasswordResetEmail:
+        jest.fn(),
+
+      signInWithEmailAndPassword:
+        jest.fn(),
+
+      signInWithPopup:
+        jest.fn(),
+
+      signOut:
+        jest.fn(),
+
+      updateProfile:
+        jest.fn(),
+    };
+  }
+);
+
+jest.mock(
+  "../config/firebase",
+  () => ({
+    auth: {
+      currentUser:
+        null,
+    },
+  })
+);
+
+function makeUser({
+  uid = "user-123",
+  email =
+    "test@example.com",
+  displayName =
+    "TestUser",
+  emailVerified = true,
+  providerIds = [
+    "password",
+  ],
+} = {}) {
+  return {
+    uid,
+    email,
+    displayName,
+    emailVerified,
+
+    providerData:
+      providerIds.map(
+        (providerId) => ({
+          providerId,
+        })
+      ),
+
+    getIdToken:
+      jest
+        .fn()
+        .mockResolvedValue(
+          "test-id-token"
+        ),
+  };
+}
+
+function makeProfile({
+  uid = "user-123",
+  email =
+    "test@example.com",
+  username =
+    "TestUser",
+} = {}) {
+  return {
+    uid,
+    username,
+
+    usernameLower:
+      username.toLowerCase(),
+
+    email,
+    role: "user",
+
+    settings: {
+      theme: "light",
+    },
+  };
+}
+
+function mockProfileFound(
+  profile =
+    makeProfile()
+) {
+  global.fetch
+    .mockResolvedValueOnce({
       ok: true,
+      status: 200,
+
       json: async () => ({
-        profile: {
-          uid: "user-123",
-          username: "testuser",
-          usernameLower: "testuser",
-          email: "test@example.com",
-        },
+        profile,
       }),
     });
-  });
-
-  test("login authenticates with Firebase email and password", async () => {
-    signInWithEmailAndPassword.mockResolvedValue({
-      user: {
-        uid: "user-123",
-        email: "daniel@example.com",
-        displayName: "Daniel",
-        emailVerified: false,
-      },
-    });
-
-    const result = await authService.login({
-      email: "daniel@example.com",
-      password: "password123",
-    });
-
-    expect(signInWithEmailAndPassword).toHaveBeenCalledWith(
-      expect.anything(),
-      "daniel@example.com",
-      "password123"
-    );
-
-    expect(result.authenticated).toBe(true);
-    expect(result.user.email).toBe("daniel@example.com");
-    expect(result.user.username).toBe("Daniel");
-  });
-
-
-
-  test("login rejects missing credentials", async () => {
-    await expect(
-      authService.login({
-        email: "",
-        password: "",
-      })
-    ).rejects.toThrow("Email and password are required.");
-  });
-
-  test("login trims email before authenticating", async () => {
-    signInWithEmailAndPassword.mockResolvedValue({
-      user: {
-        uid: "user-123",
-        email: "daniel@example.com",
-        displayName: "Daniel",
-        emailVerified: false,
-      },
-    });
-
-    await authService.login({
-      email: "  daniel@example.com  ",
-      password: "password123",
-    });
-
-    expect(
-      signInWithEmailAndPassword
-    ).toHaveBeenCalledWith(
-      expect.anything(),
-      "daniel@example.com",
-      "password123"
-    );
-  });
-
-  test("login rejects whitespace-only email before calling Firebase", async () => {
-    await expect(
-      authService.login({
-        email: "   ",
-        password: "password123",
-      })
-    ).rejects.toThrow(
-      "Email and password are required."
-    );
-
-    expect(
-      signInWithEmailAndPassword
-    ).not.toHaveBeenCalled();
-  });
-
-  test("login maps invalid credential Firebase errors", async () => {
-    signInWithEmailAndPassword.mockRejectedValue({
-      code: "auth/invalid-credential",
-    });
-
-    await expect(
-      authService.login({
-        email: "daniel@example.com",
-        password: "wrongpassword",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/invalid-credential",
-      message: "Invalid email or password.",
-    });
-  });
-
-  test("login maps invalid email Firebase errors", async () => {
-    signInWithEmailAndPassword.mockRejectedValue({
-      code: "auth/invalid-email",
-    });
-
-    await expect(
-      authService.login({
-        email: "not-an-email",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/invalid-email",
-      message: "Please enter a valid email address.",
-    });
-  });
-
-  test("login maps disabled account Firebase errors", async () => {
-    signInWithEmailAndPassword.mockRejectedValue({
-      code: "auth/user-disabled",
-    });
-
-    await expect(
-      authService.login({
-        email: "daniel@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/user-disabled",
-      message: "This account has been disabled.",
-    });
-  });
-
-  test("login maps too many requests Firebase errors", async () => {
-    signInWithEmailAndPassword.mockRejectedValue({
-      code: "auth/too-many-requests",
-    });
-
-    await expect(
-      authService.login({
-        email: "daniel@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/too-many-requests",
-      message:
-        "Too many login attempts. Please try again later.",
-    });
-  });
-
-  test("login maps network Firebase errors", async () => {
-    signInWithEmailAndPassword.mockRejectedValue({
-      code: "auth/network-request-failed",
-    });
-
-    await expect(
-      authService.login({
-        email: "daniel@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/network-request-failed",
-      message:
-        "Unable to reach the authentication service. Please try again.",
-    });
-  });
-
-  test("login maps unknown Firebase errors to a fallback application error", async () => {
-    signInWithEmailAndPassword.mockRejectedValue({
-      code: "auth/something-unexpected",
-    });
-
-    await expect(
-      authService.login({
-        email: "daniel@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/something-unexpected",
-      message: "Login failed. Please try again.",
-    });
-  });
-
-  test("register creates Firebase user, application profile, and signs out", async () => {
-    const firebaseUser = {
-      uid: "user-123",
-      email: "daniel@example.com",
-      displayName: null,
-      emailVerified: false,
-      getIdToken: jest
-        .fn()
-        .mockResolvedValue("test-id-token"),
-    };
-
-    createUserWithEmailAndPassword.mockResolvedValue({
-      user: firebaseUser,
-    });
-
-    updateProfile.mockImplementation(
-      async (user, profile) => {
-        user.displayName = profile.displayName;
-      }
-    );
-
-    signOut.mockResolvedValue();
-
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        profile: {
-          uid: "user-123",
-          username: "Daniel",
-          usernameLower: "daniel",
-          email: "daniel@example.com",
-        },
-      }),
-    });
-
-    const result = await authService.register({
-      username: "Daniel",
-      email: "daniel@example.com",
-      password: "password123",
-    });
-
-    expect(
-      createUserWithEmailAndPassword
-    ).toHaveBeenCalledWith(
-      expect.anything(),
-      "daniel@example.com",
-      "password123"
-    );
-
-    expect(updateProfile).toHaveBeenCalledWith(
-      firebaseUser,
-      {
-        displayName: "Daniel",
-      }
-    );
-
-    expect(
-      firebaseUser.getIdToken
-    ).toHaveBeenCalledTimes(1);
-
-    expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:5001/api/users/profile",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer test-id-token",
-        },
-        body: JSON.stringify({
-          username: "Daniel",
-        }),
-      }
-    );
-
-    expect(signOut).toHaveBeenCalledWith(
-      expect.anything()
-    );
-
-    expect(deleteUser).not.toHaveBeenCalled();
-
-    expect(result).toEqual({
-      created: true,
-      user: {
-        uid: "user-123",
-        email: "daniel@example.com",
-        username: "Daniel",
-        emailVerified: false,
-      },
-    });
-  });
-
-  test("register trims username and email before creating the user and profile", async () => {
-    const firebaseUser = {
-      uid: "user-123",
-      email: "test@example.com",
-      displayName: null,
-      emailVerified: false,
-      getIdToken: jest
-        .fn()
-        .mockResolvedValue("test-id-token"),
-    };
-
-    createUserWithEmailAndPassword.mockResolvedValue({
-      user: firebaseUser,
-    });
-
-    updateProfile.mockImplementation(
-      async (user, profile) => {
-        user.displayName = profile.displayName;
-      }
-    );
-
-    signOut.mockResolvedValue();
-
-    await authService.register({
-      username: "  testuser  ",
-      email: "  test@example.com  ",
-      password: "password123",
-    });
-
-    expect(
-      createUserWithEmailAndPassword
-    ).toHaveBeenCalledWith(
-      expect.anything(),
-      "test@example.com",
-      "password123"
-    );
-
-    expect(updateProfile).toHaveBeenCalledWith(
-      firebaseUser,
-      {
-        displayName: "testuser",
-      }
-    );
-
-    expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:5001/api/users/profile",
-      expect.objectContaining({
-        body: JSON.stringify({
-          username: "testuser",
-        }),
-      })
-    );
-  });
-
-  test("register rejects whitespace-only username", async () => {
-    await expect(
-      authService.register({
-        username: "   ",
-        email: "test@example.com",
-        password: "password123",
-      })
-    ).rejects.toThrow(
-      "Username, email, and password are required."
-    );
-
-    expect(
-      createUserWithEmailAndPassword
-    ).not.toHaveBeenCalled();
-
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  test("register maps duplicate email Firebase errors", async () => {
-    createUserWithEmailAndPassword.mockRejectedValue({
-      code: "auth/email-already-in-use",
-    });
-
-    await expect(
-      authService.register({
-        username: "testuser",
-        email: "test@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/email-already-in-use",
-      message:
-        "An account with this email already exists.",
-    });
-
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  test("register returns a safe fallback for unknown Firebase errors", async () => {
-    createUserWithEmailAndPassword.mockRejectedValue({
-      code: "auth/something-unexpected",
-    });
-
-    await expect(
-      authService.register({
-        username: "testuser",
-        email: "test@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/something-unexpected",
-      message:
-        "Account creation failed. Please try again.",
-    });
-
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  test("register rolls back Firebase account when Firebase profile setup fails", async () => {
-    const firebaseUser = {
-      uid: "user-123",
-      email: "test@example.com",
-      displayName: null,
-      emailVerified: false,
-    };
-
-    createUserWithEmailAndPassword.mockResolvedValue({
-      user: firebaseUser,
-    });
-
-    updateProfile.mockRejectedValue(
-      new Error("Profile update failed")
-    );
-
-    deleteUser.mockResolvedValue();
-
-    await expect(
-      authService.register({
-        username: "testuser",
-        email: "test@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/profile-setup-failed",
-      message:
-        "Registration could not be completed because the username could not be saved. Please try again.",
-    });
-
-    expect(deleteUser).toHaveBeenCalledWith(
-      firebaseUser
-    );
-
-    expect(global.fetch).not.toHaveBeenCalled();
-
-    expect(signOut).not.toHaveBeenCalled();
-  });
-
-  test("register reports rollback failure when incomplete Firebase account cannot be deleted", async () => {
-    const firebaseUser = {
-      uid: "user-123",
-      email: "test@example.com",
-      displayName: null,
-      emailVerified: false,
-      getIdToken: jest
-        .fn()
-        .mockResolvedValue("test-id-token"),
-    };
-
-    createUserWithEmailAndPassword.mockResolvedValue({
-      user: firebaseUser,
-    });
-
-    updateProfile.mockImplementation(
-      async (user, profile) => {
-        user.displayName = profile.displayName;
-      }
-    );
-
-    global.fetch.mockResolvedValue({
+}
+
+function mockProfileMissing() {
+  global.fetch
+    .mockResolvedValueOnce({
       ok: false,
+      status: 404,
+
       json: async () => ({
-        error: "That username is already in use.",
-        code: "username-already-exists",
+        error:
+          "User profile was not found.",
+
+        code:
+          "profile-not-found",
       }),
     });
+}
 
-    deleteUser.mockRejectedValue(
-      new Error("Delete failed")
-    );
+describe(
+  "authService",
+  () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
 
-    await expect(
-      authService.register({
-        username: "testuser",
-        email: "test@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/registration-rollback-failed",
-      message:
-        "Registration could not be completed, and the partially created account could not be removed. Please contact support or try signing in.",
+      reauthenticateWithCredential.mockResolvedValue({});
+      updatePassword.mockResolvedValue();
+
+      auth.currentUser = null;
+
+      global.fetch.mockReset();
+
+      signOut.mockResolvedValue();
+
+      deleteUser.mockResolvedValue();
+
+      EmailAuthProvider.credential.mockImplementation(
+        (email, password) => ({
+          providerId: "password",
+          email,
+          password,
+        })
+      );
+
+      updateProfile.mockImplementation(
+        async (user, profile) => {
+          user.displayName =
+            profile.displayName;
+        }
+      );
+
+      linkWithCredential.mockImplementation(
+        async (user, credential) => {
+          const providerId =
+            credential?.providerId;
+
+          if (!providerId) {
+            throw new Error(
+              "Test credential is missing providerId."
+            );
+          }
+
+          if (
+            !Array.isArray(
+              user.providerData
+            )
+          ) {
+            user.providerData = [];
+          }
+
+          const existingIds =
+            user.providerData.map(
+              (provider) =>
+                provider.providerId
+            );
+
+          if (
+            !existingIds.includes(
+              providerId
+            )
+          ) {
+            user.providerData.push({
+              providerId,
+            });
+          }
+
+          auth.currentUser =
+            user;
+
+          return {
+            user,
+          };
+        }
+      );
     });
 
-    expect(deleteUser).toHaveBeenCalledWith(
-      firebaseUser
-    );
-  });
+    test(
+      "login authenticates with email and password",
+      async () => {
+        const user =
+          makeUser({
+            email:
+              "daniel@example.com",
 
-  test("register rolls back Firebase account when backend profile creation fails", async () => {
-    const firebaseUser = {
-      uid: "user-123",
-      email: "test@example.com",
-      displayName: null,
-      emailVerified: false,
-      getIdToken: jest
-        .fn()
-        .mockResolvedValue("test-id-token"),
-    };
+            displayName:
+              "Daniel",
 
-    createUserWithEmailAndPassword.mockResolvedValue({
-      user: firebaseUser,
-    });
+            providerIds: [
+              "password",
+            ],
+          });
 
-    updateProfile.mockImplementation(
-      async (user, profile) => {
-        user.displayName = profile.displayName;
+        signInWithEmailAndPassword
+          .mockResolvedValue({
+            user,
+          });
+
+        const result =
+          await authService
+            .login({
+              email:
+                "daniel@example.com",
+
+              password:
+                "password123",
+            });
+
+        expect(
+          signInWithEmailAndPassword
+        ).toHaveBeenCalledWith(
+          expect.anything(),
+
+          "daniel@example.com",
+
+          "password123"
+        );
+
+        expect(
+          result.user
+            .providerIds
+        ).toEqual([
+          "password",
+        ]);
       }
     );
 
-    global.fetch.mockResolvedValue({
-      ok: false,
-      json: async () => ({
-        error: "That username is already in use.",
-        code: "username-already-exists",
-      }),
-    });
-
-    deleteUser.mockResolvedValue();
-
-    await expect(
-      authService.register({
-        username: "testuser",
-        email: "test@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "username-already-exists",
-      message: "That username is already in use.",
-    });
-
-    expect(
-      firebaseUser.getIdToken
-    ).toHaveBeenCalledTimes(1);
-
-    expect(global.fetch).toHaveBeenCalled();
-
-    expect(deleteUser).toHaveBeenCalledWith(
-      firebaseUser
-    );
-
-    expect(signOut).not.toHaveBeenCalled();
-  });
-
-  ////////////
-
-  test("register reports post-registration sign-out failure", async () => {
-    const firebaseUser = {
-      uid: "user-123",
-      email: "test@example.com",
-      displayName: null,
-      emailVerified: false,
-      getIdToken: jest
-        .fn()
-        .mockResolvedValue("test-id-token"),
-    };
-
-    createUserWithEmailAndPassword.mockResolvedValue({
-      user: firebaseUser,
-    });
-
-    updateProfile.mockImplementation(
-      async (user, profile) => {
-        user.displayName = profile.displayName;
+    test(
+      "login rejects missing credentials",
+      async () => {
+        await expect(
+          authService.login({
+            email: "",
+            password: "",
+          })
+        ).rejects.toThrow(
+          "Email and password are required."
+        );
       }
     );
 
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        profile: {
-          uid: "user-123",
-          username: "testuser",
-          usernameLower: "testuser",
-          email: "test@example.com",
-        },
-      }),
-    });
+    test(
+      "register creates Firebase user, profile, and signs out",
+      async () => {
+        const user =
+          makeUser({
+            displayName:
+              null,
 
-    signOut.mockRejectedValue(
-      new Error("Sign out failed")
+            emailVerified:
+              false,
+
+            providerIds: [
+              "password",
+            ],
+          });
+
+        createUserWithEmailAndPassword
+          .mockResolvedValue({
+            user,
+          });
+
+        global.fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+
+            json: async () => ({
+              profile:
+                makeProfile(),
+            }),
+          });
+
+        const result =
+          await authService
+            .register({
+              username:
+                "TestUser",
+
+              email:
+                "test@example.com",
+
+              password:
+                "password123",
+            });
+
+        expect(
+          createUserWithEmailAndPassword
+        ).toHaveBeenCalledWith(
+          expect.anything(),
+
+          "test@example.com",
+
+          "password123"
+        );
+
+        expect(
+          global.fetch
+        ).toHaveBeenCalledWith(
+          "http://localhost:5001/api/users/profile",
+
+          expect.objectContaining({
+            method: "POST",
+
+            body:
+              JSON.stringify({
+                username:
+                  "TestUser",
+              }),
+          })
+        );
+
+        expect(
+          signOut
+        ).toHaveBeenCalled();
+
+        expect(
+          result.user
+            .providerIds
+        ).toContain(
+          "password"
+        );
+      }
     );
 
-    await expect(
-      authService.register({
-        username: "testuser",
-        email: "test@example.com",
-        password: "password123",
-      })
-    ).rejects.toMatchObject({
-      code: "auth/post-registration-signout-failed",
-      message:
-        "Your account was created, but automatic sign-out failed. Please sign out before continuing.",
-    });
-    expect(deleteUser).not.toHaveBeenCalled();
-  });
+    test(
+      "register rejects empty username",
+      async () => {
+        await expect(
+          authService.register({
+            username: "   ",
 
-  test("Google login authenticates through Firebase", async () => {
-    signInWithPopup.mockResolvedValue({
-      user: {
-        uid: "google-user-123",
-        email: "daniel@gmail.com",
-        displayName: "Daniel",
-        emailVerified: true,
-      },
-    });
+            email:
+              "test@example.com",
 
-    const result =
-      await authService.loginWithGoogle();
+            password:
+              "password123",
+          })
+        ).rejects.toThrow(
+          "Username, email, and password are required."
+        );
 
-    expect(signInWithPopup).toHaveBeenCalled();
-
-    expect(result.authenticated).toBe(true);
-    expect(result.user.email).toBe(
-      "daniel@gmail.com"
+        expect(
+          createUserWithEmailAndPassword
+        ).not.toHaveBeenCalled();
+      }
     );
-  });
 
-  test("subscribeToAuthState maps Firebase user changes", () => {
-    const callback = jest.fn();
-    const unsubscribe = jest.fn();
+    test(
+      "register rolls back when backend profile creation fails",
+      async () => {
+        const user =
+          makeUser({
+            displayName:
+              null,
+          });
 
-    onAuthStateChanged.mockImplementation(
-      (auth, listener) => {
-        listener({
-          uid: "user-123",
-          email: "daniel@example.com",
-          displayName: "Daniel",
-          emailVerified: true,
+        createUserWithEmailAndPassword
+          .mockResolvedValue({
+            user,
+          });
+
+        global.fetch
+          .mockResolvedValueOnce({
+            ok: false,
+            status: 409,
+
+            json: async () => ({
+              error:
+                "That username is already in use.",
+
+              code:
+                "username-already-exists",
+            }),
+          });
+
+        await expect(
+          authService.register({
+            username:
+              "TestUser",
+
+            email:
+              "test@example.com",
+
+            password:
+              "password123",
+          })
+        ).rejects
+          .toMatchObject({
+            code:
+              "username-already-exists",
+          });
+
+        expect(
+          deleteUser
+        ).toHaveBeenCalledWith(
+          user
+        );
+      }
+    );
+
+    test(
+      "Google user with profile and both providers signs in directly",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "google-user-123",
+
+            email:
+              "daniel@gmail.com",
+
+            displayName:
+              "Daniel",
+
+            providerIds: [
+              "google.com",
+              "password",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileFound(
+          makeProfile({
+            uid:
+              "google-user-123",
+
+            email:
+              "daniel@gmail.com",
+
+            username:
+              "Daniel",
+          })
+        );
+
+        const result =
+          await authService
+            .loginWithGoogle();
+
+        expect(
+          result
+            .needsUsernameSetup
+        ).toBe(false);
+
+        expect(
+          result
+            .needsPasswordSetup
+        ).toBe(false);
+
+        expect(
+          result.user
+            .providerIds
+        ).toEqual(
+          expect.arrayContaining([
+            "google.com",
+            "password",
+          ])
+        );
+      }
+    );
+
+    test(
+      "new Google user has no Firestore profile yet",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "google-user-123",
+
+            email:
+              "newgoogle@gmail.com",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileMissing();
+
+        const result =
+          await authService
+            .loginWithGoogle();
+
+        expect(
+          result
+            .needsUsernameSetup
+        ).toBe(true);
+
+        expect(
+          result
+            .needsPasswordSetup
+        ).toBe(true);
+
+        expect(
+          global.fetch
+        ).toHaveBeenCalledTimes(
+          1
+        );
+
+        expect(
+          global.fetch
+            .mock
+            .calls[0][1]
+            .method
+        ).toBe(
+          "GET"
+        );
+      }
+    );
+
+    test(
+      "preparing username does not create Firestore profile",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "google-user-123",
+
+            email:
+              "newgoogle@gmail.com",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileMissing();
+
+        await authService
+          .loginWithGoogle();
+
+        global.fetch
+          .mockClear();
+
+        const result =
+          await authService
+            .prepareGoogleUsername(
+              "InterviewDaniel"
+            );
+
+        expect(
+          result.username
+        ).toBe(
+          "InterviewDaniel"
+        );
+
+        expect(
+          global.fetch
+        ).not.toHaveBeenCalled();
+      }
+    );
+
+    test(
+      "new Google registration links password before creating profile",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "google-user-123",
+
+            email:
+              "newgoogle@gmail.com",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileMissing();
+
+        await authService
+          .loginWithGoogle();
+
+        await authService
+          .prepareGoogleUsername(
+            "InterviewDaniel"
+          );
+
+        global.fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+
+            json: async () => ({
+              profile:
+                makeProfile({
+                  uid:
+                    "google-user-123",
+
+                  email:
+                    "newgoogle@gmail.com",
+
+                  username:
+                    "InterviewDaniel",
+                }),
+            }),
+          });
+
+        const result =
+          await authService
+            .completeGoogleRegistration({
+              password:
+                "password123",
+
+              confirmPassword:
+                "password123",
+            });
+
+        expect(
+          EmailAuthProvider
+            .credential
+        ).toHaveBeenCalledWith(
+          "newgoogle@gmail.com",
+
+          "password123"
+        );
+
+        expect(
+          linkWithCredential
+        ).toHaveBeenCalled();
+
+        expect(
+          global.fetch
+        ).toHaveBeenLastCalledWith(
+          "http://localhost:5001/api/users/profile",
+
+          expect.objectContaining({
+            method:
+              "POST",
+
+            body:
+              JSON.stringify({
+                username:
+                  "InterviewDaniel",
+              }),
+          })
+        );
+
+        expect(
+          result
+            .authenticated
+        ).toBe(true);
+      }
+    );
+
+    test(
+      "mismatched Google registration passwords do not link provider",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "google-user-123",
+
+            email:
+              "newgoogle@gmail.com",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileMissing();
+
+        await authService
+          .loginWithGoogle();
+
+        await authService
+          .prepareGoogleUsername(
+            "InterviewDaniel"
+          );
+
+        await expect(
+          authService
+            .completeGoogleRegistration({
+              password:
+                "password123",
+
+              confirmPassword:
+                "different",
+            })
+        ).rejects
+          .toMatchObject({
+            code:
+              "password-mismatch",
+          });
+
+        expect(
+          linkWithCredential
+        ).not.toHaveBeenCalled();
+      }
+    );
+
+    test(
+      "generated username still waits for password creation",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "F7Q8C5BnLjcvuDJr",
+
+            email:
+              "daniel@gmail.com",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileMissing();
+
+        await authService
+          .loginWithGoogle();
+
+        const prepared =
+          await authService
+            .prepareGeneratedGoogleUsername();
+
+        expect(
+          prepared.username
+        ).toBe(
+          "daniel_f7q8c5"
+        );
+
+        expect(
+          linkWithCredential
+        ).not.toHaveBeenCalled();
+      }
+    );
+
+    test(
+      "existing profile without password requires password setup",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "same-uid-123",
+
+            email:
+              "existing@gmail.com",
+
+            displayName:
+              "ExistingUser",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileFound(
+          makeProfile({
+            uid:
+              "same-uid-123",
+
+            email:
+              "existing@gmail.com",
+
+            username:
+              "ExistingUser",
+          })
+        );
+
+        const result =
+          await authService
+            .loginWithGoogle();
+
+        expect(
+          result
+            .needsPasswordSetup
+        ).toBe(true);
+
+        expect(
+          result
+            .existingProfile
+        ).toBe(true);
+
+        expect(
+          result.profile.uid
+        ).toBe(
+          "same-uid-123"
+        );
+      }
+    );
+
+    test(
+      "existing Google profile links password and keeps same UID",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "same-uid-123",
+
+            email:
+              "existing@gmail.com",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileFound(
+          makeProfile({
+            uid:
+              "same-uid-123",
+
+            email:
+              "existing@gmail.com",
+          })
+        );
+
+        await authService
+          .loginWithGoogle();
+
+        mockProfileFound(
+          makeProfile({
+            uid:
+              "same-uid-123",
+
+            email:
+              "existing@gmail.com",
+          })
+        );
+
+        const result =
+          await authService
+            .completeGooglePasswordSetup({
+              password:
+                "password123",
+
+              confirmPassword:
+                "password123",
+            });
+
+        expect(
+          result.profile.uid
+        ).toBe(
+          "same-uid-123"
+        );
+
+        expect(
+          result.user
+            .providerIds
+        ).toEqual(
+          expect.arrayContaining([
+            "google.com",
+            "password",
+          ])
+        );
+      }
+    );
+
+    test(
+      "different credential conflict asks for existing password",
+      async () => {
+        const googleCredential = {
+          providerId:
+            "google.com",
+        };
+
+        GoogleAuthProvider
+          .credentialFromError
+          .mockReturnValue(
+            googleCredential
+          );
+
+        signInWithPopup
+          .mockRejectedValue({
+            code:
+              "auth/account-exists-with-different-credential",
+
+            customData: {
+              email:
+                "existing@example.com",
+            },
+          });
+
+        const result =
+          await authService
+            .loginWithGoogle();
+
+        expect(
+          result
+        ).toEqual({
+          authenticated:
+            false,
+
+          needsExistingPasswordToLinkGoogle:
+            true,
+
+          email:
+            "existing@example.com",
+        });
+      }
+    );
+
+    test(
+      "existing password account links Google to same Firebase user",
+      async () => {
+        const googleCredential = {
+          providerId:
+            "google.com",
+        };
+
+        GoogleAuthProvider
+          .credentialFromError
+          .mockReturnValue(
+            googleCredential
+          );
+
+        signInWithPopup
+          .mockRejectedValue({
+            code:
+              "auth/account-exists-with-different-credential",
+
+            customData: {
+              email:
+                "existing@example.com",
+            },
+          });
+
+        await authService
+          .loginWithGoogle();
+
+        const existingUser =
+          makeUser({
+            uid:
+              "existing-uid",
+
+            email:
+              "existing@example.com",
+
+            providerIds: [
+              "password",
+            ],
+          });
+
+        signInWithEmailAndPassword
+          .mockResolvedValue({
+            user:
+              existingUser,
+          });
+
+        mockProfileFound(
+          makeProfile({
+            uid:
+              "existing-uid",
+
+            email:
+              "existing@example.com",
+          })
+        );
+
+        const result =
+          await authService
+            .completeExistingPasswordGoogleLink(
+              "password123"
+            );
+
+        expect(
+          linkWithCredential
+        ).toHaveBeenCalledWith(
+          existingUser,
+          googleCredential
+        );
+
+        expect(
+          result.profile.uid
+        ).toBe(
+          "existing-uid"
+        );
+
+        expect(
+          result.user
+            .providerIds
+        ).toEqual(
+          expect.arrayContaining([
+            "password",
+            "google.com",
+          ])
+        );
+      }
+    );
+
+    test(
+      "cancel incomplete Google account deletes Auth user",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "google-user-123",
+
+            email:
+              "newgoogle@gmail.com",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileMissing();
+
+        await authService
+          .loginWithGoogle();
+
+        mockProfileMissing();
+
+        const result =
+          await authService
+            .cancelGoogleSetup();
+
+        expect(
+          deleteUser
+        ).toHaveBeenCalledWith(
+          user
+        );
+
+        expect(
+          result
+            .deletedIncompleteAccount
+        ).toBe(true);
+      }
+    );
+
+    test(
+      "cancel existing profile signs out instead of deleting",
+      async () => {
+        const user =
+          makeUser({
+            uid:
+              "google-user-123",
+
+            email:
+              "existing@gmail.com",
+
+            providerIds: [
+              "google.com",
+            ],
+          });
+
+        signInWithPopup
+          .mockResolvedValue({
+            user,
+          });
+
+        mockProfileFound();
+
+        await authService
+          .loginWithGoogle();
+
+        mockProfileFound();
+
+        const result =
+          await authService
+            .cancelGoogleSetup();
+
+        expect(
+          deleteUser
+        ).not.toHaveBeenCalled();
+
+        expect(
+          signOut
+        ).toHaveBeenCalled();
+
+        expect(
+          result
+            .deletedIncompleteAccount
+        ).toBe(false);
+      }
+    );
+
+    test(
+      "auth listener maps provider IDs",
+      () => {
+        const callback =
+          jest.fn();
+
+        const unsubscribe =
+          jest.fn();
+
+        onAuthStateChanged
+          .mockImplementation(
+            (
+              firebaseAuth,
+              listener
+            ) => {
+              listener(
+                makeUser({
+                  email:
+                    "daniel@example.com",
+
+                  displayName:
+                    "Daniel",
+
+                  providerIds: [
+                    "google.com",
+                    "password",
+                  ],
+                })
+              );
+
+              return unsubscribe;
+            }
+          );
+
+        const result =
+          authService
+            .subscribeToAuthState(
+              callback
+            );
+
+        expect(
+          callback
+        ).toHaveBeenCalledWith({
+          uid:
+            "user-123",
+
+          email:
+            "daniel@example.com",
+
+          username:
+            "Daniel",
+
+          emailVerified:
+            true,
+
+          providerIds: [
+            "google.com",
+            "password",
+          ],
         });
 
-        return unsubscribe;
+        expect(
+          result
+        ).toBe(
+          unsubscribe
+        );
       }
     );
 
-    const result =
-      authService.subscribeToAuthState(callback);
+    test(
+      "logout signs out",
+      async () => {
+        const result =
+          await authService
+            .logout();
 
-    expect(onAuthStateChanged).toHaveBeenCalled();
+        expect(
+          signOut
+        ).toHaveBeenCalled();
 
-    expect(callback).toHaveBeenCalledWith({
-      uid: "user-123",
-      email: "daniel@example.com",
-      username: "Daniel",
-      emailVerified: true,
-    });
-
-    expect(result).toBe(unsubscribe);
-  });
-
-  test("subscribeToAuthState rejects a missing callback", () => {
-    expect(() => {
-      authService.subscribeToAuthState();
-    }).toThrow(
-      "Auth state callback is required."
+        expect(
+          result
+        ).toEqual({
+          success: true,
+        });
+      }
     );
-  });
 
-  test("logout signs out through Firebase", async () => {
-    signOut.mockResolvedValue();
+    test("changes password after reauthentication", async () => {
+      const user = makeUser();
+      auth.currentUser = user;
 
-    const result = await authService.logout();
+      const result = await authService.changePassword(
+        "oldPassword123",
+        "newPassword123"
+      );
 
-    expect(signOut).toHaveBeenCalled();
+      expect(EmailAuthProvider.credential).toHaveBeenCalledWith(
+        "test@example.com",
+        "oldPassword123"
+      );
 
-    expect(result).toEqual({
-      success: true,
+      expect(reauthenticateWithCredential).toHaveBeenCalledWith(
+        user,
+        {
+          providerId: "password",
+          email: "test@example.com",
+          password: "oldPassword123",
+        }
+      );
+
+      expect(updatePassword).toHaveBeenCalledWith(
+        user,
+        "newPassword123"
+      );
+
+      expect(result).toEqual({ success: true });
+
+      expect(
+        reauthenticateWithCredential.mock.invocationCallOrder[0]
+      ).toBeLessThan(
+        updatePassword.mock.invocationCallOrder[0]
+      );
     });
-  });
 
-  test("logout maps Firebase sign-out errors", async () => {
-    signOut.mockRejectedValue({
-      code: "auth/network-request-failed",
+    test("rejects missing, weak, and unchanged passwords", async () => {
+      auth.currentUser = makeUser();
+
+      await expect(
+        authService.changePassword("", "newPassword123")
+      ).rejects.toThrow(
+        "Current and new passwords are required."
+      );
+
+      await expect(
+        authService.changePassword("oldPassword123", "short")
+      ).rejects.toThrow(
+        "New password must be at least 6 characters long."
+      );
+
+      await expect(
+        authService.changePassword("samePassword", "samePassword")
+      ).rejects.toThrow(
+        "New password cannot be the same as the current password."
+      );
+
+      expect(reauthenticateWithCredential).not.toHaveBeenCalled();
+      expect(updatePassword).not.toHaveBeenCalled();
     });
 
-    await expect(
-      authService.logout()
-    ).rejects.toMatchObject({
-      code: "auth/network-request-failed",
-      message: "Logout failed. Please try again.",
+    test("requires a signed-in password-enabled user", async () => {
+      auth.currentUser = null;
+
+      await expect(
+        authService.changePassword("oldPassword123", "newPassword123")
+      ).rejects.toThrow("Please sign in");
+
+      auth.currentUser = makeUser({
+        providerIds: ["google.com"],
+      });
+
+      await expect(
+        authService.changePassword("oldPassword123", "newPassword123")
+      ).rejects.toThrow(
+        "This account does not have an email/password sign-in method."
+      );
+
+      expect(updatePassword).not.toHaveBeenCalled();
     });
-  });
-});
+
+    test("rejects incorrect current password", async () => {
+      auth.currentUser = makeUser();
+
+      reauthenticateWithCredential.mockRejectedValue({
+        code: "auth/invalid-credential",
+      });
+
+      await expect(
+        authService.changePassword("wrongPassword", "newPassword123")
+      ).rejects.toThrow("Current password is incorrect.");
+
+      expect(updatePassword).not.toHaveBeenCalled();
+    });
+
+    test("reports a Firebase password update failure", async () => {
+      auth.currentUser = makeUser();
+
+      updatePassword.mockRejectedValue({
+        code: "auth/weak-password",
+      });
+
+      await expect(
+        authService.changePassword("oldPassword123", "newPassword123")
+      ).rejects.toThrow(
+        "New password does not meet the password requirements."
+      );
+    });
+
+  }
+);

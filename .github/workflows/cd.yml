@@ -2,20 +2,22 @@ name: Deploy Production
 
 on:
   workflow_run:
-    workflows:
-      - CI Pipeline
-    types:
-      - completed
-    branches:
-      - main
+    workflows: [CI Pipeline]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
+  actions: read
   id-token: write
 
 jobs:
   deploy:
-    if: github.event.workflow_run.conclusion == 'success'
+    # Do not deploy a PR workflow run, even if the workflow itself succeeded.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
 
     steps:
@@ -23,15 +25,47 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Restore CI build identity
+        id: build
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          CHECKED_OUT_SHA="$(git rev-parse HEAD)"
+          if [ "$CHECKED_OUT_SHA" != "$SOURCE_SHA" ]; then
+            echo "::error::Checked out commit does not match CI commit"
+            exit 1
+          fi
+          BUILD_VERSION="IB-build-${CI_RUN_NUMBER}.${CI_RUN_ATTEMPT}-${SOURCE_SHA:0:7}"
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "### Deploying $BUILD_VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source commit: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "CI run: ${{ github.event.workflow_run.html_url }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            server/package-lock.json
+
+      - name: Download frontend artifact from successful CI run
+        uses: actions/download-artifact@v4
+        with:
+          name: interview-buddy-frontend
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: build
+
+      - name: Verify CI artifact version
+        env:
+          EXPECTED_SHA: ${{ steps.build.outputs.sha }}
+          EXPECTED_VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          node -e 'const m=require("./build/deployment-info.json"); if(m.sourceCommitSha!==process.env.EXPECTED_SHA||m.buildVersion!==process.env.EXPECTED_VERSION){console.error("CI artifact version mismatch");process.exit(1)} console.log("Verified frontend artifact:",m.buildVersion)'
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -53,37 +87,49 @@ jobs:
             CLIENT_ORIGIN=${{ vars.FRONTEND_ORIGIN }}
             AI_PROVIDER=anthropic
             ANTHROPIC_MODEL=claude-sonnet-4-6
+            SOURCE_COMMIT_SHA=${{ steps.build.outputs.sha }}
+            BUILD_VERSION=${{ steps.build.outputs.version }}
           flags: >-
             --service-account=${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}
             --max-instances=3
 
-      - name: Check Cloud Run health
-        run: |
-          curl --fail --retry 5 --retry-delay 5 \
-            "${{ steps.deploy-api.outputs.url }}/api/health"
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Build production frontend
-        run: npm run build
+      - name: Validate Cloud Run backend
         env:
-          REACT_APP_API_BASE_URL: /api
-          REACT_APP_FIREBASE_API_KEY: ${{ vars.REACT_APP_FIREBASE_API_KEY }}
-          REACT_APP_FIREBASE_AUTH_DOMAIN: ${{ vars.REACT_APP_FIREBASE_AUTH_DOMAIN }}
-          REACT_APP_FIREBASE_PROJECT_ID: ${{ vars.REACT_APP_FIREBASE_PROJECT_ID }}
-          REACT_APP_FIREBASE_STORAGE_BUCKET: ${{ vars.REACT_APP_FIREBASE_STORAGE_BUCKET }}
-          REACT_APP_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.REACT_APP_FIREBASE_MESSAGING_SENDER_ID }}
-          REACT_APP_FIREBASE_APP_ID: ${{ vars.REACT_APP_FIREBASE_APP_ID }}
+          BASE_URL: ${{ steps.deploy-api.outputs.url }}
+          EXPECTED_SHA: ${{ steps.build.outputs.sha }}
+          EXPECTED_VERSION: ${{ steps.build.outputs.version }}
+        run: node scripts/smoke-test.mjs --backend-only
 
-      - name: Deploy Firebase Hosting
+      - name: Install Cloud Functions dependencies
+        working-directory: ./functions
+        run: npm install --no-audit --no-fund
+
+      - name: Deploy question metadata Cloud Function
+        if: ${{ vars.DEPLOY_METADATA_FUNCTIONS == 'true' }}
+        # This service account must also have Firebase Functions / Cloud Build / Eventarc permissions.
+        run: |
+          npx --yes firebase-tools@14.12.0 deploy \
+            --only functions:invalidateQuestionMetadata \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --non-interactive
+
+      - name: Deploy tested frontend to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INTERVIEW_BUDDY_C9912 }}
           projectId: interview-buddy-c9912
           channelId: live
 
-      - name: Check production API
+      - name: Validate live frontend and API
+        env:
+          BASE_URL: ${{ vars.FRONTEND_ORIGIN }}
+          EXPECTED_SHA: ${{ steps.build.outputs.sha }}
+          EXPECTED_VERSION: ${{ steps.build.outputs.version }}
+        run: node scripts/smoke-test.mjs
+
+      - name: Save deployment evidence
+        if: always()
         run: |
-          curl --fail --retry 5 --retry-delay 5 \
-            "${{ vars.FRONTEND_ORIGIN }}/api/health"
+          echo "Frontend URL: ${{ vars.FRONTEND_ORIGIN }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cloud Run URL: ${{ steps.deploy-api.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployment job status: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"

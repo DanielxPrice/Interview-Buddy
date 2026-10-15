@@ -42,24 +42,43 @@ class FirestoreEvaluationRepository extends EvaluationRepository {
       );
     }
 
-    const sessionReference = this.db.collection("sessions").doc(sessionId);
-    const timestamp = this.getTimestamp(evaluatedAt);
+    const sessionReference = this.db
+      .collection("sessions")
+      .doc(sessionId);
 
-    await sessionReference.set(
-      {
-        mode: mode || null,
-        jobRole: metadata.jobRole || null,
-        experienceLevel: metadata.experienceLevel || null,
-        status: "active",
-        updatedAt: timestamp,
-      },
-      { merge: true }
-    );
-
-    await sessionReference
+    const responseReference = sessionReference
       .collection("responses")
-      .doc(questionId)
-      .set(
+      .doc(questionId);
+
+    await this.db.runTransaction(async (transaction) => {
+      const sessionSnapshot = await transaction.get(
+        sessionReference
+      );
+
+      if (!sessionSnapshot.exists) {
+        const error = new Error("Session not found.");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const session = sessionSnapshot.data();
+
+      if (session.status !== "active") {
+        const error = new Error(
+          "This session is not active."
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const timestamp = this.getTimestamp(evaluatedAt);
+
+      transaction.update(sessionReference, {
+        updatedAt: timestamp,
+      });
+
+      transaction.set(
+        responseReference,
         {
           questionId,
           questionPrompt: questionPrompt || null,
@@ -70,6 +89,7 @@ class FirestoreEvaluationRepository extends EvaluationRepository {
         },
         { merge: true }
       );
+    });
   }
 }
 

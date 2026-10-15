@@ -1,0 +1,307 @@
+/* Settings redesign using Interview Buddy design tokens. */
+
+.ib-settings-page {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  align-self: stretch;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--ib-space-4);
+
+  font-family: var(--ib-font-family);
+  color: var(--ib-text);
+}
+
+.ib-settings-section {
+  width: 100%;
+  min-width: 0;
+  padding: var(--ib-space-5) var(--ib-space-6);
+}
+
+
+/* Main cards */
+
+.ib-settings-section {
+  padding: var(--ib-space-5) var(--ib-space-6);
+}
+
+.ib-settings-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ib-space-3);
+  border-bottom: 1px solid var(--ib-border);
+  padding-bottom: var(--ib-space-4);
+  margin-bottom: var(--ib-space-4);
+}
+
+.ib-settings-section-header h2 {
+  margin: 0;
+  color: var(--ib-text);
+  font-size: var(--ib-font-size-md);
+  font-weight: var(--ib-font-weight-semibold);
+}
+
+.ib-settings-section-header p {
+  margin-top: 4px;
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+}
+
+.ib-settings-section-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ib-accent-700);
+  background: var(--ib-accent-soft);
+  border-radius: var(--ib-radius-sm);
+}
+
+/* Profile fields */
+
+.ib-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ib-space-4);
+}
+
+.ib-settings-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ib-space-2);
+}
+
+.ib-settings-field .ib-input {
+  min-height: 43px;
+}
+
+.ib-settings-field small {
+  color: var(--ib-text-muted);
+  font-size: var(--ib-font-size-xs);
+}
+
+.ib-settings-readonly {
+  background: var(--ib-surface-muted);
+  color: var(--ib-text-secondary);
+  cursor: default;
+}
+
+.ib-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--ib-space-4);
+}
+
+/* General rows */
+
+.ib-settings-split-row,
+.ib-settings-preference-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--ib-space-5);
+}
+
+.ib-settings-split-row h3,
+.ib-settings-preference-row h3 {
+  color: var(--ib-text);
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-semibold);
+  margin: 0 0 4px;
+}
+
+.ib-settings-split-row p,
+.ib-settings-preference-row p {
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+  margin: 0;
+}
+
+.ib-settings-split-row > .ib-button {
+  flex-shrink: 0;
+}
+
+/* Display preferences */
+
+.ib-settings-preference-row {
+  padding: var(--ib-space-3) var(--ib-space-4);
+  background: var(--ib-surface-muted);
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-sm);
+}
+
+.ib-settings-preference-row + .ib-settings-preference-row {
+  margin-top: var(--ib-space-3);
+}
+
+/* Light / Dark buttons */
+
+.ib-settings-segmented {
+  display: inline-flex;
+  padding: 3px;
+  flex-shrink: 0;
+  background: var(--ib-surface);
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-sm);
+}
+
+.ib-settings-segment {
+  min-width: 62px;
+  padding: 7px 12px;
+  color: var(--ib-text-secondary);
+  background: transparent;
+  border-radius: var(--ib-radius-xs);
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-medium);
+}
+
+.ib-settings-segment.is-active {
+  background: var(--ib-accent);
+  color: var(--ib-accent-text);
+  font-weight: var(--ib-font-weight-semibold);
+}
+
+.ib-settings-segment:focus-visible,
+.ib-settings-switch-label input:focus-visible {
+  outline: 3px solid var(--ib-focus-ring);
+  outline-offset: 2px;
+}
+
+
+/* Danger Zone */
+
+.ib-settings-section--danger {
+  background: var(--ib-danger-soft);
+  border-color: var(--ib-danger-border);
+}
+
+.ib-settings-section--danger .ib-settings-section-header {
+  border-bottom-color: var(--ib-danger-border);
+}
+
+.ib-settings-section--danger .ib-settings-section-icon {
+  color: var(--ib-danger);
+  background: var(--ib-surface);
+}
+
+.ib-settings-section--danger .ib-settings-section-header h2 {
+  color: var(--ib-danger);
+}
+
+/* Success / error notifications */
+
+.ib-settings-status {
+  padding: var(--ib-space-3) var(--ib-space-4);
+  border: 1px solid;
+  border-radius: var(--ib-radius-md);
+  font-size: var(--ib-font-size-sm);
+}
+
+.ib-settings-status--success {
+  background: var(--ib-success-soft);
+  color: var(--ib-success);
+  border-color: var(--ib-success-border);
+}
+
+.ib-settings-status--error {
+  background: var(--ib-danger-soft);
+  color: var(--ib-danger);
+  border-color: var(--ib-danger-border);
+}
+
+/* Responsive layout */
+
+@media (max-width: 640px) {
+  .ib-settings-section {
+    padding: var(--ib-space-4);
+  }
+
+  .ib-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ib-settings-split-row,
+  .ib-settings-preference-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--ib-space-3);
+  }
+
+  .ib-settings-actions .ib-button {
+    width: 100%;
+  }
+}
+
+
+/* ==========================================
+   Security & Password Form
+   ========================================== */
+
+.ib-settings-password-form {
+  width: 100%;
+}
+
+/* Three equally sized password fields */
+.ib-settings-password-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ib-space-4);
+  width: 100%;
+}
+
+/* Keep field widths consistent */
+.ib-settings-password-grid .ib-settings-field {
+  min-width: 0;
+}
+
+.ib-settings-password-grid .ib-input {
+  width: 100%;
+  min-height: 43px;
+}
+
+/* Bottom row with explanatory text and action */
+.ib-settings-password-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ib-space-4);
+  margin-top: var(--ib-space-4);
+}
+
+.ib-settings-password-note {
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+  margin: 0;
+}
+
+.ib-settings-password-footer .ib-button {
+  flex-shrink: 0;
+}
+
+/* ==========================================
+   Password Form Responsive Layout
+   ========================================== */
+
+@media (max-width: 760px) {
+  .ib-settings-password-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ib-settings-password-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ib-settings-password-footer .ib-button {
+    width: 100%;
+  }
+}
+

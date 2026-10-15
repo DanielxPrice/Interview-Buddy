@@ -1,4 +1,7 @@
 const { admin } = require("../firebaseAdmin");
+const {
+  normalizeUserRole,
+} = require("../config/roles");
 
 async function requireAuth(req, res, next) {
   const authorizationHeader =
@@ -26,6 +29,9 @@ async function requireAuth(req, res, next) {
       email: decodedToken.email || "",
       emailVerified:
         decodedToken.email_verified === true,
+      role: normalizeUserRole(
+        decodedToken.role
+      ),
     };
 
     return next();

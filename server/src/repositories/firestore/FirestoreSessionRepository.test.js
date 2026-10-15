@@ -1,246 +1,265 @@
-const FirestoreSessionRepository = require("./FirestoreSessionRepository");
+
+const FirestoreSessionRepository = require(
+  "./FirestoreSessionRepository"
+);
 
 const TEST_USER_ID = "user-123";
 const TEST_SESSION_ID = "session-123";
 
-// 2. Shared test data factory
-const createTestSession= (overrides = {}) => ({
+const createTestSession = (overrides = {}) => ({
   userId: TEST_USER_ID,
   mode: "technical",
   jobRole: "Software Engineer",
   experienceLevel: "entry",
-  status: "in_progress",
-  createdAt: "SERVER_TIMESTAMP",
+  status: "active",
+  createdAt: "CREATED_TIMESTAMP",
+  updatedAt: "UPDATED_TIMESTAMP",
   completedAt: null,
   ...overrides,
 });
 
-
-
 describe("FirestoreSessionRepository", () => {
-let repository;
-let mockDb;
-let mockAdmin;
-let mockSessions;
-let mockDocRef;
+  let repository;
+  let db;
+  let collection;
+  let docRef;
+  let transaction;
 
-beforeEach(() => {
-mockDocRef = {
-id: "session-123",
-get: jest.fn(),
-};
+  beforeEach(() => {
+    docRef = {
+      id: TEST_SESSION_ID,
+      get: jest.fn(),
+    };
 
-mockSessions = {
-  add: jest.fn(),
-  doc: jest.fn(),
-};
+    collection = {
+      add: jest.fn(),
+      doc: jest.fn(() => docRef),
+      where: jest.fn(),
+      orderBy: jest.fn(),
+      get: jest.fn(),
+    };
 
-mockDb = {
-  collection: jest.fn().mockReturnValue(mockSessions),
-};
+    collection.where.mockReturnValue(collection);
+    collection.orderBy.mockReturnValue(collection);
 
-mockAdmin = {
-  firestore: {
-    FieldValue: {
-      serverTimestamp: jest.fn().mockReturnValue("SERVER_TIMESTAMP"),
-    },
-  },
-};
+    transaction = {
+      get: jest.fn(),
+      update: jest.fn(),
+    };
 
-repository = new FirestoreSessionRepository({
-  db: mockDb,
-  admin: mockAdmin,
-});
+    db = {
+      collection: jest.fn(() => collection),
+      runTransaction: jest.fn(async (callback) =>
+        callback(transaction)
+      ),
+    };
 
-});
+    repository = new FirestoreSessionRepository({
+      db,
+      admin: null,
+    });
+  });
 
-test("creates a session with in_progress status", async () => {
-const savedData = {
-userId: "user-123",
-mode: "technical",
-jobRole: "Software Engineer",
-experienceLevel: "entry",
-status: "in_progress",
-createdAt: "SERVER_TIMESTAMP",
-completedAt: null,
-};
+  test("rejects missing Firestore database", () => {
+    expect(() =>
+      new FirestoreSessionRepository({ db: null })
+    ).toThrow("requires a Firestore db instance");
+  });
 
-mockSessions.add.mockResolvedValue(mockDocRef);
-mockDocRef.get.mockResolvedValue({
-  id: "session-123",
-  data: () => savedData,
-});
+  test("creates an active session with the expected fields", async () => {
+    collection.add.mockResolvedValue({ id: TEST_SESSION_ID });
 
-const session = await repository.createSession({
-  userId: "user-123",
-  mode: "technical",
-  jobRole: "Software Engineer",
-  experienceLevel: "entry",
-});
+    const result = await repository.createSession({
+      userId: TEST_USER_ID,
+      mode: "technical",
+      jobRole: "Software Engineer",
+      experienceLevel: "entry",
+    });
 
-expect(mockDb.collection).toHaveBeenCalledWith("sessions");
-expect(mockSessions.add).toHaveBeenCalledWith(savedData);
-expect(session).toEqual({
-  id: "session-123",
-  ...savedData,
-});
-expect(session.status).toBe("in_progress");
+    expect(db.collection).toHaveBeenCalledWith("sessions");
+    expect(collection.add).toHaveBeenCalledWith({
+      userId: TEST_USER_ID,
+      mode: "technical",
+      jobRole: "Software Engineer",
+      experienceLevel: "entry",
+      status: "active",
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+      completedAt: null,
+    });
 
+    expect(result).toEqual({
+      id: TEST_SESSION_ID,
+      ...collection.add.mock.calls[0][0],
+    });
+  });
 
-});
+  test("uses Firebase server timestamps when Admin is available", async () => {
+    const serverTimestamp = jest.fn(() => "SERVER_TIMESTAMP");
+    const firebaseAdmin = {
+      firestore: {
+        FieldValue: { serverTimestamp },
+      },
+    };
 
+    repository = new FirestoreSessionRepository({
+      db,
+      admin: firebaseAdmin,
+    });
+    collection.add.mockResolvedValue({ id: TEST_SESSION_ID });
 
-test("finds an existing session by ID", async () => {
-const savedData = {
-userId: "user-123",
-mode: "technical",
-jobRole: "Software Engineer",
-experienceLevel: "entry",
-status: "in_progress",
-completedAt: null,
-};
+    const result = await repository.createSession({
+      userId: TEST_USER_ID,
+      mode: "technical",
+    });
 
-const mockDocument = {
-id: "session-123",
-exists: true,
-data: () => savedData,
-};
+    expect(collection.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobRole: null,
+        experienceLevel: null,
+        createdAt: "SERVER_TIMESTAMP",
+        updatedAt: "SERVER_TIMESTAMP",
+      })
+    );
+    expect(result.createdAt).toBe("SERVER_TIMESTAMP");
+    expect(serverTimestamp).toHaveBeenCalledTimes(2);
+  });
 
-mockSessions.doc.mockReturnValue(mockDocRef);
-mockDocRef.get.mockResolvedValue(mockDocument);
+  test("rejects creating a session without required fields", async () => {
+    await expect(
+      repository.createSession({ userId: null, mode: "technical" })
+    ).rejects.toThrow("userId and mode are required.");
 
-const session = await repository.findById(TEST_SESSION_ID);
+    await expect(
+      repository.createSession({ userId: TEST_USER_ID, mode: null })
+    ).rejects.toThrow("userId and mode are required.");
 
-expect(mockSessions.doc).toHaveBeenCalledWith(TEST_SESSION_ID);
-expect(session).toEqual({
-id: "session-123",
-...savedData,
-});
-});
+    expect(collection.add).not.toHaveBeenCalled();
+  });
 
+  test("finds an existing session by ID", async () => {
+    const savedData = createTestSession();
+    docRef.get.mockResolvedValue({
+      exists: true,
+      id: TEST_SESSION_ID,
+      data: () => savedData,
+    });
 
-test("returns null when a session does not exist", async () => {
-mockSessions.doc.mockReturnValue(mockDocRef);
+    const result = await repository.findById(TEST_SESSION_ID);
 
-mockDocRef.get.mockResolvedValue({
-id: "missing-session",
-exists: false,
-});
+    expect(collection.doc).toHaveBeenCalledWith(TEST_SESSION_ID);
+    expect(result).toEqual({ id: TEST_SESSION_ID, ...savedData });
+  });
 
-const session = await repository.findById("missing-session");
+  test("returns null when a session does not exist", async () => {
+    docRef.get.mockResolvedValue({ exists: false });
 
-expect(session).toBeNull();
-});
+    await expect(repository.findById("missing")).resolves.toBeNull();
+  });
 
+  test("rejects finding a session without an ID", async () => {
+    await expect(repository.findById(null)).rejects.toThrow(
+      "sessionId is required."
+    );
+    expect(collection.doc).not.toHaveBeenCalled();
+  });
 
-test("lists sessions for a specific user", async () => {
-const firstSession = createTestSession();
+  test("lists all sessions for a user using newest-first query", async () => {
+    const firstSession = createTestSession();
+    const secondSession = createTestSession({
+      mode: "behavioral",
+      status: "completed",
+    });
 
-const secondSession = createTestSession({
-mode: "behavioral",
-status: "completed",
-});
+    collection.get.mockResolvedValue({
+      docs: [
+        { id: "session-1", data: () => firstSession },
+        { id: "session-2", data: () => secondSession },
+      ],
+    });
 
-const mockQuery = {
-orderBy: jest.fn().mockReturnThis(),
-get: jest.fn().mockResolvedValue({
-docs: [
-{
-id: "session-1",
-data: () => firstSession,
-},
-{
-id: "session-2",
-data: () => secondSession,
-},
-],
-}),
-};
+    const result = await repository.listByUser(TEST_USER_ID);
 
-mockSessions.where = jest.fn().mockReturnValue(mockQuery);
+    expect(collection.where).toHaveBeenCalledWith(
+      "userId",
+      "==",
+      TEST_USER_ID
+    );
+    expect(collection.orderBy).toHaveBeenCalledWith(
+      "createdAt",
+      "desc"
+    );
+    expect(result).toEqual([
+      { id: "session-1", ...firstSession },
+      { id: "session-2", ...secondSession },
+    ]);
+  });
 
-const sessions = await repository.listByUser("user-123");
+  test("rejects listing sessions without a user ID", async () => {
+    await expect(repository.listByUser(null)).rejects.toThrow(
+      "userId is required."
+    );
+    expect(collection.where).not.toHaveBeenCalled();
+  });
 
-expect(mockSessions.where).toHaveBeenCalledWith(
-"userId",
-"==",
-"user-123"
-);
+  test("completes an active session using a transaction", async () => {
+    const existingData = createTestSession();
+    transaction.get.mockResolvedValue({
+      exists: true,
+      id: TEST_SESSION_ID,
+      data: () => existingData,
+    });
 
-expect(mockQuery.orderBy).toHaveBeenCalledWith(
-"createdAt",
-"desc"
-);
+    const result = await repository.completeSession(TEST_SESSION_ID);
 
-expect(sessions).toEqual([
-{ id: "session-1", ...firstSession },
-{ id: "session-2", ...secondSession },
-]);
-});
+    expect(collection.doc).toHaveBeenCalledWith(TEST_SESSION_ID);
+    expect(db.runTransaction).toHaveBeenCalledTimes(1);
+    expect(transaction.get).toHaveBeenCalledWith(docRef);
+    expect(transaction.update).toHaveBeenCalledWith(
+      docRef,
+      expect.objectContaining({
+        status: "completed",
+        completedAt: expect.any(String),
+        updatedAt: expect.any(String),
+      })
+    );
+    expect(result).toEqual({
+      id: TEST_SESSION_ID,
+      ...existingData,
+      status: "completed",
+    });
+  });
 
-test("completes a session and updates its status", async () => {
-const existingData = {
-userId: "user-123",
-mode: "technical",
-jobRole: "Software Engineer",
-experienceLevel: "entry",
-status: "in_progress",
-completedAt: null,
-};
+  test("does not update an already completed session", async () => {
+    const completedData = createTestSession({
+      status: "completed",
+      completedAt: "PREVIOUS_TIMESTAMP",
+    });
+    transaction.get.mockResolvedValue({
+      exists: true,
+      id: TEST_SESSION_ID,
+      data: () => completedData,
+    });
 
-const completedData = {
-...existingData,
-status: "completed",
-completedAt: "SERVER_TIMESTAMP",
-};
+    const result = await repository.completeSession(TEST_SESSION_ID);
 
-mockSessions.doc.mockReturnValue(mockDocRef);
+    expect(result).toEqual({ id: TEST_SESSION_ID, ...completedData });
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
 
-mockDocRef.get
-.mockResolvedValueOnce({
-exists: true,
-data: () => existingData,
-})
-.mockResolvedValueOnce({
-id: "session-123",
-exists: true,
-data: () => completedData,
-});
+  test("returns null when completing a missing session", async () => {
+    transaction.get.mockResolvedValue({ exists: false });
 
-mockDocRef.update = jest.fn().mockResolvedValue(undefined);
+    await expect(
+      repository.completeSession("missing")
+    ).resolves.toBeNull();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
 
-const session = await repository.completeSession("session-123");
-
-expect(mockSessions.doc).toHaveBeenCalledWith("session-123");
-
-expect(mockDocRef.update).toHaveBeenCalledWith({
-status: "completed",
-completedAt: "SERVER_TIMESTAMP",
-});
-
-expect(session).toEqual({
-id: "session-123",
-...completedData,
-});
-});
-
-
-test("throws an error when completing a nonexistent session", async () => {
-mockSessions.doc.mockReturnValue(mockDocRef);
-
-mockDocRef.get.mockResolvedValue({
-exists: false,
-});
-
-mockDocRef.update = jest.fn();
-
-await expect(
-repository.completeSession("missing-session")
-).rejects.toThrow("Session not found.");
-
-expect(mockDocRef.update).not.toHaveBeenCalled();
-});
-
-
-
+  test("rejects completing a session without an ID", async () => {
+    await expect(repository.completeSession(null)).rejects.toThrow(
+      "sessionId is required."
+    );
+    expect(db.runTransaction).not.toHaveBeenCalled();
+  });
 });

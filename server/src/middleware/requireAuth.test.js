@@ -63,6 +63,7 @@ describe("requireAuth middleware", () => {
       uid: "user-123",
       email: "test@example.com",
       emailVerified: true,
+      role: "user",
     });
 
     expect(next).toHaveBeenCalledTimes(1);
@@ -162,8 +163,70 @@ describe("requireAuth middleware", () => {
       uid: "user-123",
       email: "",
       emailVerified: false,
+      role: "user",
     });
 
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it("copies a valid role claim into req.user", async () => {
+    verifyIdToken.mockResolvedValue({
+      uid: "admin-123",
+      email: "admin@example.com",
+      role: "admin",
+    });
+
+    const req = {
+      get: jest.fn().mockReturnValue(
+        "Bearer admin-token"
+      ),
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await requireAuth(
+      req,
+      res,
+      next
+    );
+
+    expect(
+      req.user.role
+    ).toBe("admin");
+
+    expect(
+      next
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it("defaults an unknown role claim to user", async () => {
+    verifyIdToken.mockResolvedValue({
+      uid: "user-123",
+      role: "superuser",
+    });
+
+    const req = {
+      get: jest.fn().mockReturnValue(
+        "Bearer valid-token"
+      ),
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await requireAuth(
+      req,
+      res,
+      next
+    );
+
+    expect(
+      req.user.role
+    ).toBe("user");
+
+    expect(
+      next
+    ).toHaveBeenCalledTimes(1);
   });
 });

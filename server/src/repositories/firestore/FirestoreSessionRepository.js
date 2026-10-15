@@ -1,83 +1,132 @@
+
 const SessionRepository = require("../contracts/SessionRepository");
 
+/**
+ * Firestore implementation for interview session persistence.
+ */
 class FirestoreSessionRepository extends SessionRepository {
-constructor({ db, admin }) {
-super();
-this.admin = admin;
-this.sessions = db.collection("sessions");
-}
+  constructor({ db, admin }) {
+    super();
 
-async createSession({ userId, mode, jobRole, experienceLevel }) {
-const sessionData = {
-userId,
-mode,
-jobRole,
-experienceLevel,
-status: "in_progress",
-createdAt: this.admin.firestore.FieldValue.serverTimestamp(),
-completedAt: null,
-};
+    if (!db) {
+      throw new Error(
+        "FirestoreSessionRepository requires a Firestore db instance."
+      );
+    }
 
-const docRef = await this.sessions.add(sessionData);
-const savedDoc = await docRef.get();
+    this.db = db;
+    this.admin = admin;
+    this.sessions = db.collection("sessions");
+  }
 
-return {
-  id: savedDoc.id,
-  ...savedDoc.data(),
-};
+  // Return a Firestore server timestamp when available.
+  // The fallback supports isolated tests without Firebase Admin.
+  getTimestamp() {
+    return this.admin?.firestore?.FieldValue?.serverTimestamp
+      ? this.admin.firestore.FieldValue.serverTimestamp()
+      : new Date().toISOString();
+  }
 
+  // Create a new interview session.
+  async createSession({ userId, mode, jobRole, experienceLevel }) {
+    if (!userId || !mode) {
+      throw new Error("userId and mode are required.");
+    }
 
-}
+    const sessionData = {
+      userId,
+      mode,
+      jobRole: jobRole || null,
+      experienceLevel: experienceLevel || null,
+      status: "active",
+      createdAt: this.getTimestamp(),
+      updatedAt: this.getTimestamp(),
+      completedAt: null,
+    };
 
-async findById(sessionId) {
-const doc = await this.sessions.doc(sessionId).get();
+    const sessionRef = await this.sessions.add(sessionData);
 
+    return {
+      id: sessionRef.id,
+      ...sessionData,
+    };
+  }
 
-if (!doc.exists) {
-  return null;
-}
+  // Retrieve a session by ID.
+  // Authorization is enforced by the API routes.
+  async findById(sessionId) {
+    if (!sessionId) {
+      throw new Error("sessionId is required.");
+    }
 
-return {
-  id: doc.id,
-  ...doc.data(),
-};
+    const snapshot = await this.sessions.doc(sessionId).get();
 
+    if (!snapshot.exists) {
+      return null;
+    }
 
-}
+    return {
+      id: snapshot.id,
+      ...snapshot.data(),
+    };
+  }
 
-async listByUser(userId) {
-const snapshot = await this.sessions
-.where("userId", "==", userId)
-.orderBy("createdAt", "desc")
-.get();
+  // Retrieve a user's sessions, newest first.
+  async listByUser(userId) {
+    if (!userId) {
+      throw new Error("userId is required.");
+    }
 
+    const snapshot = await this.sessions
+      .where("userId", "==", userId)
+      .orderBy("createdAt", "desc")
+      .get();
 
-return snapshot.docs.map((doc) => ({
-  id: doc.id,
-  ...doc.data(),
-}));
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  }
 
+  // Complete an existing interview session.
+  async completeSession(sessionId) {
+    if (!sessionId) {
+      throw new Error("sessionId is required.");
+    }
 
-}
+    const sessionRef = this.sessions.doc(sessionId);
 
-async completeSession(sessionId) {
-const sessionRef = this.sessions.doc(sessionId);
-const doc = await sessionRef.get();
+    // Use a transaction to avoid competing updates.
+    return this.db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(sessionRef);
 
+      if (!snapshot.exists) {
+        return null;
+      }
 
-if (!doc.exists) {
-  throw new Error("Session not found.");
-}
+      const session = snapshot.data();
 
-await sessionRef.update({
-  status: "completed",
-  completedAt: this.admin.firestore.FieldValue.serverTimestamp(),
-});
+      // Do not complete an already completed session again.
+      if (session.status === "completed") {
+        return {
+          id: snapshot.id,
+          ...session,
+        };
+      }
 
-return this.findById(sessionId);
+      transaction.update(sessionRef, {
+        status: "completed",
+        completedAt: this.getTimestamp(),
+        updatedAt: this.getTimestamp(),
+      });
 
-
-}
+      return {
+        id: snapshot.id,
+        ...session,
+        status: "completed",
+      };
+    });
+  }
 }
 
 module.exports = FirestoreSessionRepository;

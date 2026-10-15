@@ -51,6 +51,9 @@ jest.mock("../services", () => ({
 
     checkQuizAnswer:
       jest.fn(),
+
+    endSession:
+      jest.fn(),
   },
 }));
 
@@ -470,6 +473,8 @@ describe(
           interviewService
             .getQuestions
         ).toHaveBeenCalledWith({
+          sessionId:
+            "mock-session-1",
           mode:
             "Code Style",
 
@@ -780,6 +785,12 @@ describe(
     test(
       "generates quiz results from answered questions when the interview ends",
       async () => {
+        interviewService.endSession.mockResolvedValue({
+          id: "session-123",
+          status: "completed",
+          completedAt: "2026-10-13T12:00:00.000Z",
+        });
+
         await loadQuizSession();
 
 
@@ -814,55 +825,61 @@ describe(
           )
         );
 
+        await waitFor(() => {
+          expect(
+            onEndInterview
+          ).toHaveBeenCalledWith(
+            expect.objectContaining({
+              mode:
+                "Quiz Style",
 
-        expect(
-          onEndInterview
-        ).toHaveBeenCalledWith(
-          expect.objectContaining({
-            mode:
-              "Quiz Style",
+              score:
+                "100%",
 
-            score:
-              "100%",
+              questionsAnswered:
+                1,
 
-            questionsAnswered:
-              1,
+              eloChange:
+                "+2",
 
-            eloChange:
-              "+2",
+              isCorrect:
+                true,
 
-            isCorrect:
-              true,
+              answerSubmitted:
+                true,
 
-            answerSubmitted:
-              true,
+              jobRole:
+                "Software Engineer",
 
-            jobRole:
-              "Software Engineer",
+              experienceLevel:
+                "Intermediate",
 
-            experienceLevel:
-              "Intermediate",
+              tags: [
+                "algorithms",
+              ],
 
-            tags: [
-              "algorithms",
-            ],
+              perQuestion: [
+                expect.objectContaining({
+                  questionId:
+                    "quiz-test-001",
 
-            perQuestion: [
-              expect.objectContaining({
-                questionId:
-                  "quiz-test-001",
+                  userAnswer:
+                    "Queue",
 
-                userAnswer:
-                  "Queue",
+                  isCorrect:
+                    true,
 
-                isCorrect:
-                  true,
+                  score:
+                    100,
+                }),
+              ],
+            })
+          );
+        });
 
-                score:
-                  100,
-              }),
-            ],
-          })
+        expect(interviewService.endSession).toHaveBeenCalledTimes(1);
+        expect(interviewService.endSession).toHaveBeenCalledWith(
+          "mock-session-1"
         );
       }
     );
@@ -962,6 +979,185 @@ describe(
         );
       }
     );
+
+    test(
+      "shows a quota-specific error when the daily allowance changes before questions load",
+      async () => {
+        const quotaError =
+          new Error(
+            "Daily AI question limit exceeded. 2 questions remain today."
+          );
+
+        quotaError.code =
+          "daily-question-limit-exceeded";
+
+        quotaError.status =
+          429;
+
+        quotaError.quota = {
+          limit: 20,
+          used: 18,
+          requested: 10,
+          remaining: 2,
+        };
+
+        interviewService
+          .getQuestions
+          .mockRejectedValue(
+            quotaError
+          );
+
+        renderPage({
+          selectedMode:
+            "Code Style",
+        });
+
+        expect(
+          await screen.findByRole(
+            "heading",
+            {
+              name:
+                "Not enough questions remaining",
+            }
+          )
+        ).toBeInTheDocument();
+
+        expect(
+          screen.getByText(
+            /you now have 2 code \+ theoretical questions remaining today/i
+          )
+        ).toBeInTheDocument();
+
+        expect(
+          screen.getByRole(
+            "button",
+            {
+              name:
+                "Return to Interview Setup",
+            }
+          )
+        ).toBeInTheDocument();
+
+        expect(
+          screen.queryByRole(
+            "button",
+            {
+              name:
+                "Retry Question Load",
+            }
+          )
+        ).not.toBeInTheDocument();
+      }
+    );
+    test(
+  "returns to Interview Setup after a quota loading error",
+  async () => {
+    const quotaError =
+      new Error(
+        "Daily AI question limit exceeded. 3 questions remain today."
+      );
+
+    quotaError.code =
+      "daily-question-limit-exceeded";
+
+    quotaError.status =
+      429;
+
+    quotaError.quota = {
+      limit: 20,
+      used: 17,
+      requested: 10,
+      remaining: 3,
+    };
+
+    interviewService
+      .getQuestions
+      .mockRejectedValue(
+        quotaError
+      );
+
+    renderPage({
+      selectedMode:
+        "Theoretical Style",
+    });
+
+    userEvent.click(
+      await screen.findByRole(
+        "button",
+        {
+          name:
+            "Return to Interview Setup",
+        }
+      )
+    );
+
+    expect(
+      onNavigate
+    ).toHaveBeenCalledWith(
+      PAGES.INTERVIEW_SETUP
+    );
+
+    /*
+     * A quota error should not retry
+     * the stale question request.
+     */
+    expect(
+      interviewService
+        .getQuestions
+    ).toHaveBeenCalledTimes(
+      1
+    );
+  }
+);
+test(
+  "shows daily limit reached when no counted questions remain",
+  async () => {
+    const quotaError =
+      new Error(
+        "Daily AI question limit exceeded. 0 questions remain today."
+      );
+
+    quotaError.code =
+      "daily-question-limit-exceeded";
+
+    quotaError.status =
+      429;
+
+    quotaError.quota = {
+      limit: 20,
+      used: 20,
+      requested: 5,
+      remaining: 0,
+    };
+
+    interviewService
+      .getQuestions
+      .mockRejectedValue(
+        quotaError
+      );
+
+    renderPage({
+      selectedMode:
+        "Code Style",
+    });
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        {
+          name:
+            "Daily question limit reached",
+        }
+      )
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText(
+        /used your daily code \+ theoretical question allowance of 20 questions/i
+      )
+    ).toBeInTheDocument();
+  }
+);
 
     /* ========================================================
     SCRUM-58 — ASYNC SUBMISSION UX

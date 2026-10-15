@@ -90,6 +90,12 @@ describe("FirestoreUserRepository", () => {
         username: "TestUser",
         usernameLower: "testuser",
         email: "test@example.com",
+        role: "user",
+
+        settings: {
+          theme: "light",
+        },
+
         createdAt: "mock-server-timestamp",
         updatedAt: "mock-server-timestamp",
       });
@@ -99,6 +105,12 @@ describe("FirestoreUserRepository", () => {
         username: "TestUser",
         usernameLower: "testuser",
         email: "test@example.com",
+        role: "user",
+
+        settings: {
+          theme: "light",
+        },
+
         createdAt: "mock-server-timestamp",
         updatedAt: "mock-server-timestamp",
       });

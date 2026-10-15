@@ -55,6 +55,7 @@ jobs:
       - name: Install dependencies and build
         run: |
           npm ci
+          npm run generate:metadata
           npm run build
 
       - name: Deploy Firebase Hosting preview

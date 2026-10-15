@@ -1,38 +1,32 @@
-# CI PIPELINE - Test both from /src and /server
+# CI - validate the application and publish a versioned frontend build from main.
 name: CI Pipeline
 
-# Whenever we PR w/ main or merge it (push to main).
 on:
   push:
-    branches:
-      - main
-
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-
     steps:
-        # Checkout repo
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-        # Generate unique build ID
       - name: Generate build version
         shell: bash
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
           BUILD_VERSION="IB-build-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
           echo "BUILD_VERSION=$BUILD_VERSION" >> "$GITHUB_ENV"
-          echo "Build version: $BUILD_VERSION"
           echo "### Build version: \`$BUILD_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
 
-        # Setup Node
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -40,41 +34,78 @@ jobs:
             package-lock.json
             server/package-lock.json
 
-        # Match CI environment
       - name: Use npm 11
         run: npm install -g npm@11.11.0
 
-      # Frontend
       - name: Install frontend dependencies
         run: npm ci
 
-      # Run lint on frontend code
+      - name: Verify bundled setup metadata matches the seed data
+        run: |
+          npm run generate:metadata
+          git diff --exit-code -- src/data/questionMetadata.json
+
+      - name: Test metadata generation and cache consistency
+        run: node --test scripts/questionMetadata.test.cjs
+
       - name: Run frontend lint
         run: npm run lint
-      - name: run login page test
-        run:  npm test -- --watchAll=false --runTestsByPath src/pages/LoginPage.test.js
-
-      - name: Run login tests
-        run: npm test -- --watchAll=false --runTestsByPath src/services/authService.test.js
-      
-      - name: Run interview Setup tests
-        run: npm test -- --watchAll=false --runTestsByPath src/pages/InterviewSetupPage.test.js
-
-      - name: Run Interview Session tests
-        run: npm test -- --watchAll=false --runTestsByPath src/pages/InterviewSessionPage.test.js 
 
       - name: Run frontend tests
         run: npm test -- --watchAll=false
 
+      - name: Test deployment smoke test runner
+        run: node --test scripts/smoke-test.test.mjs
+
+      # For main builds, embed the same production Firebase config CD will use.
+      # The web config is public (not an admin credential or AI provider key).
+      - name: Validate production Firebase configuration
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          REACT_APP_FIREBASE_API_KEY: ${{ vars.REACT_APP_FIREBASE_API_KEY }}
+          REACT_APP_FIREBASE_AUTH_DOMAIN: ${{ vars.REACT_APP_FIREBASE_AUTH_DOMAIN }}
+          REACT_APP_FIREBASE_PROJECT_ID: ${{ vars.REACT_APP_FIREBASE_PROJECT_ID }}
+          REACT_APP_FIREBASE_STORAGE_BUCKET: ${{ vars.REACT_APP_FIREBASE_STORAGE_BUCKET }}
+          REACT_APP_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.REACT_APP_FIREBASE_MESSAGING_SENDER_ID }}
+          REACT_APP_FIREBASE_APP_ID: ${{ vars.REACT_APP_FIREBASE_APP_ID }}
+        run: |
+          for name in REACT_APP_FIREBASE_API_KEY REACT_APP_FIREBASE_AUTH_DOMAIN \
+            REACT_APP_FIREBASE_PROJECT_ID REACT_APP_FIREBASE_STORAGE_BUCKET \
+            REACT_APP_FIREBASE_MESSAGING_SENDER_ID REACT_APP_FIREBASE_APP_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository variable $name"
+              exit 1
+            fi
+          done
+
       - name: Build React application
+        env:
+          REACT_APP_API_BASE_URL: /api
+          REACT_APP_FIREBASE_API_KEY: ${{ vars.REACT_APP_FIREBASE_API_KEY }}
+          REACT_APP_FIREBASE_AUTH_DOMAIN: ${{ vars.REACT_APP_FIREBASE_AUTH_DOMAIN }}
+          REACT_APP_FIREBASE_PROJECT_ID: ${{ vars.REACT_APP_FIREBASE_PROJECT_ID }}
+          REACT_APP_FIREBASE_STORAGE_BUCKET: ${{ vars.REACT_APP_FIREBASE_STORAGE_BUCKET }}
+          REACT_APP_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.REACT_APP_FIREBASE_MESSAGING_SENDER_ID }}
+          REACT_APP_FIREBASE_APP_ID: ${{ vars.REACT_APP_FIREBASE_APP_ID }}
         run: npm run build
 
-      # Backend
+      - name: Record build metadata in frontend
+        if: github.event_name == 'push'
+        run: |
+          node -e 'const fs=require("fs"); const p={buildVersion:process.env.BUILD_VERSION,sourceCommitSha:process.env.GITHUB_SHA,ciRunId:process.env.GITHUB_RUN_ID,ciRunAttempt:process.env.GITHUB_RUN_ATTEMPT}; fs.writeFileSync("build/deployment-info.json",JSON.stringify(p,null,2)+"\n")'
+
       - name: Install server dependencies
         working-directory: ./server
         run: npm ci
 
-      # Run lint on backend code
+      - name: Install Cloud Functions dependencies
+        working-directory: ./functions
+        run: npm install --no-audit --no-fund
+
+      - name: Test Firestore metadata invalidation logic
+        run: node --test functions/relevantMetadata.test.cjs
+
       - name: Run server lint
         working-directory: ./server
         run: npm run lint
@@ -83,4 +114,13 @@ jobs:
         working-directory: ./server
         run: npm test -- --watchAll=false
 
-   
+      # Only passing main-branch CI runs publish an artifact. CD downloads
+      # this exact frontend output instead of building it a second time.
+      - name: Upload tested frontend artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: interview-buddy-frontend
+          path: build/
+          if-no-files-found: error
+          retention-days: 14
