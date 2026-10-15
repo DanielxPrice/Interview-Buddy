@@ -19,8 +19,8 @@ class FirestoreSessionRepository extends SessionRepository {
     this.sessions = db.collection("sessions");
   }
 
-  //ChatGPT stated that this timestamp is unresolved until Firestore commits, but we will account for that when writing tests
-  //and API responses.
+  // Return a Firestore server timestamp when available.
+  // The fallback supports isolated tests without Firebase Admin.
   getTimestamp() {
     return this.admin?.firestore?.FieldValue?.serverTimestamp
       ? this.admin.firestore.FieldValue.serverTimestamp()
@@ -52,7 +52,8 @@ class FirestoreSessionRepository extends SessionRepository {
     };
   }
 
-  // Retrieve a session by ID, does not provide authorization checks.
+  // Retrieve a session by ID.
+  // Authorization is enforced by the API routes.
   async findById(sessionId) {
     if (!sessionId) {
       throw new Error("sessionId is required.");
@@ -70,7 +71,7 @@ class FirestoreSessionRepository extends SessionRepository {
     };
   }
 
-  // Retrieve a user's sessions, newest first, may require composite index, but Firestore should supply
+  // Retrieve a user's sessions, newest first.
   async listByUser(userId) {
     if (!userId) {
       throw new Error("userId is required.");
@@ -95,7 +96,7 @@ class FirestoreSessionRepository extends SessionRepository {
 
     const sessionRef = this.sessions.doc(sessionId);
 
-    //Avoid competing updates
+    // Use a transaction to avoid competing updates.
     return this.db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(sessionRef);
 
@@ -105,6 +106,7 @@ class FirestoreSessionRepository extends SessionRepository {
 
       const session = snapshot.data();
 
+      // Do not complete an already completed session again.
       if (session.status === "completed") {
         return {
           id: snapshot.id,

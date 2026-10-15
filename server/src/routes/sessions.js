@@ -8,22 +8,42 @@ function createSessionRouter({ sessionRepository }) {
 
   const router = express.Router();
 
+  // Additional safeguard; app.js also applies requireAuth before this router.
+  router.use((req, res, next) => {
+    if (!req.user?.uid) {
+      return res.status(401).json({
+        error: "Authentication is required.",
+      });
+    }
+
+    return next();
+  });
+
   // POST /api/sessions
   router.post("/", async (req, res, next) => {
     try {
       const { mode, jobRole, experienceLevel } = req.body || {};
 
-      if (!mode || typeof mode !== "string" || !mode.trim()) {
+      if (typeof mode !== "string" || !mode.trim()) {
         return res.status(400).json({
           error: "mode is required.",
+        });
+      }
+
+      if (
+        typeof jobRole !== "string" || !jobRole.trim() ||
+        typeof experienceLevel !== "string" || !experienceLevel.trim()
+      ) {
+        return res.status(400).json({
+          error: "Job role and experience level are required.",
         });
       }
 
       const session = await sessionRepository.createSession({
         userId: req.user.uid,
         mode: mode.trim(),
-        jobRole,
-        experienceLevel,
+        jobRole: jobRole.trim(),
+        experienceLevel: experienceLevel.trim(),
       });
 
       return res.status(201).json(session);
@@ -35,10 +55,7 @@ function createSessionRouter({ sessionRepository }) {
   // GET /api/sessions
   router.get("/", async (req, res, next) => {
     try {
-      const sessions = await sessionRepository.listByUser(
-        req.user.uid
-      );
-
+      const sessions = await sessionRepository.listByUser(req.user.uid);
       return res.json(sessions);
     } catch (error) {
       return next(error);
@@ -48,14 +65,10 @@ function createSessionRouter({ sessionRepository }) {
   // GET /api/sessions/:sessionId
   router.get("/:sessionId", async (req, res, next) => {
     try {
-      const session = await sessionRepository.findById(
-        req.params.sessionId
-      );
+      const session = await sessionRepository.findById(req.params.sessionId);
 
       if (!session) {
-        return res.status(404).json({
-          error: "Session not found.",
-        });
+        return res.status(404).json({ error: "Session not found." });
       }
 
       if (session.userId !== req.user.uid) {
@@ -73,14 +86,10 @@ function createSessionRouter({ sessionRepository }) {
   // PATCH /api/sessions/:sessionId/complete
   router.patch("/:sessionId/complete", async (req, res, next) => {
     try {
-      const session = await sessionRepository.findById(
-        req.params.sessionId
-      );
+      const session = await sessionRepository.findById(req.params.sessionId);
 
       if (!session) {
-        return res.status(404).json({
-          error: "Session not found.",
-        });
+        return res.status(404).json({ error: "Session not found." });
       }
 
       if (session.userId !== req.user.uid) {
@@ -89,13 +98,12 @@ function createSessionRouter({ sessionRepository }) {
         });
       }
 
-      const completedSession =
-        await sessionRepository.completeSession(req.params.sessionId);
+      const completedSession = await sessionRepository.completeSession(
+        req.params.sessionId
+      );
 
       if (!completedSession) {
-        return res.status(404).json({
-          error: "Session not found.",
-        });
+        return res.status(404).json({ error: "Session not found." });
       }
 
       return res.json(completedSession);

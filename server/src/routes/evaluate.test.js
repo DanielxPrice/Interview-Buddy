@@ -1,9 +1,35 @@
+
 jest.mock("../services/aiService", () => ({
   generateEvaluation: jest.fn(),
 }));
 
 const aiService = require("../services/aiService");
 const createEvaluateRouter = require("./evaluate");
+
+const QUESTION_ID = "theory-test-001";
+const SESSION_ID = "session-1";
+const USER_ID = "test-user";
+
+const privateQuestion = {
+  id: QUESTION_ID,
+  mode: "Theoretical Style",
+  prompt: "Explain a test concept.",
+  referenceAnswer: "Private reference answer.",
+  gradingCriteria: [
+    { name: "Accuracy", weight: 60, description: "Accurate." },
+    { name: "Clarity", weight: 40, description: "Clear." },
+  ],
+  active: true,
+};
+
+const successfulEvaluation = {
+  score: 90,
+  feedback: "Strong answer.",
+  strengths: ["Accurate"],
+  weaknesses: [],
+  suggestions: [],
+  criterionResults: [],
+};
 
 function getPostHandler(router) {
   const layer = router.stack.find(
@@ -27,399 +53,348 @@ function createResponse() {
   };
 }
 
-const privateQuestion = {
-  id: "theory-test-001",
-  mode: "Theoretical Style",
-  prompt: "Explain a test concept.",
-  referenceAnswer: "Private reference answer.",
-  gradingCriteria: [
-    { name: "Accuracy", weight: 60, description: "Accurate." },
-    { name: "Clarity", weight: 40, description: "Clear." },
-  ],
-  active: true,
-};
+function createTestContext(body = {}) {
+  return {
+    req: {
+      user: { uid: USER_ID },
+      body,
+    },
+    res: createResponse(),
+    next: jest.fn(),
+  };
+}
 
 describe("POST /api/evaluate route", () => {
   let questionRepository;
   let evaluationRepository;
   let sessionRepository;
-  let router;
   let handler;
 
   beforeEach(() => {
     jest.clearAllMocks();
+
     questionRepository = {
       findById: jest.fn().mockResolvedValue(privateQuestion),
     };
+
     evaluationRepository = {
       saveEvaluation: jest.fn().mockResolvedValue(undefined),
     };
+
     sessionRepository = {
       findById: jest.fn().mockResolvedValue({
-        id: "session-1",
-        userId: "test-user",
+        id: SESSION_ID,
+        userId: USER_ID,
         status: "active",
       }),
     };
-    router = createEvaluateRouter({
+
+    const router = createEvaluateRouter({
       questionRepository,
       evaluationRepository,
       sessionRepository,
     });
+
     handler = getPostHandler(router);
+
+    aiService.generateEvaluation.mockResolvedValue(successfulEvaluation);
   });
 
-  it("loads the private question through the repository and delegates to aiService", async () => {
-    const evaluation = {
-      score: 90,
-      feedback: "Strong answer.",
-      strengths: ["Accurate"],
-      weaknesses: [],
-      suggestions: [],
-      criterionResults: [],
-    };
-    aiService.generateEvaluation.mockResolvedValue(evaluation);
+  async function submit(body) {
+    const context = createTestContext(body);
+    await handler(context.req, context.res, context.next);
+    return context;
+  }
 
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        requestId: "request-1",
-        questionId: privateQuestion.id,
-        candidateResponse: "Candidate answer",
-        metadata: {
-          sessionId: "session-1",
-          jobRole: "Software Engineer",
-          experienceLevel: "Intermediate",
-        },
+  it("evaluates a private question and saves an authorized session response", async () => {
+    const { res, next } = await submit({
+      requestId: "request-1",
+      questionId: QUESTION_ID,
+      candidateResponse: "Candidate answer",
+      metadata: {
+        sessionId: SESSION_ID,
+        jobRole: "Software Engineer",
+        experienceLevel: "Intermediate",
       },
-    };
-    const res = createResponse();
-    const next = jest.fn();
+    });
 
-    await handler(req, res, next);
+    expect(questionRepository.findById).toHaveBeenCalledWith(QUESTION_ID);
+    expect(sessionRepository.findById).toHaveBeenCalledWith(SESSION_ID);
 
-    expect(questionRepository.findById).toHaveBeenCalledWith(privateQuestion.id);
     expect(aiService.generateEvaluation).toHaveBeenCalledWith({
       question: privateQuestion,
       candidateResponse: "Candidate answer",
     });
+
     expect(evaluationRepository.saveEvaluation).toHaveBeenCalledWith(
       expect.objectContaining({
-        sessionId: "session-1",
-        questionId: privateQuestion.id,
+        sessionId: SESSION_ID,
+        questionId: QUESTION_ID,
         candidateResponse: "Candidate answer",
-        evaluation,
+        evaluation: successfulEvaluation,
       })
     );
+
     expect(res.statusCode).toBe(200);
     expect(res.payload).toEqual({
       requestId: "request-1",
-      questionId: privateQuestion.id,
-      evaluation,
+      questionId: QUESTION_ID,
+      evaluation: successfulEvaluation,
     });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("rejects Quiz Style questions before calling the AI service", async () => {
-    questionRepository.findById.mockResolvedValue({
-      ...privateQuestion,
-      mode: "Quiz Style",
-    });
-
-    const req = {
-      body: {
-        questionId: privateQuestion.id,
-        candidateResponse: "Answer",
-      },
-    };
-    const res = createResponse();
-    const next = jest.fn();
-
-    await handler(req, res, next);
-
-    expect(res.statusCode).toBe(400);
-    expect(res.payload.error).toMatch(/Quiz Style/);
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
-  });
-
-  it("requires a question id and candidate response", async () => {
-    const res = createResponse();
-    await handler({ body: {} }, res, jest.fn());
-    expect(res.statusCode).toBe(400);
-    expect(res.payload.error).toBe("questionId is required.");
-  });
-
-  //Additional tests, check sessionId
-  it("rejects evaluations for nonexistent sessions", async () => {
-    sessionRepository.findById.mockResolvedValue(null);
-
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        questionId: privateQuestion.id,
-        candidateResponse: "Candidate answer",
-        metadata: {
-          sessionId: "missing-session",
-        },
-      },
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await handler(req, res, next);
-
-    expect(res.statusCode).toBe(404);
-
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
-
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  //Checks that the evaluation is rejected if the session belongs to another user
-  it("rejects evaluations belonging to another user", async () => {
-    sessionRepository.findById.mockResolvedValue({
-      id: "session-1",
-      userId: "another-user",
-      status: "active",
-    });
-
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        questionId: privateQuestion.id,
-        candidateResponse: "Candidate answer",
-        metadata: {
-          sessionId: "session-1",
-        },
-      },
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await handler(req, res, next);
-
-    expect(res.statusCode).toBe(403);
-
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
-
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  //Reject completed sessions
-  it("rejects evaluations for completed sessions", async () => {
-    sessionRepository.findById.mockResolvedValue({
-      id: "session-1",
-      userId: "test-user",
-      status: "completed",
-    });
-
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        questionId: privateQuestion.id,
-        candidateResponse: "Candidate answer",
-        metadata: {
-          sessionId: "session-1",
-        },
-      },
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await handler(req, res, next);
-
-    expect(res.statusCode).toBe(409);
-
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
-
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  //Reject empty response
   it.each([
-    undefined,
-    "",
-    "   ",
-  ])("rejects an empty candidate response: %p", async (candidateResponse) => {
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        questionId: privateQuestion.id,
-        candidateResponse,
-        metadata: { sessionId: "session-1" },
-      },
-    };
+    ["one below the limit", 9999],
+    ["exactly at the limit", 10000],
+  ])("accepts a response %s (%i characters)", async (_, length) => {
+    const candidateResponse = "a".repeat(length);
 
-    const res = createResponse();
-    const next = jest.fn();
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse,
+    });
 
-    await handler(req, res, next);
+    expect(res.statusCode).toBe(200);
+    expect(aiService.generateEvaluation).toHaveBeenCalledWith({
+      question: privateQuestion,
+      candidateResponse,
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects a response above the 10000-character limit", async () => {
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse: "a".repeat(10001),
+    });
 
     expect(res.statusCode).toBe(400);
-    expect(res.payload.error).toBe("candidateResponse is required.");
-
+    expect(res.payload.error).toMatch(/maximum length/i);
+    expect(res.payload.code).toBe("CANDIDATE_RESPONSE_TOO_LONG");
     expect(questionRepository.findById).not.toHaveBeenCalled();
     expect(aiService.generateEvaluation).not.toHaveBeenCalled();
     expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
-  //Reject inactive question
-  it("rejects submissions for inactive questions", async () => {
-    questionRepository.findById.mockResolvedValue({
-      ...privateQuestion,
-      active: false,
+  it.each([
+    ["object", { text: "My answer" }],
+    ["array", ["My answer"]],
+    ["number", 123],
+    ["boolean", true],
+  ])("rejects a %s candidate response", async (_, candidateResponse) => {
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse,
     });
 
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        questionId: privateQuestion.id,
-        candidateResponse: "Candidate answer",
-        metadata: { sessionId: "session-1" },
-      },
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await handler(req, res, next);
-
-    expect(res.statusCode).toBe(409);
-    expect(res.payload.error).toBe("This question is inactive.");
-
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.code).toBe("CANDIDATE_RESPONSE_REQUIRED");
+    expect(questionRepository.findById).not.toHaveBeenCalled();
     expect(aiService.generateEvaluation).not.toHaveBeenCalled();
     expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
-  //If DB fails, error should be propagated
-  it("propagates evaluation persistence failures", async () => {
-    const evaluation = {
-      score: 85,
-      feedback: "Good answer.",
-      strengths: [],
-      weaknesses: [],
-      suggestions: [],
-      criterionResults: [],
-    };
+  it("rejects a missing question ID", async () => {
+    const { res, next } = await submit({
+      candidateResponse: "My answer",
+    });
 
-    aiService.generateEvaluation.mockResolvedValue(evaluation);
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.error).toBe("questionId is required.");
+    expect(res.payload.code).toBe("QUESTION_NOT_FOUND");
+    expect(questionRepository.findById).not.toHaveBeenCalled();
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
 
+  it.each([undefined, "", "   \n\t "])(
+    "rejects a missing or blank candidate response: %p",
+    async (candidateResponse) => {
+      const { res, next } = await submit({
+        questionId: QUESTION_ID,
+        candidateResponse,
+        metadata: { sessionId: SESSION_ID },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.payload.error).toBe("candidateResponse is required.");
+      expect(res.payload.code).toBe("CANDIDATE_RESPONSE_REQUIRED");
+      expect(questionRepository.findById).not.toHaveBeenCalled();
+      expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+      expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    }
+  );
+
+  it("returns 404 when the question does not exist", async () => {
+    questionRepository.findById.mockResolvedValue(null);
+
+    const { res, next } = await submit({
+      questionId: "missing-question",
+      candidateResponse: "My answer",
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.payload.error).toBe("Question not found.");
+    expect(res.payload.code).toBe("QUESTION_NOT_FOUND");
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects inactive questions", async () => {
+    questionRepository.findById.mockResolvedValue({
+      ...privateQuestion,
+      active: false,
+    });
+
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse: "My answer",
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.payload.error).toBe("This question is inactive.");
+    expect(res.payload.code).toBe("QUESTION_INACTIVE");
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects Quiz Style before calling AI", async () => {
+    questionRepository.findById.mockResolvedValue({
+      ...privateQuestion,
+      mode: "Quiz Style",
+    });
+
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse: "My answer",
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.error).toMatch(/Quiz Style/);
+    expect(res.payload.code).toBe("UNSUPPORTED_EVALUATION_MODE");
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects evaluations for nonexistent sessions", async () => {
+    sessionRepository.findById.mockResolvedValue(null);
+
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse: "My answer",
+      metadata: { sessionId: "missing-session" },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects evaluations for another user's session", async () => {
+    sessionRepository.findById.mockResolvedValue({
+      id: SESSION_ID,
+      userId: "another-user",
+      status: "active",
+    });
+
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse: "My answer",
+      metadata: { sessionId: SESSION_ID },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects evaluations for completed sessions", async () => {
+    sessionRepository.findById.mockResolvedValue({
+      id: SESSION_ID,
+      userId: USER_ID,
+      status: "completed",
+    });
+
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse: "My answer",
+      metadata: { sessionId: SESSION_ID },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("passes Firestore persistence failures to the error handler", async () => {
     const databaseError = new Error("Firestore write failed.");
-
     evaluationRepository.saveEvaluation.mockRejectedValue(databaseError);
 
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        questionId: privateQuestion.id,
-        candidateResponse: "Candidate answer",
-        metadata: { sessionId: "session-1" },
-      },
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await handler(req, res, next);
+    const { res, next } = await submit({
+      questionId: QUESTION_ID,
+      candidateResponse: "My answer",
+      metadata: { sessionId: SESSION_ID },
+    });
 
     expect(aiService.generateEvaluation).toHaveBeenCalledTimes(1);
     expect(evaluationRepository.saveEvaluation).toHaveBeenCalledTimes(1);
-
     expect(next).toHaveBeenCalledWith(databaseError);
     expect(res.payload).toBeNull();
   });
 
-  //If AI fails, error should be propagated and no evaluation should be persisted
-  it("does not persist an answer if AI evaluation fails", async () => {
+  it("does not persist an evaluation when AI fails", async () => {
     const aiError = new Error("AI evaluation unavailable.");
     aiError.statusCode = 503;
-
     aiService.generateEvaluation.mockRejectedValue(aiError);
 
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        requestId: "request-failed",
-        questionId: privateQuestion.id,
-        candidateResponse: "Candidate answer",
-        metadata: { sessionId: "session-1" },
-      },
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await handler(req, res, next);
+    const { res, next } = await submit({
+      requestId: "request-failed",
+      questionId: QUESTION_ID,
+      candidateResponse: "My answer",
+      metadata: { sessionId: SESSION_ID },
+    });
 
     expect(res.statusCode).toBe(503);
     expect(res.payload).toEqual({
       error: "AI evaluation unavailable.",
       requestId: "request-failed",
     });
-
     expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
-    
-  //Verifies that backend uses the stored private question without returning reference as top level response field
-  //Protects raw private fields
-  it("does not expose stored reference answers in the evaluation response", async () => {
-    const evaluation = {
-      score: 90,
-      feedback: "Strong explanation.",
-      strengths: ["Clear reasoning"],
-      weaknesses: [],
-      suggestions: [],
-      criterionResults: [],
-    };
 
-    aiService.generateEvaluation.mockResolvedValue(evaluation);
-
-    const req = {
-      user: { uid: "test-user" },
-      body: {
-        requestId: "reference-test-1",
-        questionId: privateQuestion.id,
-        candidateResponse: "My explanation of the concept.",
-        metadata: {
-          sessionId: "session-1",
-        },
-      },
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await handler(req, res, next);
+  it("does not return raw private grading fields", async () => {
+    const { res, next } = await submit({
+      requestId: "reference-test",
+      questionId: QUESTION_ID,
+      candidateResponse: "My explanation.",
+      metadata: { sessionId: SESSION_ID },
+    });
 
     expect(res.statusCode).toBe(200);
-
     expect(aiService.generateEvaluation).toHaveBeenCalledWith({
       question: privateQuestion,
-      candidateResponse: "My explanation of the concept.",
+      candidateResponse: "My explanation.",
     });
 
     expect(res.payload).toEqual({
-      requestId: "reference-test-1",
-      questionId: privateQuestion.id,
-      evaluation,
+      requestId: "reference-test",
+      questionId: QUESTION_ID,
+      evaluation: successfulEvaluation,
     });
 
     expect(res.payload).not.toHaveProperty("referenceAnswer");
     expect(res.payload).not.toHaveProperty("gradingCriteria");
-
     expect(next).not.toHaveBeenCalled();
   });
 });
