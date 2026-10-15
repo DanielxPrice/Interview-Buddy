@@ -27,6 +27,15 @@ function createResponse() {
   };
 }
 
+function createTestContext(body = {}) {
+  return {
+    req: { body },
+    res: createResponse(),
+    next: jest.fn(),
+  };
+}
+
+
 const privateQuestion = {
   id: "theory-test-001",
   mode: "Theoretical Style",
@@ -59,6 +68,82 @@ describe("POST /api/evaluate route", () => {
     });
     handler = getPostHandler(router);
   });
+
+
+it.each([
+  ["one below the limit", 9999],
+  ["exactly at the limit", 10000],
+])(
+  "accepts a candidate response %s (%i characters)",
+  async (_, length) => {
+    const candidateResponse = "a".repeat(length);
+
+    aiService.generateEvaluation.mockResolvedValue({
+      score: 90,
+      feedback: "Good answer.",
+      strengths: [],
+      weaknesses: [],
+      suggestions: [],
+      criterionResults: [],
+    });
+
+    const { req, res, next } = createTestContext({
+      questionId: privateQuestion.id,
+      candidateResponse,
+    });
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(aiService.generateEvaluation).toHaveBeenCalledWith({
+      question: privateQuestion,
+      candidateResponse,
+    });
+    expect(next).not.toHaveBeenCalled();
+  }
+);
+
+it("rejects a candidate response one character over the limit", async () => {
+  const candidateResponse = "a".repeat(10001);
+
+  const { req, res, next } = createTestContext({
+    questionId: privateQuestion.id,
+    candidateResponse,
+  });
+
+  await handler(req, res, next);
+
+  expect(res.statusCode).toBe(400);
+  expect(res.payload.error).toMatch(/maximum length/i);
+  expect(questionRepository.findById).not.toHaveBeenCalled();
+  expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+  expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+  expect(next).not.toHaveBeenCalled();
+});
+
+
+  
+it.each([
+  ["object", { text: "My answer" }],
+  ["array", ["My answer"]],
+  ["number", 123],
+  ["boolean", true],
+])("rejects a candidate response supplied as a %s", async (_, answer) => {
+  const {req, res, next } = createTestContext({
+    questionId: privateQuestion.id,
+    candidateResponse: answer,
+  });
+
+  await handler(req, res, next);
+
+  expect(res.statusCode).toBe(400);
+  expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+  expect(next).not.toHaveBeenCalled();
+ }
+
+);
+
+
 
   it("loads the private question through the repository and delegates to aiService", async () => {
     const evaluation = {
@@ -131,12 +216,169 @@ describe("POST /api/evaluate route", () => {
     expect(res.payload.error).toMatch(/Quiz Style/);
     expect(aiService.generateEvaluation).not.toHaveBeenCalled();
     expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
   });
 
-  it("requires a question id and candidate response", async () => {
+  
+  it("rejects a missing question ID without calling dependencies", async () => {
     const res = createResponse();
-    await handler({ body: {} }, res, jest.fn());
+
+    await handler(
+      { body: { candidateResponse: "My answer" } },
+      res,
+      jest.fn()
+    );
+
     expect(res.statusCode).toBe(400);
     expect(res.payload.error).toBe("questionId is required.");
+    expect(res.payload.code).toBe("QUESTION_NOT_FOUND");
+    expect(questionRepository.findById).not.toHaveBeenCalled();
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
   });
+
+  it("rejects an empty candidate response", async () => {
+    const res = createResponse();
+
+    await handler(
+      {
+        body: {
+          questionId: privateQuestion.id,
+          candidateResponse: "",
+        },
+      },
+      res,
+      jest.fn()
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.error).toBe("candidateResponse is required.");
+    expect(res.payload.code).toBe("CANDIDATE_RESPONSE_REQUIRED");
+    expect(questionRepository.findById).not.toHaveBeenCalled();
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a whitespace-only candidate response", async () => {
+    const res = createResponse();
+
+    await handler(
+      {
+        body: {
+          questionId: privateQuestion.id,
+          candidateResponse: "   \n\t ",
+        },
+      },
+      res,
+      jest.fn()
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the question does not exist", async () => {
+    questionRepository.findById.mockResolvedValue(null);
+
+    const res = createResponse();
+
+    await handler(
+      {
+        body: {
+          questionId: "nonexistent-question",
+          candidateResponse: "My answer",
+        },
+      },
+      res,
+      jest.fn()
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(res.payload.error).toBe("Question not found.");
+    expect(res.payload.code).toBe("QUESTION_NOT_FOUND");
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+  });
+
+  it("rejects inactive questions before AI evaluation", async () => {
+    questionRepository.findById.mockResolvedValue({
+      ...privateQuestion,
+      active: false,
+    });
+
+    const res = createResponse();
+
+    await handler(
+      {
+        body: {
+          questionId: privateQuestion.id,
+          candidateResponse: "My answer",
+        },
+      },
+      res,
+      jest.fn()
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(res.payload.error).toBe("This question is inactive.");
+    expect(res.payload.code).toBe("QUESTION_INACTIVE");
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+  });
+
+  
+it("returns 404 when the question does not exist", async () => {
+  questionRepository.findById.mockResolvedValue(null);
+
+  const res = createResponse();
+  const next = jest.fn();
+
+  await handler(
+    {
+      body: {
+        questionId: "nonexistent-question",
+        candidateResponse: "My candidate answer",
+      },
+    },
+    res,
+    next
+  );
+
+  expect(res.statusCode).toBe(404);
+  expect(res.payload.error).toBe("Question not found.");
+   expect(res.payload.code).toBe("QUESTION_NOT_FOUND");
+  expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+  expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+  expect(next).not.toHaveBeenCalled();
+});
+
+
+it("returns 409 when the question is inactive", async () => {
+  questionRepository.findById.mockResolvedValue({
+    ...privateQuestion,
+    active: false,
+  });
+
+  const res = createResponse();
+  const next = jest.fn();
+
+  await handler(
+    {
+      body: {
+        questionId: privateQuestion.id,
+        candidateResponse: "My candidate answer",
+      },
+    },
+    res,
+    next
+  );
+
+  expect(res.statusCode).toBe(409);
+  expect(res.payload.error).toBe("This question is inactive.");
+   expect(res.payload.code).toBe("QUESTION_INACTIVE");
+  expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+  expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+  expect(next).not.toHaveBeenCalled();
+});
+
+
+
 });
