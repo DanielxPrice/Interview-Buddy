@@ -5,12 +5,15 @@ import {
   deleteUser,
   linkWithCredential,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updatePassword,
   updateProfile,
 } from "firebase/auth";
+
 
 import { auth } from "../config/firebase";
 
@@ -1270,32 +1273,86 @@ export const authService = {
     );
   },
 
-  async changePassword(
-    currentPassword,
-    newPassword
-  ) {
-    if (
-      !currentPassword ||
-      !newPassword
-    ) {
+  
+  async changePassword(currentPassword, newPassword) {
+    if (!currentPassword || !newPassword) {
       throw new Error(
         "Current and new passwords are required."
       );
     }
 
-    if (
-      currentPassword ===
-      newPassword
-    ) {
+    if (newPassword.length < 6) {
+      throw new Error(
+        "New password must be at least 6 characters long."
+      );
+    }
+
+    if (currentPassword === newPassword) {
       throw new Error(
         "New password cannot be the same as the current password."
       );
     }
 
-    throw new Error(
-      "Password change is not implemented yet."
-    );
+    const user = auth.currentUser;
+
+    if (!user) {
+      throw new Error(
+        "Please sign in before changing your password."
+      );
+    }
+
+    if (
+      !user.email ||
+      !hasProvider(user, EmailAuthProvider.PROVIDER_ID)
+    ) {
+      throw new Error(
+        "This account does not have an email/password sign-in method. " +
+        "Password changes are only supported for accounts with a linked password."
+      );
+    }
+
+    try {
+      const credential = EmailAuthProvider.credential(
+        user.email,
+        currentPassword
+      );
+
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPassword);
+
+      return { success: true };
+    } catch (error) {
+      const messages = {
+        "auth/invalid-credential":
+          "Current password is incorrect.",
+        "auth/wrong-password":
+          "Current password is incorrect.",
+        "auth/user-mismatch":
+          "The credentials do not match this account.",
+        "auth/weak-password":
+          "New password does not meet the password requirements.",
+        "auth/too-many-requests":
+          "Too many attempts. Please try again later.",
+        "auth/network-request-failed":
+          "Unable to reach Firebase. Please try again.",
+        "auth/requires-recent-login":
+          "Please sign in again and retry.",
+        "auth/multi-factor-auth-required":
+          "Additional authentication is required before changing your password.",
+      };
+
+      const passwordError = new Error(
+        messages[error?.code] ||
+          "Unable to change password. Please try again."
+      );
+
+      passwordError.code =
+        error?.code || "auth/password-change-failed";
+
+      throw passwordError;
+    }
   },
+
 
   async resetPassword(email) {
     const normalizedEmail =

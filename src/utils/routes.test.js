@@ -43,9 +43,6 @@ jest.mock("../pages/AnalyticsPage", () => () => <div>Analytics Route</div>);
 
 jest.mock("../pages/SettingsPage", () => () => <div>Settings Route</div>);
 
-jest.mock("../pages/ChangePasswordPage", () => () => (
-  <div>Change Password Route</div>
-));
 
 jest.mock("../pages/ForgotPasswordPage", () => () => (
   <div>Forgot Password Route</div>
@@ -132,7 +129,6 @@ describe("AppRoutes", () => {
     [PAGES.LEADERBOARD, "Leaderboard Route"],
     [PAGES.ANALYTICS, "Analytics Route"],
     [PAGES.SETTINGS, "Settings Route"],
-    [PAGES.CHANGE_PASSWORD, "Change Password Route"],
     [PAGES.FORGOT_PASSWORD, "Forgot Password Route"],
   ])("renders the correct page for %s", (path, expectedPage) => {
     renderRoute(path);
@@ -231,6 +227,22 @@ describe("AppRoutes", () => {
       ).toHaveTextContent(PAGES.LOGIN);
     }
   );
+
+
+  test("redirects the legacy password URL to Settings", async () => {
+    renderRoute(PAGES.CHANGE_PASSWORD);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Settings Route")
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByTestId("current-location")
+    ).toHaveTextContent(PAGES.SETTINGS);
+  });
+
   test("does not redirect while authentication is still loading", () => {
     useAuth.mockReturnValue({
       user: null,

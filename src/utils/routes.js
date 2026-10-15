@@ -11,7 +11,6 @@ import InterviewSetupPage from "../pages/InterviewSetupPage";
 import InterviewSessionPage from "../pages/InterviewSessionPage";
 import SessionResultsPage from "../pages/SessionResultsPage";
 import SettingsPage from "../pages/SettingsPage";
-import ChangePasswordPage from "../pages/ChangePasswordPage";
 import HistoryPage from "../pages/HistoryPage";
 import LeaderboardPage from "../pages/LeaderboardPage";
 import AnalyticsPage from "../pages/AnalyticsPage";
@@ -170,19 +169,17 @@ function AppRoutes({
         }
       />
 
-      {/* Change Password */}
+      
+      {/* Legacy password URL redirects to Settings */}
       <Route
         path={PAGES.CHANGE_PASSWORD}
         element={
           <ProtectedRoute>
-            <ChangePasswordPage
-              onBackToSettings={() =>
-                onNavigate(PAGES.SETTINGS)
-              }
-            />
+            <Navigate to={PAGES.SETTINGS} replace />
           </ProtectedRoute>
         }
       />
+
 
       {/* Temporary fallback until we add the 404 page */}
       <Route

@@ -1,6 +1,7 @@
 
 import React from "react";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -11,6 +12,7 @@ import SettingsPage from "./SettingsPage";
 import { userService } from "../services/userService";
 import { settingsService } from "../services/settingsService";
 import { PAGES } from "../utils/constants";
+import { authService } from "../services/authService";
 
 import { useAuth } from "../context/AuthContext";
 
@@ -48,9 +50,19 @@ jest.mock("../services/settingsService", () => ({
   },
 }));
 
+jest.mock("../services/authService", () => ({
+  authService: {
+    changePassword: jest.fn(),
+  },
+}));
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockTheme = "Light";
+
+  authService.changePassword.mockResolvedValue({
+    success: true,
+  });
 
   useAuth.mockReturnValue({
     updateProfileCache: jest.fn(),
@@ -208,60 +220,175 @@ test("does not change theme when saving fails", async () => {
 
 
 
-test("renders inline password fields and disables unfinished actions", async () => {
-  const { onNavigate } = renderPage();
+
+function enterPasswords(current, next, confirmation) {
+  fireEvent.change(
+    screen.getByLabelText("Current Password"),
+    { target: { value: current } }
+  );
+
+  fireEvent.change(
+    screen.getByLabelText("New Password"),
+    { target: { value: next } }
+  );
+
+  fireEvent.change(
+    screen.getByLabelText("Confirm New Password"),
+    { target: { value: confirmation } }
+  );
+}
+
+test("renders active password fields and disabled account deletion", async () => {
+  renderPage();
 
   await screen.findByDisplayValue("original_name");
 
-  // All three password fields appear on Settings.
-  const currentPassword =
-    screen.getByLabelText("Current Password");
+  expect(
+    screen.getByLabelText("Current Password")
+  ).toHaveAttribute("type", "password");
 
-  const newPassword =
-    screen.getByLabelText("New Password");
+  expect(
+    screen.getByLabelText("New Password")
+  ).toHaveAttribute("type", "password");
 
-  const confirmPassword =
-    screen.getByLabelText("Confirm New Password");
+  expect(
+    screen.getByLabelText("Confirm New Password")
+  ).toHaveAttribute("type", "password");
 
-  expect(currentPassword).toHaveAttribute(
-    "type",
-    "password"
+  expect(
+    screen.getByRole("button", { name: "Update Security" })
+  ).toBeEnabled();
+
+  expect(
+    screen.getByRole("button", { name: "Delete Account" })
+  ).toBeDisabled();
+});
+
+test("updates password and clears fields on success", async () => {
+  renderPage();
+  await screen.findByDisplayValue("original_name");
+
+  enterPasswords(
+    "oldPassword123",
+    "newPassword123",
+    "newPassword123"
   );
 
-  expect(newPassword).toHaveAttribute(
-    "type",
-    "password"
+  fireEvent.click(
+    screen.getByRole("button", { name: "Update Security" })
   );
 
-  expect(confirmPassword).toHaveAttribute(
-    "type",
-    "password"
-  );
-
-  // Users can type into the UI-only fields.
-  fireEvent.change(newPassword, {
-    target: { value: "ExamplePassword123!" },
+  await waitFor(() => {
+    expect(authService.changePassword).toHaveBeenCalledWith(
+      "oldPassword123",
+      "newPassword123"
+    );
   });
 
-  expect(newPassword).toHaveValue(
-    "ExamplePassword123!"
+  expect(
+    await screen.findByText("Password updated successfully.")
+  ).toBeInTheDocument();
+
+  expect(
+    screen.getByLabelText("Current Password")
+  ).toHaveValue("");
+
+  expect(
+    screen.getByLabelText("New Password")
+  ).toHaveValue("");
+
+  expect(
+    screen.getByLabelText("Confirm New Password")
+  ).toHaveValue("");
+});
+
+test("rejects mismatched password confirmation", async () => {
+  renderPage();
+  await screen.findByDisplayValue("original_name");
+
+  enterPasswords(
+    "oldPassword123",
+    "newPassword123",
+    "differentPassword123"
   );
 
-  // Password saving is not implemented yet.
-  expect(
-    screen.getByRole("button", {
-      name: "Update Security",
-    })
-  ).toBeDisabled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Update Security" })
+  );
 
-  // Account deletion is also still unavailable.
   expect(
-    screen.getByRole("button", {
-      name: "Delete Account",
-    })
-  ).toBeDisabled();
+    await screen.findByRole("alert")
+  ).toHaveTextContent("New passwords do not match.");
 
-  // Settings no longer navigates to a password page.
-  expect(onNavigate).not.toHaveBeenCalled();
+  expect(authService.changePassword).not.toHaveBeenCalled();
 });
+
+test("displays authentication errors without false success", async () => {
+  authService.changePassword.mockRejectedValue(
+    new Error("Current password is incorrect.")
+  );
+
+  renderPage();
+  await screen.findByDisplayValue("original_name");
+
+  enterPasswords(
+    "wrongPassword",
+    "newPassword123",
+    "newPassword123"
+  );
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Update Security" })
+  );
+
+  expect(
+    await screen.findByRole("alert")
+  ).toHaveTextContent("Current password is incorrect.");
+
+  expect(
+    screen.queryByText("Password updated successfully.")
+  ).not.toBeInTheDocument();
+
+  expect(
+    screen.getByLabelText("New Password")
+  ).toHaveValue("newPassword123");
+});
+
+test("prevents duplicate submissions while updating", async () => {
+  let resolveUpdate;
+
+  authService.changePassword.mockReturnValue(
+    new Promise((resolve) => {
+      resolveUpdate = resolve;
+    })
+  );
+
+  renderPage();
+  await screen.findByDisplayValue("original_name");
+
+  enterPasswords(
+    "oldPassword123",
+    "newPassword123",
+    "newPassword123"
+  );
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Update Security" })
+  );
+
+  expect(
+    screen.getByRole("button", { name: "Updating..." })
+  ).toBeDisabled();
+
+  expect(authService.changePassword).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    resolveUpdate({ success: true });
+  });
+
+  expect(
+    screen.getByText("Password updated successfully.")
+  ).toBeInTheDocument();
+});
+
 
