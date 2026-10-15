@@ -5,6 +5,7 @@ import SettingsSection from "../components/settings/SettingsSection";
 
 import { userService } from "../services/userService";
 import { settingsService } from "../services/settingsService";
+import { authService } from "../services/authService";
 import { useTheme } from "../context/ThemeContext";
 
 import { useAuth } from "../context/AuthContext";
@@ -23,6 +24,12 @@ function SettingsPage({ currentPage, onNavigate }) {
   const [isLoading, setIsLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingTheme, setSavingTheme] = useState(false);
+
+  // Password management
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
   const [status, setStatus] = useState(null);
   
 
@@ -150,6 +157,73 @@ function SettingsPage({ currentPage, onNavigate }) {
     }
   }
 
+
+  async function handlePasswordSave(event) {
+    event.preventDefault();
+
+    if (isLoading || savingPassword) {
+      return;
+    }
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setStatus({
+        type: "error",
+        text: "Please complete all password fields.",
+      });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setStatus({
+        type: "error",
+        text: "New password must be at least 6 characters long.",
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setStatus({
+        type: "error",
+        text: "New passwords do not match.",
+      });
+      return;
+    }
+
+    if (newPassword === currentPassword) {
+      setStatus({
+        type: "error",
+        text: "New password must differ from the current password.",
+      });
+      return;
+    }
+
+    setSavingPassword(true);
+    setStatus(null);
+
+    try {
+      await authService.changePassword(
+        currentPassword,
+        newPassword
+      );
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+
+      setStatus({
+        type: "success",
+        text: "Password updated successfully.",
+      });
+    } catch (error) {
+      setStatus({
+        type: "error",
+        text: error.message || "Unable to update password.",
+      });
+    } finally {
+      setSavingPassword(false);
+    }
+  }
+
   const profileHasChanges =
     username.trim() !== savedUsername;
 
@@ -246,7 +320,8 @@ function SettingsPage({ currentPage, onNavigate }) {
           </form>
         </SettingsSection>
 
-        {/* Security and Password - UI only */}
+        
+        {/* Security and Password - Firebase-backed */}
         <SettingsSection
           id="security-settings-title"
           title="Security & Password"
@@ -255,10 +330,9 @@ function SettingsPage({ currentPage, onNavigate }) {
         >
           <form
             className="ib-settings-password-form"
-            onSubmit={(event) => event.preventDefault()}
+            onSubmit={handlePasswordSave}
           >
             <div className="ib-settings-password-grid">
-
               <div className="ib-settings-field">
                 <label
                   className="ib-label"
@@ -273,6 +347,12 @@ function SettingsPage({ currentPage, onNavigate }) {
                   type="password"
                   autoComplete="current-password"
                   placeholder="Enter current password"
+                  value={currentPassword}
+                  onChange={(event) =>
+                    setCurrentPassword(event.target.value)
+                  }
+                  disabled={isLoading || savingPassword}
+                  required
                 />
               </div>
 
@@ -290,6 +370,13 @@ function SettingsPage({ currentPage, onNavigate }) {
                   type="password"
                   autoComplete="new-password"
                   placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(event) =>
+                    setNewPassword(event.target.value)
+                  }
+                  disabled={isLoading || savingPassword}
+                  minLength={6}
+                  required
                 />
               </div>
 
@@ -307,23 +394,31 @@ function SettingsPage({ currentPage, onNavigate }) {
                   type="password"
                   autoComplete="new-password"
                   placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(event) =>
+                    setConfirmPassword(event.target.value)
+                  }
+                  disabled={isLoading || savingPassword}
+                  minLength={6}
+                  required
                 />
               </div>
             </div>
 
             <div className="ib-settings-password-footer">
               <p className="ib-settings-password-note">
-                Password updates are not yet available.
-                This form is a preview and does not save passwords.
+                Enter your current password to verify your identity.
+                New passwords must contain at least 6 characters.
               </p>
 
               <button
-                type="button"
+                type="submit"
                 className="ib-button ib-button--secondary"
-                disabled
-                title="Password updates are coming soon"
+                disabled={isLoading || savingPassword}
               >
-                Update Security
+                {savingPassword
+                  ? "Updating..."
+                  : "Update Security"}
               </button>
             </div>
           </form>

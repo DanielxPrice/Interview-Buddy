@@ -9,6 +9,8 @@ import {
   signInWithPopup,
   signOut,
   updateProfile,
+  reauthenticateWithCredential,
+  updatePassword,
 } from "firebase/auth";
 
 import {
@@ -69,6 +71,12 @@ jest.mock(
         jest.fn(),
 
       onAuthStateChanged:
+        jest.fn(),
+
+       reauthenticateWithCredential: 
+        jest.fn(),
+
+      updatePassword: 
         jest.fn(),
 
       sendPasswordResetEmail:
@@ -191,6 +199,9 @@ describe(
   () => {
     beforeEach(() => {
       jest.clearAllMocks();
+
+      reauthenticateWithCredential.mockResolvedValue({});
+      updatePassword.mockResolvedValue();
 
       auth.currentUser = null;
 
@@ -1283,5 +1294,116 @@ describe(
         });
       }
     );
+
+    test("changes password after reauthentication", async () => {
+      const user = makeUser();
+      auth.currentUser = user;
+
+      const result = await authService.changePassword(
+        "oldPassword123",
+        "newPassword123"
+      );
+
+      expect(EmailAuthProvider.credential).toHaveBeenCalledWith(
+        "test@example.com",
+        "oldPassword123"
+      );
+
+      expect(reauthenticateWithCredential).toHaveBeenCalledWith(
+        user,
+        {
+          providerId: "password",
+          email: "test@example.com",
+          password: "oldPassword123",
+        }
+      );
+
+      expect(updatePassword).toHaveBeenCalledWith(
+        user,
+        "newPassword123"
+      );
+
+      expect(result).toEqual({ success: true });
+
+      expect(
+        reauthenticateWithCredential.mock.invocationCallOrder[0]
+      ).toBeLessThan(
+        updatePassword.mock.invocationCallOrder[0]
+      );
+    });
+
+    test("rejects missing, weak, and unchanged passwords", async () => {
+      auth.currentUser = makeUser();
+
+      await expect(
+        authService.changePassword("", "newPassword123")
+      ).rejects.toThrow(
+        "Current and new passwords are required."
+      );
+
+      await expect(
+        authService.changePassword("oldPassword123", "short")
+      ).rejects.toThrow(
+        "New password must be at least 6 characters long."
+      );
+
+      await expect(
+        authService.changePassword("samePassword", "samePassword")
+      ).rejects.toThrow(
+        "New password cannot be the same as the current password."
+      );
+
+      expect(reauthenticateWithCredential).not.toHaveBeenCalled();
+      expect(updatePassword).not.toHaveBeenCalled();
+    });
+
+    test("requires a signed-in password-enabled user", async () => {
+      auth.currentUser = null;
+
+      await expect(
+        authService.changePassword("oldPassword123", "newPassword123")
+      ).rejects.toThrow("Please sign in");
+
+      auth.currentUser = makeUser({
+        providerIds: ["google.com"],
+      });
+
+      await expect(
+        authService.changePassword("oldPassword123", "newPassword123")
+      ).rejects.toThrow(
+        "This account does not have an email/password sign-in method."
+      );
+
+      expect(updatePassword).not.toHaveBeenCalled();
+    });
+
+    test("rejects incorrect current password", async () => {
+      auth.currentUser = makeUser();
+
+      reauthenticateWithCredential.mockRejectedValue({
+        code: "auth/invalid-credential",
+      });
+
+      await expect(
+        authService.changePassword("wrongPassword", "newPassword123")
+      ).rejects.toThrow("Current password is incorrect.");
+
+      expect(updatePassword).not.toHaveBeenCalled();
+    });
+
+    test("reports a Firebase password update failure", async () => {
+      auth.currentUser = makeUser();
+
+      updatePassword.mockRejectedValue({
+        code: "auth/weak-password",
+      });
+
+      await expect(
+        authService.changePassword("oldPassword123", "newPassword123")
+      ).rejects.toThrow(
+        "New password does not meet the password requirements."
+      );
+    });
+
   }
 );
