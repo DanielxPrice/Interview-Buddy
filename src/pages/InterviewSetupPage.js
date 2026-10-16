@@ -156,6 +156,14 @@ function InterviewSetupPage({
     setQuotaError,
   ] = useState("");
 
+  const [availableQuestionCount, setAvailableQuestionCount] = useState(null);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+
+  const hasCompleteSetup = Boolean(
+    selectedMode && jobRole && experienceLevel && selectedPracticeGoals.length > 0
+  );
+
   const modeDetails =
     getModeDetails(selectedMode);
 
@@ -199,15 +207,20 @@ function InterviewSetupPage({
    * Admins remain capped only by the
    * normal per-session maximum of 20.
    */
-  const maxAllowedQuestionCount =
-    usesDailyQuota &&
-    questionQuota &&
-    !isUnlimitedQuota
-      ? Math.min(
-          MAX_QUESTION_COUNT,
-          quotaRemaining
-        )
+  const quotaBound =
+    usesDailyQuota && questionQuota && !isUnlimitedQuota
+      ? Math.min(MAX_QUESTION_COUNT, quotaRemaining)
       : MAX_QUESTION_COUNT;
+
+  const maxAllowedQuestionCount =
+    hasCompleteSetup && availableQuestionCount !== null
+      ? Math.min(quotaBound, availableQuestionCount)
+      : quotaBound;
+
+  const questionCountAboveAvailability =
+    hasCompleteSetup &&
+    availableQuestionCount !== null &&
+    Number(questionCount) > availableQuestionCount;
 
   const dailyLimitReached =
     usesDailyQuota &&
@@ -464,6 +477,53 @@ function InterviewSetupPage({
     return () => { current = false; unsubscribe?.(); };
   }, [selectedMode, jobRole, experienceLevel]);
 
+  // Debounce count lookups and discard results from superseded selections.
+  // Incomplete setups do not issue Firestore reads.
+  useEffect(() => {
+    let current = true;
+    setAvailableQuestionCount(null);
+    setAvailabilityError("");
+    setIsLoadingAvailability(false);
+
+    if (!hasCompleteSetup) return () => { current = false; };
+
+    setIsLoadingAvailability(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const count = await interviewService.getAvailableQuestionCount({
+          mode: selectedMode,
+          jobRole,
+          experienceLevel,
+          tags: selectedPracticeGoals,
+        });
+        if (current) setAvailableQuestionCount(count);
+      } catch (error) {
+        if (current) setAvailabilityError(
+          error.message || "Unable to check available questions."
+        );
+      } finally {
+        if (current) setIsLoadingAvailability(false);
+      }
+    }, 300);
+
+    return () => {
+      current = false;
+      clearTimeout(timeout);
+    };
+  }, [selectedMode, jobRole, experienceLevel, selectedPracticeGoals, hasCompleteSetup]);
+
+  // Do not leave the requested session length above the eligible pool.
+  useEffect(() => {
+    if (!hasCompleteSetup || availableQuestionCount === null) return;
+    setQuestionCount((previous) => {
+      if (maxAllowedQuestionCount === 0) return 0;
+      const value = Number(previous);
+      return Number.isInteger(value) && value >= 1
+        ? Math.min(value, maxAllowedQuestionCount)
+        : Math.min(DEFAULT_QUESTION_COUNT, maxAllowedQuestionCount);
+    });
+  }, [hasCompleteSetup, availableQuestionCount, maxAllowedQuestionCount]);
+
   const filteredJobRoles =
     setupOptions.jobRoles.filter(
       (role) =>
@@ -621,6 +681,15 @@ function InterviewSetupPage({
       return;
     }
 
+    if (isLoadingAvailability || availableQuestionCount === null || availabilityError) {
+      setErrorMessage("Please wait until matching question availability is verified.");
+      return;
+    }
+    if (availableQuestionCount === 0) {
+      setErrorMessage("No questions match your current selections. Choose different tags or filters.");
+      return;
+    }
+
     /*
      * Code and Theoretical sessions require
      * a successfully verified quota before
@@ -690,10 +759,29 @@ function InterviewSetupPage({
       return;
     }
 
+    if (questionCountAboveAvailability || parsedQuestionCount > availableQuestionCount) {
+      setErrorMessage(`Only ${availableQuestionCount} questions match your selections.`);
+      return;
+    }
+
     setErrorMessage("");
     setIsStartingSession(true);
 
     try {
+      // Bypass the short-lived count cache immediately before session creation.
+      const latestAvailable = await interviewService.getAvailableQuestionCount({
+        mode: selectedMode, jobRole, experienceLevel, tags: selectedPracticeGoals,
+        fresh: true,
+      });
+      setAvailableQuestionCount(latestAvailable);
+      if (latestAvailable < parsedQuestionCount) {
+        setQuestionCount(Math.min(parsedQuestionCount, latestAvailable));
+        setErrorMessage(latestAvailable === 0
+          ? "No questions match your current selections. Choose different tags or filters."
+          : `Availability changed. Only ${latestAvailable} matching questions remain.`);
+        return;
+      }
+
       /*
        * Refresh the quota immediately before
        * starting a counted session.
@@ -1148,6 +1236,35 @@ function InterviewSetupPage({
               </p>
             </fieldset>
 
+            {/* Availability is the full matching pool, not daily quota or session limit. */}
+            <div className="setupSection questionAvailability" aria-live="polite">
+              <span className="setupSectionLabel">Matching Questions</span>
+              {!hasCompleteSetup ? (
+                <p>Select a job role, experience level, and at least one tag to see availability.</p>
+              ) : isLoadingAvailability ? (
+                <p role="status">Checking available questions...</p>
+              ) : availabilityError ? (
+                <p className="questionAvailabilityError" role="alert">{availabilityError}</p>
+              ) : availableQuestionCount === null ? (
+                <p>Checking available questions...</p>
+              ) : (
+                <>
+                  <strong className="questionAvailabilityTotal">
+                    {availableQuestionCount} matching question{availableQuestionCount === 1 ? "" : "s"}
+                  </strong>
+                  <p>
+                    Matches at least one selected tag. Session length is capped at 20
+                    {usesDailyQuota ? " and your remaining daily allowance" : ""}.
+                  </p>
+                  {availableQuestionCount === 0 && (
+                    <p className="questionAvailabilityError" role="alert">
+                      No questions match these filters. Try other tags or selections.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
             {/* Daily question allowance */}
             {usesDailyQuota && (
               <div className="setupSection quotaSection">
@@ -1336,11 +1453,9 @@ function InterviewSetupPage({
                     decreaseQuestionCount
                   }
                   disabled={
-                    maxAllowedQuestionCount <=
-                      0 ||
-                    Number(
-                      questionCount
-                    ) <= 1
+                    maxAllowedQuestionCount <= 0 ||
+                    (hasCompleteSetup && (isLoadingAvailability || availableQuestionCount === null)) ||
+                    Number(questionCount) <= 1
                   }
                 >
                   −
@@ -1363,7 +1478,11 @@ function InterviewSetupPage({
                   value={questionCount}
                   disabled={
                     isLoadingQuota ||
-                    dailyLimitReached
+                    dailyLimitReached ||
+                    (hasCompleteSetup && (
+                      isLoadingAvailability || availableQuestionCount === null ||
+                      availableQuestionCount === 0 || Boolean(availabilityError)
+                    ))
                   }
                   onChange={(event) => {
                     setQuestionCount(
@@ -1384,28 +1503,32 @@ function InterviewSetupPage({
                     increaseQuestionCount
                   }
                   disabled={
-                    maxAllowedQuestionCount <=
-                      0 ||
-                    Number(
-                      questionCount
-                    ) >=
-                      maxAllowedQuestionCount
+                    maxAllowedQuestionCount <= 0 ||
+                    (hasCompleteSetup && (isLoadingAvailability || availableQuestionCount === null)) ||
+                    Number(questionCount) >= maxAllowedQuestionCount
                   }
                 >
                   +
                 </button>
 
                 <span className="questionCountLimit">
-                  {usesDailyQuota &&
-                  questionQuota &&
-                  !isUnlimitedQuota
-                    ? maxAllowedQuestionCount >
-                      0
-                      ? `1–${maxAllowedQuestionCount} available today`
-                      : "No questions remaining today"
-                    : `1–${MAX_QUESTION_COUNT} questions`}
+                  {hasCompleteSetup && availableQuestionCount !== null
+                    ? maxAllowedQuestionCount > 0
+                      ? `1–${maxAllowedQuestionCount} for this session`
+                      : "No matching questions"
+                    : usesDailyQuota && questionQuota && !isUnlimitedQuota
+                      ? maxAllowedQuestionCount > 0
+                        ? `1–${maxAllowedQuestionCount} available today`
+                        : "No questions remaining today"
+                      : `1–${MAX_QUESTION_COUNT} questions`}
                 </span>
               </div>
+
+              {questionCountAboveAvailability && (
+                <p className="questionQuotaWarning" role="alert">
+                  Only {availableQuestionCount} questions match these filters.
+                </p>
+              )}
 
               {questionCountAboveQuota && (
                 <p
@@ -1451,6 +1574,13 @@ function InterviewSetupPage({
                 disabled={
                   isStartingSession ||
                   isLoadingOptions ||
+                  (hasCompleteSetup && (
+                    isLoadingAvailability ||
+                    Boolean(availabilityError) ||
+                    availableQuestionCount === null ||
+                    availableQuestionCount === 0 ||
+                    questionCountAboveAvailability
+                  )) ||
                   Boolean(
                     optionsError
                   ) ||

@@ -73,6 +73,34 @@ describe("interviewService", () => {
     );
   });
 
+  test("getAvailableQuestionCount sends every selected tag and does not create a session", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ availableCount: 37 }),
+    });
+    const result = await interviewService.getAvailableQuestionCount({
+      mode: INTERVIEW_MODES.QUIZ,
+      jobRole: "Backend Developer",
+      experienceLevel: "Beginner",
+      tags: ["sql", "database", "rest api"],
+    });
+    expect(result).toBe(37);
+    const [url, options] = global.fetch.mock.calls[0];
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/api/questions/count");
+    expect(parsed.searchParams.getAll("tags")).toEqual(["sql", "database", "rest api"]);
+    expect(parsed.searchParams.get("jobRole")).toBe("Backend Developer");
+    expect(options.headers.Authorization).toBe("Bearer test-id-token");
+  });
+
+  test("getAvailableQuestionCount rejects invalid server counts", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ availableCount: -1 }),
+    });
+    await expect(interviewService.getAvailableQuestionCount({
+      mode: INTERVIEW_MODES.QUIZ, jobRole: "Software Engineer", experienceLevel: "Beginner", tags: ["sql"],
+    })).rejects.toThrow("invalid available-question count");
+  });
+
   test(
     "getQuestionQuota retrieves the current daily question allowance",
     async () => {

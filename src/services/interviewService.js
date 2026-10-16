@@ -293,6 +293,27 @@ export const interviewService = {
     );
   },
 
+  /** Total active matches before the 20-question session cap or daily quota. */
+  async getAvailableQuestionCount({ mode, jobRole, experienceLevel, tags, fresh = false }) {
+    validateMode(mode);
+    const selectedTags = normalizeTags(tags);
+    if (!jobRole || !experienceLevel || selectedTags.length === 0) {
+      throw new Error("Job role, experience level, and at least one tag are required.");
+    }
+    const params = new URLSearchParams({ mode, jobRole, experienceLevel });
+    selectedTags.forEach((tag) => params.append("tags", tag));
+    if (fresh) params.set("fresh", "1");
+    const idToken = await getIdToken();
+    const response = await fetch(`${API_BASE_URL}/questions/count?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const payload = await readJsonResponse(response);
+    if (!Number.isSafeInteger(payload?.availableCount) || payload.availableCount < 0) {
+      throw new Error("The server returned an invalid available-question count.");
+    }
+    return payload.availableCount;
+  },
+
   // Synchronous local lookups remove the format-switching loading delay.
   getCachedSetupOptions,
   subscribeSetupMetadata,

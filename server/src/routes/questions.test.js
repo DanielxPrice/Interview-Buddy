@@ -98,6 +98,61 @@ describe("Question retrieval API H-01 mock integration", () => {
     );
   });
 
+  test("returns the full matching count without reserving daily quota", async () => {
+    const response = await request(app).get("/api/questions/count").query({
+      mode: "Code Style",
+      jobRole: "Software Engineer",
+      experienceLevel: "intermediate",
+      tags: ["trees", "bfs"],
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ availableCount: 1 });
+    expect(questionRepository.findByMode).toHaveBeenCalledWith("Code Style");
+    expect(questionQuotaService.consume).not.toHaveBeenCalled();
+    expect(questionQuotaService.getStatus).not.toHaveBeenCalled();
+    expect(response.text).not.toContain("referenceAnswer");
+  });
+
+  test("counts only eligible records and returns zero for unmatched filters", async () => {
+    const response = await request(app).get("/api/questions/count").query({
+      mode: "Quiz Style",
+      jobRole: "no such role",
+      experienceLevel: "Intermediate",
+      tags: "trees",
+    });
+    expect(response.body).toEqual({ availableCount: 0 });
+  });
+
+  test("validates count requests without reading the repository", async () => {
+    for (const query of [
+      { mode: "Incorrect", jobRole: "role", experienceLevel: "Beginner", tags: "tree" },
+      { mode: "Quiz Style", jobRole: "role", experienceLevel: "Beginner" },
+    ]) {
+      const response = await request(app).get("/api/questions/count").query(query);
+      expect(response.status).toBe(400);
+    }
+    expect(questionRepository.findByMode).not.toHaveBeenCalled();
+  });
+
+  test("shares one snapshot across count requests with different tags", async () => {
+    await request(app).get("/api/questions/count").query({
+      mode: "Quiz Style", jobRole: "software engineer", experienceLevel: "Intermediate", tags: "bfs",
+    });
+    await request(app).get("/api/questions/count").query({
+      mode: "Quiz Style", jobRole: "software engineer", experienceLevel: "Intermediate", tags: "trees",
+    });
+    expect(questionRepository.findByMode).toHaveBeenCalledTimes(1);
+  });
+
+  test("fresh count bypasses the short-lived snapshot cache", async () => {
+    const filters = {
+      mode: "Quiz Style", jobRole: "software engineer", experienceLevel: "Intermediate", tags: "trees",
+    };
+    await request(app).get("/api/questions/count").query(filters);
+    await request(app).get("/api/questions/count").query({ ...filters, fresh: "1" });
+    expect(questionRepository.findByMode).toHaveBeenCalledTimes(2);
+  });
+
   test("retrieves mode-specific options from stored active question metadata", async () => {
     const response = await request(app).get("/api/questions/options").query({ mode: "Theoretical Style" });
     expect(response.status).toBe(200);
