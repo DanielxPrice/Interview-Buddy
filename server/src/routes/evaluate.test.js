@@ -397,4 +397,60 @@ describe("POST /api/evaluate route", () => {
     expect(res.payload).not.toHaveProperty("gradingCriteria");
     expect(next).not.toHaveBeenCalled();
   });
+  
+  
+it.each([
+  ["null", null],
+  ["a string", "invalid"],
+  ["an array", []],
+  ["a number", 123],
+])(
+  "rejects metadata supplied as %s",
+  async (_, metadata) => {
+    const { req, res, next } = createTestContext({
+      questionId: privateQuestion.id,
+      candidateResponse: "My answer",
+      metadata,
+    });
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.code).toBe("METADATA_INVALID");
+    expect(questionRepository.findById).not.toHaveBeenCalled();
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  }
+);
+
+it.each([
+  ["sessionId", 123],
+  ["jobRole", {}],
+  ["experienceLevel", []],
+])(
+  "rejects an invalid %s metadata field",
+  async (field, value) => {
+    const { req, res, next } = createTestContext({
+      questionId: privateQuestion.id,
+      candidateResponse: "My answer",
+      metadata: {
+        sessionId: "session-1",
+        jobRole: "Software Engineer",
+        experienceLevel: "Intermediate",
+        [field]: value,
+      },
+    });
+
+    await handler(req, res, next);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.code).toBe("METADATA_FIELD_INVALID");
+    expect(questionRepository.findById).not.toHaveBeenCalled();
+    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  }
+);
+
+
+
 });

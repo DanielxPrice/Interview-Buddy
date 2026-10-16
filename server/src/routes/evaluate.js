@@ -62,6 +62,39 @@ function createEvaluateRouter({
         });
        }    
 
+
+
+// Validate metadata structure.
+if (
+  metadata === null ||
+  typeof metadata !== "object" ||
+  Array.isArray(metadata)
+) {
+  return res.status(400).json({
+    error: "metadata must be an object.",
+    code: "METADATA_INVALID",
+  });
+}
+
+// Validate metadata field types.
+if (
+  (metadata.sessionId !== undefined &&
+    metadata.sessionId !== null &&
+    typeof metadata.sessionId !== "string") ||
+  (metadata.jobRole !== undefined &&
+    typeof metadata.jobRole !== "string") ||
+  (metadata.experienceLevel !== undefined &&
+    typeof metadata.experienceLevel !== "string")
+) {
+  return res.status(400).json({
+    error: "metadata fields have invalid types.",
+    code: "METADATA_FIELD_INVALID",
+  });
+}
+
+
+
+
       const question = await questionRepository.findById(
         String(questionId).trim()
       );
