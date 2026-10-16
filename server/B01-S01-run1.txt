@@ -1,0 +1,54 @@
+npm verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+npm info using npm@10.9.2
+npm info using node@v22.14.0
+npm verbose title npm test routes/evaluate.test.js
+npm verbose argv "test" "--watchAll" "false" "--runTestsByPath" "routes/evaluate.test.js" "--loglevel" "verbose"
+npm verbose logfile logs-max:10 dir:C:\Users\bryan\AppData\Local\npm-cache\_logs\2026-10-16T03_59_31_863Z-
+npm verbose logfile C:\Users\bryan\AppData\Local\npm-cache\_logs\2026-10-16T03_59_31_863Z-debug-0.log
+
+> interview-buddy-server@0.1.0 test
+> jest routes/evaluate.test.js
+
+PASS src/routes/evaluate.test.js
+  POST /api/evaluate route
+    ΓêÜ evaluates a private question and saves an authorized session response (34 ms)
+    ΓêÜ accepts a response one below the limit (9999 characters) (7 ms)
+    ΓêÜ accepts a response exactly at the limit (10000 characters) (4 ms)
+    ΓêÜ rejects a response above the 10000-character limit (5 ms)
+    ΓêÜ rejects a object candidate response (5 ms)
+    ΓêÜ rejects a array candidate response (9 ms)
+    ΓêÜ rejects a number candidate response (4 ms)
+    ΓêÜ rejects a boolean candidate response (3 ms)
+    ΓêÜ rejects a missing question ID (4 ms)
+    ΓêÜ rejects a missing or blank candidate response: undefined (4 ms)
+    ΓêÜ rejects a missing or blank candidate response: "" (4 ms)
+    ΓêÜ rejects a missing or blank candidate response: "   
+	 " (3 ms)
+    ΓêÜ returns 404 when the question does not exist (3 ms)
+    ΓêÜ rejects inactive questions (4 ms)
+    ΓêÜ rejects Quiz Style before calling AI (3 ms)
+    ΓêÜ rejects evaluations for nonexistent sessions (2 ms)
+    ΓêÜ rejects evaluations for another user's session (2 ms)
+    ΓêÜ rejects evaluations for completed sessions (2 ms)
+    ΓêÜ passes Firestore persistence failures to the error handler (4 ms)
+    ΓêÜ does not persist an evaluation when AI fails (3 ms)
+    ΓêÜ does not return raw private grading fields (4 ms)
+    ΓêÜ rejects metadata supplied as null (2 ms)
+    ΓêÜ rejects metadata supplied as a string (2 ms)
+    ΓêÜ rejects metadata supplied as an array (2 ms)
+    ΓêÜ rejects metadata supplied as a number (2 ms)
+    ΓêÜ rejects an invalid sessionId metadata field (4 ms)
+    ΓêÜ rejects an invalid jobRole metadata field (7 ms)
+    ΓêÜ rejects an invalid experienceLevel metadata field (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        3.961 s, estimated 4 s
+Ran all test suites matching routes/evaluate.test.js.
+npm verbose cwd C:\Users\bryan\OneDrive\Desktop\Interview-buddy(new)\Interview-Buddy\server
+npm verbose os Windows_NT 10.0.26200
+npm verbose node v22.14.0
+npm verbose npm  v10.9.2
+npm verbose exit 0
+npm info ok

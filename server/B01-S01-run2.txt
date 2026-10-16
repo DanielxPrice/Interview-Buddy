@@ -1,0 +1,30 @@
+PASS src/routes/evaluate.test.js
+  POST /api/evaluate route
+    ΓêÜ evaluates a private question and saves an authorized session response (11 ms)
+    ΓêÜ accepts a response one below the limit (9999 characters) (2 ms)
+    ΓêÜ accepts a response exactly at the limit (10000 characters) (2 ms)
+    ΓêÜ rejects a response above the 10000-character limit (1 ms)
+    ΓêÜ rejects a object candidate response (1 ms)
+    ΓêÜ rejects a array candidate response (1 ms)
+    ΓêÜ rejects a number candidate response (1 ms)
+    ΓêÜ rejects a boolean candidate response (1 ms)
+    ΓêÜ rejects a missing question ID (3 ms)
+    ΓêÜ rejects a missing or blank candidate response: undefined (2 ms)
+    ΓêÜ rejects a missing or blank candidate response: "" (2 ms)
+    ΓêÜ rejects a missing or blank candidate response: "   
+	 " (1 ms)
+    ΓêÜ returns 404 when the question does not exist (1 ms)
+    ΓêÜ rejects inactive questions (1 ms)
+    ΓêÜ rejects Quiz Style before calling AI (2 ms)
+    ΓêÜ rejects evaluations for nonexistent sessions (2 ms)
+    ΓêÜ rejects evaluations for another user's session (1 ms)
+    ΓêÜ rejects evaluations for completed sessions (1 ms)
+    ΓêÜ passes Firestore persistence failures to the error handler (2 ms)
+    ΓêÜ does not persist an evaluation when AI fails (2 ms)
+    ΓêÜ does not return raw private grading fields (3 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       21 passed, 21 total
+Snapshots:   0 total
+Time:        1.419 s, estimated 3 s
+Ran all test suites matching routes/evaluate.test.js.
