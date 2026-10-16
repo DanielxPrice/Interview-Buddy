@@ -1867,6 +1867,164 @@ test(
 
 
     test(
+      "automatically selects PostgreSQL for SQL questions",
+      async () => {
+        interviewService.getQuestions.mockResolvedValue([
+          {
+            ...codeQuestion,
+            id: "sql-test-001",
+            prompt: "SQL dialect: PostgreSQL. Return top customers.",
+            topic: "SQL",
+            tags: ["database", "SQL"],
+          },
+        ]);
+
+        renderPage();
+
+        await screen.findByText(
+          "SQL dialect: PostgreSQL. Return top customers."
+        );
+
+        await waitFor(() => {
+          expect(
+            screen.getByRole("combobox", {
+              name: "Programming Language",
+            })
+          ).toHaveValue("sql");
+        });
+
+        expect(screen.getByLabelText("Your Response"))
+          .toHaveAttribute("data-language", "sql");
+      }
+    );
+
+    test(
+      "automatically selects JavaScript for JavaScript questions",
+      async () => {
+        interviewService.getQuestions.mockResolvedValue([
+          {
+            ...codeQuestion,
+            id: "javascript-test-001",
+            prompt: "Task (JavaScript): Implement debounce(fn, waitMs).",
+            topic: "JavaScript",
+            tags: ["javascript", "async"],
+          },
+        ]);
+
+        renderPage();
+
+        await screen.findByText(
+          "Task (JavaScript): Implement debounce(fn, waitMs)."
+        );
+
+        await waitFor(() => {
+          expect(screen.getByRole("combobox", {
+            name: "Programming Language",
+          })).toHaveValue("javascript");
+        });
+
+        expect(screen.getByLabelText("Your Response"))
+          .toHaveAttribute("data-language", "javascript");
+      }
+    );
+
+    test(
+      "detects explicit SQL language instructions without tags or topic",
+      async () => {
+        interviewService.getQuestions.mockResolvedValue([
+          {
+            ...codeQuestion,
+            prompt: "SQL dialect: PostgreSQL. Query customers.",
+            tags: [],
+            topic: "Database queries",
+          },
+        ]);
+
+        renderPage();
+        await screen.findByText(
+          "SQL dialect: PostgreSQL. Query customers."
+        );
+
+        await waitFor(() => {
+          expect(screen.getByRole("combobox", {
+            name: "Programming Language",
+          })).toHaveValue("sql");
+        });
+      }
+    );
+
+    test(
+      "preserves manual language selection on a question but resets on the next question",
+      async () => {
+        interviewService.getQuestions.mockResolvedValue([
+          {
+            ...codeQuestion,
+            id: "sql-test-002",
+            prompt: "SQL dialect: PostgreSQL. Query orders.",
+            tags: ["sql"],
+            topic: "SQL",
+          },
+          {
+            ...codeQuestion,
+            id: "js-test-002",
+            prompt: "Task (JavaScript): Retry a promise.",
+            tags: ["javascript"],
+            topic: "JavaScript",
+          },
+          {
+            ...codeQuestion,
+            id: "generic-test-003",
+            prompt: "Implement a binary search function.",
+            tags: ["algorithms"],
+            topic: "Algorithms",
+          },
+        ]);
+
+        renderPage();
+
+        await screen.findByText(
+          "SQL dialect: PostgreSQL. Query orders."
+        );
+        const languageSelect = screen.getByRole("combobox", {
+          name: "Programming Language",
+        });
+        await waitFor(() => {
+          expect(languageSelect).toHaveValue("sql");
+        });
+
+        userEvent.selectOptions(languageSelect, "cpp");
+        expect(languageSelect).toHaveValue("cpp");
+        fireEvent.change(screen.getByLabelText("Your Response"), {
+          target: { value: "SELECT 1;" },
+        });
+        expect(languageSelect).toHaveValue("cpp");
+
+        userEvent.click(screen.getByRole("button", { name: "Submit" }));
+        await screen.findByText("Response Feedback");
+        userEvent.click(screen.getByRole("button", { name: "Next Question" }));
+
+        await screen.findByText(
+          "Task (JavaScript): Retry a promise."
+        );
+        await waitFor(() => {
+          expect(languageSelect).toHaveValue("javascript");
+        });
+
+        fireEvent.change(screen.getByLabelText("Your Response"), {
+          target: { value: "async function retry() {}" },
+        });
+        userEvent.click(screen.getByRole("button", { name: "Submit" }));
+        await screen.findByText("Response Feedback");
+        userEvent.click(screen.getByRole("button", { name: "Next Question" }));
+
+        await screen.findByText("Implement a binary search function.");
+        await waitFor(() => {
+          expect(languageSelect).toHaveValue("python");
+        });
+      }
+    );
+
+    test(
       "requires a written response before submitting a Code question",
       async () => {
         renderPage({

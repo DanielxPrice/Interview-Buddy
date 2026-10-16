@@ -93,6 +93,50 @@ function calculateEloChange(
   return "-2";
 }
 
+/**
+ * Select an editor language only when a question explicitly requires one.
+ * Tags and topic come from the existing public questions API; the prompt
+ * check supports question records that omit language tags.
+ * General algorithm questions remain language-neutral (Python default).
+ */
+function getDefaultCodeLanguage(question) {
+  if (!question) {
+    return "python";
+  }
+
+  const tags = Array.isArray(question.tags)
+    ? question.tags.map((tag) =>
+        String(tag).trim().toLowerCase()
+      )
+    : [];
+
+  const topic = String(question.topic || "")
+    .trim()
+    .toLowerCase();
+
+  const prompt = String(question.prompt || "");
+
+  if (
+    tags.includes("sql") ||
+    tags.includes("postgresql") ||
+    topic === "sql" ||
+    /^\s*SQL dialect\s*:/i.test(prompt)
+  ) {
+    return "sql";
+  }
+
+  if (
+    tags.includes("javascript") ||
+    tags.includes("js") ||
+    topic === "javascript" ||
+    /^\s*Task\s*\(\s*JavaScript\s*\)/i.test(prompt)
+  ) {
+    return "javascript";
+  }
+
+  return "python";
+}
+
 function InterviewSessionPage({
   currentPage,
   onNavigate,
@@ -400,6 +444,16 @@ function InterviewSessionPage({
   useEffect(() => {
     loadQuestions();
   }, [loadQuestions]);
+
+  // Reset the editor only when the question changes. Users can still
+  // select a different language manually for the current question.
+  useEffect(() => {
+    if (isCode && currentQuestion) {
+      setCodeLanguage(
+        getDefaultCodeLanguage(currentQuestion)
+      );
+    }
+  }, [isCode, currentQuestion]);
 
   function resetQuestionState() {
     setSelectedQuizAnswer(
@@ -1041,6 +1095,10 @@ function InterviewSessionPage({
 
                 <option value="cpp">
                   C++
+                </option>
+
+                <option value="sql">
+                  SQL (PostgreSQL)
                 </option>
               </select>
             </div>
