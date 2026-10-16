@@ -781,4 +781,167 @@ describe("users routes", () => {
       });
     });
   });
+
+  //Verify behaviors that users.js already implemented
+  describe("Additional route tests", () => {
+    it("rejects a whitespace-only registration username", async () => {
+      const handler = getRouteHandler(router, "/profile", "post");
+      const req = {
+        user: { uid: "user-123", email: "test@example.com" },
+        body: { username: "   " },
+      };
+      const res = createResponse();
+
+      await handler(req, res, jest.fn());
+
+      expect(res.statusCode).toBe(400);
+      expect(res.payload).toEqual({
+        error: "Username is required.",
+      });
+      expect(userRepository.createProfile).not.toHaveBeenCalled();
+    });
+
+    it("trims registration usernames before persistence", async () => {
+      const handler = getRouteHandler(router, "/profile", "post");
+      userRepository.findByUsername.mockResolvedValue(null);
+      userRepository.createProfile.mockResolvedValue({
+        uid: "user-123",
+        username: "TestUser",
+      });
+
+      const req = {
+        user: { uid: "user-123", email: "test@example.com" },
+        body: { username: "  TestUser  " },
+      };
+      const res = createResponse();
+
+      await handler(req, res, jest.fn());
+
+      expect(userRepository.findByUsername).toHaveBeenCalledWith(
+        "TestUser"
+      );
+      expect(userRepository.createProfile).toHaveBeenCalledWith({
+        uid: "user-123",
+        username: "TestUser",
+        email: "test@example.com",
+      });
+      expect(res.statusCode).toBe(201);
+    });
+
+    it("rejects unauthenticated profile updates", async () => {
+      const handler = getRouteHandler(router, "/profile", "patch");
+      const req = {
+        body: { displayName: "Unauthorized Change" },
+      };
+      const res = createResponse();
+
+      await handler(req, res, jest.fn());
+
+      expect(res.statusCode).toBe(401);
+      expect(res.payload).toEqual({
+        error: "Authentication is required.",
+      });
+      expect(userRepository.updateProfile).not.toHaveBeenCalled();
+    });
+
+    it("rejects unauthenticated settings updates", async () => {
+      const handler = getRouteHandler(router, "/settings", "patch");
+      const req = {
+        body: { theme: "dark" },
+      };
+      const res = createResponse();
+
+      await handler(req, res, jest.fn());
+
+      expect(res.statusCode).toBe(401);
+      expect(res.payload).toEqual({
+        error: "Authentication is required.",
+      });
+      expect(userRepository.updateSettings).not.toHaveBeenCalled();
+    });
+  });
+  
+  describe("route error handling", () => {
+    it("returns 409 when profile creation detects a repository username conflict", async () => {
+      const handler = getRouteHandler(router, "/profile", "post");
+
+      userRepository.findByUsername.mockResolvedValue(null);
+
+      const conflict = new Error("That username is already in use.");
+      conflict.code = "username-already-exists";
+      userRepository.createProfile.mockRejectedValue(conflict);
+
+      const req = {
+        user: { uid: "user-123", email: "test@example.com" },
+        body: { username: "TakenUser" },
+      };
+      const res = createResponse();
+      const next = jest.fn();
+
+      await handler(req, res, next);
+
+      expect(res.statusCode).toBe(409);
+      expect(res.payload).toEqual({
+        error: "That username is already in use.",
+        code: "username-already-exists",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("rejects unauthenticated settings retrieval", async () => {
+      const handler = getRouteHandler(router, "/settings", "get");
+      const res = createResponse();
+
+      await handler({}, res, jest.fn());
+
+      expect(res.statusCode).toBe(401);
+      expect(res.payload).toEqual({
+        error: "Authentication is required.",
+      });
+      expect(userRepository.getSettings).not.toHaveBeenCalled();
+    });
+
+    it("preserves an explicit false notification setting", async () => {
+      const handler = getRouteHandler(router, "/settings", "patch");
+
+      userRepository.updateSettings.mockResolvedValue({
+        notifications: false,
+      });
+
+      const req = {
+        user: { uid: "user-123" },
+        body: { notifications: false },
+      };
+      const res = createResponse();
+
+      await handler(req, res, jest.fn());
+
+      expect(userRepository.updateSettings).toHaveBeenCalledWith(
+        "user-123",
+        { notifications: false }
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.payload).toEqual({
+        settings: { notifications: false },
+      });
+    });
+
+    it("forwards repository retrieval errors to Express", async () => {
+      const handler = getRouteHandler(router, "/profile", "get");
+
+      const databaseError = new Error("Firestore unavailable");
+      userRepository.findById.mockRejectedValue(databaseError);
+
+      const req = {
+        user: { uid: "user-123" },
+      };
+      const res = createResponse();
+      const next = jest.fn();
+
+      await handler(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(databaseError);
+      expect(next).toHaveBeenCalledTimes(1);
+    });
+  });
 });

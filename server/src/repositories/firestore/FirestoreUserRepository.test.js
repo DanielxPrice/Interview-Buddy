@@ -743,4 +743,122 @@ describe("FirestoreUserRepository", () => {
       expect(updateMock).not.toHaveBeenCalled();
     });
   });
+  
+  describe("Repository security and error handling", () => {
+    test("filters unsupported profile update fields", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({ uid: "user-123" }),
+        })
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            displayName: "New Name",
+          }),
+        });
+
+      updateMock.mockResolvedValue();
+
+      await repository.updateProfile("user-123", {
+        displayName: "New Name",
+        role: "admin",
+        email: "hacker@example.com",
+        uid: "different-user",
+      });
+
+      expect(updateMock).toHaveBeenCalledWith({
+        displayName: "New Name",
+        updatedAt: "mock-server-timestamp",
+      });
+
+      expect(updateMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("filters unsupported settings fields", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            settings: { theme: "light" },
+          }),
+        })
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            settings: { theme: "dark" },
+          }),
+        });
+
+      updateMock.mockResolvedValue();
+
+      await repository.updateSettings("user-123", {
+        theme: "dark",
+        role: "admin",
+        language: "en",
+      });
+
+      expect(updateMock).toHaveBeenCalledWith({
+        settings: { theme: "dark" },
+        updatedAt: "mock-server-timestamp",
+      });
+    });
+
+    test("propagates Firestore errors during profile creation", async () => {
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: true,
+          docs: [],
+        }),
+      });
+
+      const databaseError = new Error(
+        "Firestore write failed"
+      );
+
+      setMock.mockRejectedValue(databaseError);
+
+      await expect(
+        repository.createProfile({
+          uid: "user-123",
+          username: "TestUser",
+          email: "test@example.com",
+        })
+      ).rejects.toThrow("Firestore write failed");
+
+      expect(setMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("propagates Firestore errors during settings updates", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+          settings: { theme: "light" },
+        }),
+      });
+
+      const databaseError = new Error(
+        "Firestore update failed"
+      );
+
+      updateMock.mockRejectedValue(databaseError);
+
+      await expect(
+        repository.updateSettings("user-123", {
+          theme: "dark",
+        })
+      ).rejects.toThrow("Firestore update failed");
+
+      expect(updateMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });
