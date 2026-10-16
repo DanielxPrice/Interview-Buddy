@@ -21,6 +21,11 @@ import {
 } from "@codemirror/lang-cpp";
 
 import {
+  sql,
+  PostgreSQL,
+} from "@codemirror/lang-sql";
+
+import {
   EditorView,
 } from "@codemirror/view";
 
@@ -43,6 +48,11 @@ function getLanguageExtension(
 
     case "cpp":
       return cpp();
+
+    case "sql":
+      return sql({
+        dialect: PostgreSQL,
+      });
 
     case "python":
     default:
@@ -142,8 +152,10 @@ function CodeEditor({
           closeBrackets:
             true,
 
+          // Only enable SQL completion; preserve existing
+          // behavior for the other supported languages.
           autocompletion:
-            false,
+            language === "sql",
 
           highlightSelectionMatches:
             true,

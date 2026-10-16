@@ -218,6 +218,10 @@
 }
 
 .sessionQuestionPrompt {
+  /* Preserve SQL schemas, examples, and multiline code contracts. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
   margin: 0;
 
   padding:
