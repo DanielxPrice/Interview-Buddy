@@ -56,6 +56,14 @@ jest.mock("../services/authService", () => ({
   },
 }));
 
+
+jest.mock("../services/accountDeletionService", () => ({
+  accountDeletionService: {
+    deleteAccount: jest.fn(),
+  },
+}));
+
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockTheme = "Light";

@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from "react";
+
+import React, { useEffect, useRef, useState } from "react";
 
 import PageLayout from "../components/layout/PageLayout";
 import SettingsSection from "../components/settings/SettingsSection";
+import DeleteAccountDialog from "../components/settings/DeleteAccountDialog";
 
 import { userService } from "../services/userService";
 import { settingsService } from "../services/settingsService";
@@ -10,10 +12,21 @@ import { useTheme } from "../context/ThemeContext";
 
 import { useAuth } from "../context/AuthContext";
 
-function SettingsPage({ currentPage, onNavigate }) {
+function SettingsPage({ currentPage, onNavigate, onAccountDeleted }) {
   const { theme, setTheme } = useTheme();
 
-  const { updateProfileCache } = useAuth();
+  const { user, updateProfileCache } = useAuth();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const deleteButtonRef = useRef(null);
+  const providerIds = user?.providerIds || [];
+  const supportsDeletion = providerIds.includes("password") ||
+    providerIds.includes("google.com");
+
+  function closeDeleteDialog() {
+    setShowDeleteDialog(false);
+    // Restore keyboard focus after the dialog unmounts.
+    window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
+  }
 
   // Account information
   const [savedUsername, setSavedUsername] = useState("");
@@ -31,7 +44,7 @@ function SettingsPage({ currentPage, onNavigate }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const [status, setStatus] = useState(null);
-  
+
 
   // Load saved profile and display preferences.
   useEffect(() => {
@@ -320,7 +333,7 @@ function SettingsPage({ currentPage, onNavigate }) {
           </form>
         </SettingsSection>
 
-        
+
         {/* Security and Password - Firebase-backed */}
         <SettingsSection
           id="security-settings-title"
@@ -473,21 +486,31 @@ function SettingsPage({ currentPage, onNavigate }) {
         >
           <div className="ib-settings-split-row">
             <p>
-              Account deletion has not been connected to
-              Firebase yet. This action will be available
-              after secure deletion is implemented.
+              Permanently delete your Interview Buddy account, profile,
+              interview sessions, responses, and settings. This cannot be undone.
             </p>
-
             <button
+              ref={deleteButtonRef}
               type="button"
               className="ib-button ib-button--danger"
-              disabled
-              title="Account deletion is not available yet"
+              onClick={() => setShowDeleteDialog(true)}
+              disabled={isLoading || !supportsDeletion}
             >
               Delete Account
             </button>
           </div>
         </SettingsSection>
+
+        {showDeleteDialog && (
+          <DeleteAccountDialog
+            providerIds={providerIds}
+            onCancel={closeDeleteDialog}
+            onDeleted={() => {
+              setShowDeleteDialog(false);
+              if (onAccountDeleted) onAccountDeleted();
+            }}
+          />
+        )}
 
       </div>
     </PageLayout>
