@@ -168,6 +168,31 @@ function buildQuestionSetupOptions(questions) {
 }
 
 /**
+ * Count the entire eligible pool before ranking/truncating a session.
+ * All checks are shared with selectQuestions so the preview and the
+ * actual retrieval use the same role, experience, active, and ANY-tag rules.
+ */
+function eligibleQuestions(questions, setup) {
+  const selectedTags = parseSelectedTags(setup.tags);
+
+  if (!setup.jobRole || !setup.experienceLevel || selectedTags.length === 0) {
+    return [];
+  }
+
+  return questions.filter(
+    (question) =>
+      question &&
+      question.active !== false &&
+      matchesRequiredSetup(question, setup) &&
+      getMatchingTagCount(question, selectedTags) >= 1
+  );
+}
+
+function countEligibleQuestions(questions, setup) {
+  return eligibleQuestions(questions, setup).length;
+}
+
+/**
  * Select questions using the stored Firestore metadata.
  *
  * A question is eligible only when:
@@ -187,14 +212,11 @@ function selectQuestions(questions, setup, limit = 10) {
     return [];
   }
 
-  return questions
-    .filter((question) => question && question.active !== false)
-    .filter((question) => matchesRequiredSetup(question, setup))
+  return eligibleQuestions(questions, setup)
     .map((question) => ({
       question,
       matchingTagCount: getMatchingTagCount(question, selectedTags),
     }))
-    .filter(({ matchingTagCount }) => matchingTagCount >= 1)
     .sort((a, b) => {
       if (b.matchingTagCount !== a.matchingTagCount) {
         return b.matchingTagCount - a.matchingTagCount;
@@ -217,6 +239,7 @@ function selectQuestions(questions, setup, limit = 10) {
 
 module.exports = {
   buildQuestionSetupOptions,
+  countEligibleQuestions,
   parseSelectedTags,
   selectQuestions,
 };

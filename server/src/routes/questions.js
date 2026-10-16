@@ -6,6 +6,7 @@ const express =
 
 const {
   buildQuestionSetupOptions,
+  countEligibleQuestions,
   parseSelectedTags,
   selectQuestions,
 } = require(
@@ -180,6 +181,68 @@ function createQuestionRouter({
 
   const router =
     express.Router();
+
+  // Count previews can change with every tag click. Cache one per-mode
+  // Firestore snapshot briefly, invalidating on question-catalog revisions.
+  // A concurrent refresh shares one pending read instead of duplicating it.
+  const countCache = new Map();
+  const COUNT_CACHE_MS = 30000;
+
+  async function questionsForCount(mode, fresh = false) {
+    const version = questionMetadataService?.getVersion
+      ? await questionMetadataService.getVersion()
+      : null;
+    const cached = countCache.get(mode);
+    if (!fresh && cached && cached.version === version && cached.expiresAt > Date.now()) {
+      return cached.questions;
+    }
+    if (cached && cached.version === version && cached.pending) {
+      return cached.pending;
+    }
+
+    const pending = questionRepository.findByMode(mode).then((questions) => {
+      countCache.set(mode, {
+        version,
+        questions,
+        expiresAt: Date.now() + COUNT_CACHE_MS,
+      });
+      return questions;
+    }).catch((error) => {
+      if (countCache.get(mode)?.pending === pending) countCache.delete(mode);
+      throw error;
+    });
+    countCache.set(mode, { version, pending });
+    return pending;
+  }
+
+  // Read-only: does not create sessions, reserve questions, or use quota.
+  router.get("/count", async (req, res, next) => {
+    try {
+      const mode = String(req.query.mode || "").trim();
+      const jobRole = String(req.query.jobRole || "").trim();
+      const experienceLevel = String(req.query.experienceLevel || "").trim();
+      const tags = parseSelectedTags(req.query.tags);
+
+      if (!ALLOWED_MODES.has(mode)) {
+        return res.status(400).json({
+          error: "A valid mode is required: Quiz Style, Code Style, or Theoretical Style.",
+        });
+      }
+      if (!jobRole || !experienceLevel || tags.length === 0) {
+        return res.status(400).json({
+          error: "Job role, experience level, and at least one tag are required.",
+        });
+      }
+
+      const questions = await questionsForCount(mode, req.query.fresh === "1");
+      res.set("Cache-Control", "private, no-store");
+      return res.json({
+        availableCount: countEligibleQuestions(questions, { jobRole, experienceLevel, tags }),
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   router.get(
     "/quota",

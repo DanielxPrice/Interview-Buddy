@@ -1,5 +1,6 @@
 const {
   buildQuestionSetupOptions,
+  countEligibleQuestions,
   parseSelectedTags,
   selectQuestions,
 } = require("./questionSelection");
@@ -342,5 +343,28 @@ describe("questionSelection H-01 negative and boundary cases", () => {
   test("limits the results after filtering, including a zero limit", () => {
     expect(selectQuestions(dataset, setup, 1).map((q) => q.id)).toEqual(["active-1"]);
     expect(selectQuestions(dataset, setup, 0)).toEqual([]);
+  });
+});
+
+
+describe("countEligibleQuestions", () => {
+  const questions = [
+    { id: "a", active: true, jobRoles: ["backend developer"], experienceLevels: ["Beginner"], tags: ["sql", "database"] },
+    { id: "b", active: true, jobRoles: ["Backend Developer"], experienceLevels: ["beginner"], tags: ["rest api"] },
+    { id: "c", active: true, jobRoles: ["backend developer"], experienceLevels: ["Beginner"], tags: ["javascript"] },
+    { id: "inactive", active: false, jobRoles: ["backend developer"], experienceLevels: ["Beginner"], tags: ["sql"] },
+    { id: "wrong-role", active: true, jobRoles: ["frontend developer"], experienceLevels: ["Beginner"], tags: ["sql"] },
+    { id: "wrong-level", active: true, jobRoles: ["backend developer"], experienceLevels: ["Experienced"], tags: ["sql"] },
+  ];
+
+  test("counts each active question once when any selected tag matches", () => {
+    const setup = { jobRole: "Backend Developer", experienceLevel: "beginner", tags: ["sql", "database", "rest api"] };
+    expect(countEligibleQuestions(questions, setup)).toBe(2);
+    expect(selectQuestions(questions, setup, 1)).toHaveLength(1);
+  });
+
+  test("returns zero for incomplete or unmatched setups", () => {
+    expect(countEligibleQuestions(questions, { jobRole: "backend developer", experienceLevel: "Beginner", tags: [] })).toBe(0);
+    expect(countEligibleQuestions(questions, { jobRole: "backend developer", experienceLevel: "Beginner", tags: ["not real"] })).toBe(0);
   });
 });

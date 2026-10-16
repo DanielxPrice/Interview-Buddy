@@ -37,6 +37,9 @@ jest.mock(
       getQuestionQuota:
         jest.fn(),
 
+      getAvailableQuestionCount:
+        jest.fn(),
+
       startSession:
         jest.fn(),
     },
@@ -192,6 +195,8 @@ describe(
         .mockResolvedValue(
           defaultQuota
         );
+
+      interviewService.getAvailableQuestionCount.mockResolvedValue(40);
 
       interviewService
         .startSession
@@ -394,6 +399,8 @@ describe(
           }
         )
       );
+
+      await screen.findByText(/\d+ matching questions?/);
     }
 
     test(
@@ -810,6 +817,91 @@ describe(
       }
     );
 
+    test("displays matching questions and caps the session length", async () => {
+      interviewService.getAvailableQuestionCount.mockResolvedValue(4);
+      renderPage("Quiz Style");
+      await selectSoftwareEngineer();
+      await selectIntermediateExperience();
+      userEvent.click(screen.getByRole("button", { name: "Data Structures" }));
+      expect(await screen.findByText("4 matching questions")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByRole("spinbutton", { name: "Number of Questions" })).toHaveValue(4);
+      });
+      expect(screen.getByText("1–4 for this session")).toBeInTheDocument();
+      expect(interviewService.getAvailableQuestionCount).toHaveBeenCalledWith({
+        mode: "Quiz Style", jobRole: "Software Engineer", experienceLevel: "Intermediate", tags: ["data structures"],
+      });
+    });
+
+    test("updates the matching pool when a second tag is selected", async () => {
+      interviewService.getAvailableQuestionCount.mockImplementation(async ({ tags }) =>
+        tags.length === 1 ? 4 : 8
+      );
+      renderPage();
+      await selectSoftwareEngineer();
+      await selectIntermediateExperience();
+      userEvent.click(screen.getByRole("button", { name: "Data Structures" }));
+      expect(await screen.findByText("4 matching questions")).toBeInTheDocument();
+      userEvent.click(screen.getByRole("button", { name: "Algorithms" }));
+      expect(await screen.findByText("8 matching questions")).toBeInTheDocument();
+      expect(interviewService.getAvailableQuestionCount).toHaveBeenCalledWith({
+        mode: "Quiz Style", jobRole: "Software Engineer", experienceLevel: "Intermediate",
+        tags: ["data structures", "algorithms"],
+      });
+    });
+
+    test("applies both the matching count and daily quota to the maximum", async () => {
+      interviewService.getAvailableQuestionCount.mockResolvedValue(12);
+      interviewService.getQuestionQuota.mockResolvedValue({ ...defaultQuota, remaining: 3 });
+      renderPage("Code Style");
+      await fillValidSetup();
+      expect(screen.getByText("12 matching questions")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByRole("spinbutton", { name: "Number of Questions" })).toHaveValue(3);
+      });
+      expect(screen.getByText("1–3 for this session")).toBeInTheDocument();
+    });
+
+    test("prevents a session when no questions match", async () => {
+      interviewService.getAvailableQuestionCount.mockResolvedValue(0);
+      renderPage();
+      await selectSoftwareEngineer();
+      await selectIntermediateExperience();
+      userEvent.click(screen.getByRole("button", { name: "Data Structures" }));
+      expect(await screen.findByText("0 matching questions")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start Session" })).toBeDisabled();
+      expect(interviewService.startSession).not.toHaveBeenCalled();
+    });
+
+    test("does not start a session if availability cannot be checked", async () => {
+      interviewService.getAvailableQuestionCount.mockRejectedValue(new Error("Count unavailable"));
+      renderPage();
+      await selectSoftwareEngineer();
+      await selectIntermediateExperience();
+      userEvent.click(screen.getByRole("button", { name: "Data Structures" }));
+      expect(await screen.findByText("Count unavailable")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start Session" })).toBeDisabled();
+    });
+
+    test("rechecks availability immediately before creating a session", async () => {
+      interviewService.getAvailableQuestionCount
+        .mockResolvedValueOnce(15)
+        .mockResolvedValueOnce(3);
+      renderPage();
+      await selectSoftwareEngineer();
+      await selectIntermediateExperience();
+      userEvent.click(screen.getByRole("button", { name: "Data Structures" }));
+      expect(await screen.findByText("15 matching questions")).toBeInTheDocument();
+      userEvent.click(screen.getByRole("button", { name: "Start Session" }));
+      expect(await screen.findByText(/Availability changed. Only 3 matching questions remain./)).toBeInTheDocument();
+      expect(interviewService.getAvailableQuestionCount).toHaveBeenLastCalledWith({
+        mode: "Quiz Style", jobRole: "Software Engineer", experienceLevel: "Intermediate",
+        tags: ["data structures"], fresh: true,
+      });
+      expect(interviewService.startSession).not.toHaveBeenCalled();
+      expect(screen.getByRole("spinbutton", { name: "Number of Questions" })).toHaveValue(3);
+    });
+
     test(
       "uses 10 questions by default",
       async () => {
@@ -918,6 +1010,8 @@ describe(
             }
           )
         );
+
+        await screen.findByText("40 matching questions");
 
         userEvent.click(
           screen.getByRole(
