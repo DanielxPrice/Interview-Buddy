@@ -229,4 +229,90 @@ describe("requireAuth middleware", () => {
       next
     ).toHaveBeenCalledTimes(1);
   });
+
+  //Extension: Additional test case for expired token
+  it("rejects an expired Firebase ID token", async () => {
+    const expiredError = new Error("Token expired");
+    expiredError.code = "auth/id-token-expired";
+
+    verifyIdToken.mockRejectedValue(expiredError);
+
+    const req = {
+      get: jest.fn().mockReturnValue("Bearer expired-token"),
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await requireAuth(req, res, next);
+
+    expect(verifyIdToken).toHaveBeenCalledWith(
+      "expired-token"
+    );
+
+    expect(res.statusCode).toBe(401);
+
+    expect(res.payload).toEqual({
+      error: "The authentication token is invalid or expired.",
+      code: "invalid-auth-token",
+    });
+
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  //Extension: Additional test case for missing authorization header
+  it("rejects an empty bearer token", async () => {
+    const req = {
+      get: jest.fn().mockReturnValue("Bearer "),
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await requireAuth(req, res, next);
+
+    expect(res.statusCode).toBe(401);
+
+    expect(res.payload).toEqual({
+      error: "Authentication is required.",
+      code: "auth-token-required",
+    });
+
+    expect(verifyIdToken).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  //Extension: Additional test case for lowercase bearer scheme
+  it("accepts a lowercase bearer authorization scheme", async () => {
+    verifyIdToken.mockResolvedValue({
+      uid: "user-123",
+      email: "test@example.com",
+      email_verified: true,
+    });
+
+    const req = {
+      get: jest.fn().mockReturnValue(
+        "bearer valid-token"
+      ),
+    };
+
+    const res = createResponse();
+    const next = jest.fn();
+
+    await requireAuth(req, res, next);
+
+    expect(verifyIdToken).toHaveBeenCalledWith(
+      "valid-token"
+    );
+
+    expect(req.user).toEqual({
+      uid: "user-123",
+      email: "test@example.com",
+      emailVerified: true,
+      role: "user",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
 });
