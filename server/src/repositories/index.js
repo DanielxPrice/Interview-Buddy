@@ -74,6 +74,10 @@ const sessionRepository =
     admin,
   });
 
+const { createAccountDeletionService } = require("../services/accountDeletionService");
+const authClient = admin.auth();
+const accountDeletionService = createAccountDeletionService({ db, authClient });
+
 // Export repository instances for application services and routes.
 module.exports = {
   questionRepository,
@@ -82,4 +86,6 @@ module.exports = {
   userRepository,
   questionUsageRepository,
   sessionRepository,
+  accountDeletionService,
+  authClient,
 };

@@ -6,6 +6,7 @@ const createQuestionRouter = require("./routes/questions");
 const createEvaluateRouter = require("./routes/evaluate");
 const createUserRouter = require("./routes/users");
 const createSessionRouter = require("./routes/sessions");
+const createAccountDeletionRouter = require("./routes/accountDeletion");
 
 const requireAuth = require("./middleware/requireAuth");
 const getHealthPayload = require("./health");
@@ -25,6 +26,8 @@ const {
   userRepository,
   questionUsageRepository,
   sessionRepository,
+  accountDeletionService,
+  authClient,
 } = require("./repositories");
 
 // Initialize question metadata service.
@@ -93,6 +96,13 @@ app.use(
   createUserRouter({
     userRepository,
   })
+);
+
+// Secure account deletion is separate from ordinary profile routes.
+app.use(
+  "/api/users",
+  requireAuth,
+  createAccountDeletionRouter({ accountDeletionService, authClient })
 );
 
 // Protected session routes.
