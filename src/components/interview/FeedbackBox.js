@@ -5,7 +5,7 @@ function FeedbackBox({ feedbackType, feedbackMessage }) {
 
   return (
     <div className={`quizFeedback ${feedbackType}`}>
-      <p>{feedbackMessage}</p>
+      <p style={{ whiteSpace: "pre-line" }}>{feedbackMessage}</p>
     </div>
   );
 }

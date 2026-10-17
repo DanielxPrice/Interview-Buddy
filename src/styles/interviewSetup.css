@@ -1,0 +1,1243 @@
+/* ============================================================
+   INTERVIEW SETUP
+   Sprint 3 redesigned session configuration interface
+   ============================================================ */
+
+
+/* ------------------------------------------------------------
+   Main two-column layout
+   ------------------------------------------------------------ */
+
+.interviewSetupShell {
+  display: grid;
+
+  grid-template-columns:
+    minmax(0, 1fr)
+    290px;
+
+  gap: var(--ib-space-5);
+
+  align-items: start;
+}
+
+
+/* ------------------------------------------------------------
+   Main setup card
+   ------------------------------------------------------------ */
+
+.setupMainCard {
+  overflow: visible;
+}
+
+.setupCardHeader {
+  padding:
+    var(--ib-space-5)
+    var(--ib-space-5)
+    var(--ib-space-4);
+
+  border-bottom:
+    1px solid
+    var(--ib-border);
+}
+
+.setupCardHeader h2 {
+  margin:
+    var(--ib-space-1)
+    0
+    var(--ib-space-1);
+
+  color: var(--ib-text);
+
+  font-size:
+    var(--ib-font-size-xl);
+
+  font-weight:
+    var(--ib-font-weight-bold);
+}
+
+.setupCardHeader p {
+  margin: 0;
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-sm);
+}
+
+
+/* ------------------------------------------------------------
+   Form
+   ------------------------------------------------------------ */
+
+.setupForm {
+  display: flex;
+  flex-direction: column;
+}
+
+.setupFormGrid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(
+      2,
+      minmax(0, 1fr)
+    );
+
+  gap: var(--ib-space-4);
+
+  padding:
+    var(--ib-space-5);
+
+  border-top:
+    1px solid
+    var(--ib-border);
+}
+
+.setupField {
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: var(--ib-space-2);
+}
+
+.setupFieldLabel,
+.setupSectionLabel {
+  color: var(--ib-text);
+
+  font-size:
+    var(--ib-font-size-sm);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.setupFieldHint {
+  color:
+    var(--ib-text-muted);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  line-height:
+    var(--ib-line-height-normal);
+}
+
+
+/* ------------------------------------------------------------
+   Shared form sections
+   ------------------------------------------------------------ */
+
+.setupSection {
+  padding:
+    var(--ib-space-5);
+}
+
+.setupSectionHeading {
+  display: flex;
+
+  align-items: flex-start;
+  justify-content:
+    space-between;
+
+  gap: var(--ib-space-4);
+
+  margin-bottom:
+    var(--ib-space-3);
+}
+
+.setupSectionHeading p {
+  margin:
+    var(--ib-space-1)
+    0
+    0;
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  line-height:
+    var(--ib-line-height-normal);
+}
+
+
+/* ------------------------------------------------------------
+   Selected interview mode
+   ------------------------------------------------------------ */
+
+.setupChangeModeButton {
+  padding:
+    5px
+    8px;
+
+  border: 0;
+
+  background:
+    transparent;
+
+  color:
+    var(--ib-accent-700);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.setupChangeModeButton:hover:not(:disabled) {
+  text-decoration:
+    underline;
+}
+
+.setupChangeModeButton:disabled {
+  opacity: 0.55;
+
+  cursor: not-allowed;
+}
+
+.selectedModeCard {
+  min-height: 72px;
+
+  padding:
+    var(--ib-space-3);
+
+  display: flex;
+  align-items: center;
+
+  gap: var(--ib-space-3);
+
+  border:
+    1px solid
+    var(--ib-accent);
+
+  border-radius:
+    var(--ib-radius-md);
+
+  background:
+    var(--ib-accent-soft);
+}
+
+.selectedModeIcon {
+  flex-shrink: 0;
+
+  width: 42px;
+  height: 42px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface);
+
+  color:
+    var(--ib-accent-700);
+
+  font-weight:
+    var(--ib-font-weight-bold);
+
+  box-shadow:
+    var(--ib-shadow-xs);
+}
+
+.selectedModeCard > div:nth-child(2) {
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 3px;
+
+  flex: 1;
+}
+
+.selectedModeCard strong {
+  color: var(--ib-text);
+
+  font-size:
+    var(--ib-font-size-sm);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.selectedModeCard span {
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-xs);
+}
+
+.selectedModeStatus {
+  flex-shrink: 0;
+
+  padding:
+    5px
+    8px;
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-surface);
+
+  color:
+    var(--ib-accent-700) !important;
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+
+/* ------------------------------------------------------------
+   Job role combobox
+   ------------------------------------------------------------ */
+
+.jobRoleCombobox {
+  position: relative;
+
+  width: 100%;
+}
+
+.jobRoleCombobox .ib-input {
+  width: 100%;
+}
+
+.jobRoleDropdown {
+  position: absolute;
+
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+
+  z-index: 30;
+
+  max-height: 220px;
+
+  overflow-y: auto;
+
+  background:
+    var(--ib-surface);
+
+  border:
+    1px solid
+    var(--ib-border-strong);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  box-shadow:
+    var(--ib-shadow-card);
+}
+
+.jobRoleOption {
+  display: block;
+
+  width: 100%;
+
+  padding:
+    10px
+    12px;
+
+  border: 0;
+
+  border-bottom:
+    1px solid
+    var(--ib-border);
+
+  background:
+    transparent;
+
+  color:
+    var(--ib-text);
+
+  text-align: left;
+
+  font-size:
+    var(--ib-font-size-sm);
+}
+
+.jobRoleOption:last-child {
+  border-bottom: 0;
+}
+
+.jobRoleOption:hover,
+.jobRoleOption:focus-visible {
+  background:
+    var(--ib-accent-soft);
+
+  color:
+    var(--ib-text);
+
+  outline: none;
+}
+
+.jobRoleOption[aria-selected="true"] {
+  background:
+    var(--ib-accent-soft);
+
+  color:
+    var(--ib-accent-700);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.jobRoleEmpty {
+  margin: 0;
+
+  padding:
+    11px
+    12px;
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-sm);
+}
+
+
+/* ------------------------------------------------------------
+   Practice goals
+   ------------------------------------------------------------ */
+
+.practiceGoalFieldset {
+  min-width: 0;
+
+  margin: 0;
+
+  border: 0;
+
+  border-top:
+    1px solid
+    var(--ib-border);
+}
+
+.practiceGoalFieldset legend {
+  padding: 0;
+}
+
+.practiceGoalCount {
+  flex-shrink: 0;
+
+  padding:
+    5px
+    8px;
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-surface-muted);
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.practiceGoalSelector {
+  display: flex;
+  flex-wrap: wrap;
+
+  gap: var(--ib-space-2);
+
+  max-height: 230px;
+
+  overflow-y: auto;
+
+  padding:
+    var(--ib-space-3);
+
+  border:
+    1px solid
+    var(--ib-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface-muted);
+}
+
+.practiceGoalPill {
+  min-height: 32px;
+
+  padding:
+    6px
+    10px;
+
+  display: inline-flex;
+  align-items: center;
+
+  gap: 5px;
+
+  border:
+    1px solid
+    var(--ib-border-strong);
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-surface);
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  font-weight:
+    var(--ib-font-weight-medium);
+
+  transition:
+    background
+      var(--ib-transition-fast),
+    border-color
+      var(--ib-transition-fast),
+    color
+      var(--ib-transition-fast),
+    transform
+      var(--ib-transition-fast);
+}
+
+.practiceGoalPill:hover:not(:disabled) {
+  transform:
+    translateY(-1px);
+
+  border-color:
+    var(--ib-accent-border);
+
+  background:
+    var(--ib-accent-soft);
+
+  color:
+    var(--ib-text);
+}
+
+.practiceGoalPill:focus-visible {
+  outline:
+    3px solid
+    var(--ib-focus-ring);
+
+  outline-offset: 2px;
+}
+
+.practiceGoalPill.selected {
+  border-color:
+    var(--ib-accent);
+
+  background:
+    var(--ib-accent-soft);
+
+  color:
+    var(--ib-accent-700);
+}
+
+.practiceGoalCheck {
+  font-size: 0.72rem;
+
+  font-weight:
+    var(--ib-font-weight-bold);
+}
+
+.selectionSummary {
+  margin:
+    var(--ib-space-2)
+    0
+    0;
+
+  color:
+    var(--ib-text-muted);
+
+  font-size:
+    var(--ib-font-size-xs);
+}
+
+
+/* ------------------------------------------------------------
+   Question count
+   ------------------------------------------------------------ */
+
+.questionSection {
+  border-top:
+    1px solid
+    var(--ib-border);
+}
+
+.questionCountControl {
+  display: flex;
+  align-items: center;
+
+  gap: var(--ib-space-2);
+}
+
+.questionCountButton {
+  width: 36px;
+  height: 36px;
+
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border:
+    1px solid
+    var(--ib-border-strong);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface);
+
+  color:
+    var(--ib-text);
+
+  font-size: 1rem;
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.questionCountButton:hover:not(:disabled) {
+  border-color:
+    var(--ib-accent);
+
+  background:
+    var(--ib-accent-soft);
+}
+
+.questionCountButton:disabled {
+  cursor: not-allowed;
+
+  opacity: 0.45;
+}
+
+.questionCountInput {
+  width: 66px;
+  height: 36px;
+
+  border:
+    1px solid
+    var(--ib-input-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface);
+
+  color:
+    var(--ib-text);
+
+  text-align: center;
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.questionCountInput:focus {
+  border-color:
+    var(--ib-accent);
+
+  box-shadow:
+    0 0 0 3px
+    var(--ib-focus-ring);
+
+  outline: none;
+}
+
+.questionCountLimit {
+  margin-left:
+    var(--ib-space-1);
+
+  color:
+    var(--ib-text-muted);
+
+  font-size:
+    var(--ib-font-size-xs);
+}
+
+
+/* ------------------------------------------------------------
+   Loading and errors
+   ------------------------------------------------------------ */
+
+.setupStatusMessage {
+  margin:
+    0
+    var(--ib-space-5);
+
+  padding:
+    10px
+    12px;
+
+  display: flex;
+  align-items: center;
+
+  gap: var(--ib-space-2);
+
+  border:
+    1px solid
+    var(--ib-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface-muted);
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-sm);
+}
+
+.setupStatusDot {
+  width: 8px;
+  height: 8px;
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-accent);
+
+  animation:
+    setupStatusPulse
+    1.2s
+    ease-in-out
+    infinite;
+}
+
+@keyframes setupStatusPulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.setupErrorMessage {
+  margin:
+    var(--ib-space-3)
+    var(--ib-space-5)
+    0;
+
+  padding:
+    10px
+    12px;
+
+  border:
+    1px solid
+    var(--ib-danger-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-danger-soft);
+
+  color:
+    var(--ib-danger);
+
+  font-size:
+    var(--ib-font-size-sm);
+
+  font-weight:
+    var(--ib-font-weight-medium);
+}
+
+
+/* Error inside form should not double-indent */
+
+.setupForm > .setupErrorMessage {
+  margin:
+    0
+    var(--ib-space-5)
+    var(--ib-space-4);
+}
+
+
+/* ------------------------------------------------------------
+   Actions
+   ------------------------------------------------------------ */
+
+.setupActionRow {
+  padding:
+    var(--ib-space-4)
+    var(--ib-space-5);
+
+  display: flex;
+  justify-content: flex-end;
+
+  gap: var(--ib-space-2);
+
+  border-top:
+    1px solid
+    var(--ib-border);
+
+  background:
+    var(--ib-surface-muted);
+}
+
+.setupStartButton {
+  min-width: 150px;
+}
+
+
+/* ------------------------------------------------------------
+   Summary card
+   ------------------------------------------------------------ */
+
+.setupSummaryCard {
+  position: sticky;
+
+  top: var(--ib-space-5);
+
+  padding:
+    var(--ib-space-5);
+}
+
+.setupSummaryCard h2 {
+  margin:
+    var(--ib-space-1)
+    0
+    var(--ib-space-2);
+
+  color:
+    var(--ib-text);
+
+  font-size:
+    var(--ib-font-size-lg);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.setupSummaryIntro {
+  margin:
+    0
+    0
+    var(--ib-space-4);
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-sm);
+
+  line-height:
+    var(--ib-line-height-normal);
+}
+
+.setupSummaryList {
+  display: flex;
+  flex-direction: column;
+}
+
+.setupSummaryItem {
+  padding:
+    var(--ib-space-3)
+    0;
+
+  display: flex;
+  justify-content:
+    space-between;
+
+  gap: var(--ib-space-3);
+
+  border-bottom:
+    1px solid
+    var(--ib-border);
+}
+
+.setupSummaryItem:first-child {
+  border-top:
+    1px solid
+    var(--ib-border);
+}
+
+.setupSummaryItem span {
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-xs);
+}
+
+.setupSummaryItem strong {
+  max-width: 150px;
+
+  color:
+    var(--ib-text);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+
+  text-align: right;
+}
+
+.setupSummaryNote {
+  margin-top:
+    var(--ib-space-4);
+
+  padding:
+    var(--ib-space-3);
+
+  display: flex;
+  align-items: flex-start;
+
+  gap: var(--ib-space-2);
+
+  border:
+    1px solid
+    var(--ib-accent-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-accent-soft);
+}
+
+.setupSummaryNoteIcon {
+  flex-shrink: 0;
+
+  width: 20px;
+  height: 20px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-accent);
+
+  color:
+    var(--ib-accent-text);
+
+  font-size: 0.7rem;
+
+  font-weight:
+    var(--ib-font-weight-bold);
+}
+
+.setupSummaryNote p {
+  margin: 0;
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  line-height:
+    var(--ib-line-height-normal);
+}
+
+
+/* ------------------------------------------------------------
+   Responsive behavior
+   ------------------------------------------------------------ */
+
+@media (max-width: 980px) {
+  .interviewSetupShell {
+    grid-template-columns:
+      1fr;
+  }
+
+  .setupSummaryCard {
+    position: static;
+  }
+}
+
+@media (max-width: 650px) {
+  .setupFormGrid {
+    grid-template-columns:
+      1fr;
+  }
+
+  .setupSectionHeading {
+    flex-direction:
+      column;
+  }
+
+  .selectedModeCard {
+    align-items:
+      flex-start;
+
+    flex-wrap: wrap;
+  }
+
+  .selectedModeStatus {
+    margin-left:
+      54px;
+  }
+
+  .practiceGoalSelector {
+    max-height: 300px;
+  }
+
+  .setupActionRow {
+    flex-direction:
+      column-reverse;
+  }
+
+  .setupActionRow .ib-button {
+    width: 100%;
+  }
+}
+/* ------------------------------------------------------------
+   Daily question quota
+   ------------------------------------------------------------ */
+
+.quotaSection {
+  border-top:
+    1px solid
+    var(--ib-border);
+}
+
+.quotaStatusBadge {
+  flex-shrink: 0;
+
+  padding:
+    5px
+    9px;
+
+  border:
+    1px solid
+    var(--ib-border);
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-accent-soft);
+
+  color:
+    var(--ib-accent-700);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  font-weight:
+    var(--ib-font-weight-semibold);
+}
+
+.quotaStatusBadge--unlimited {
+  background:
+    var(--ib-surface-muted);
+
+  color:
+    var(--ib-text);
+}
+
+.quotaStatusBadge--empty {
+  border-color:
+    var(--ib-danger-border);
+
+  background:
+    var(--ib-danger-soft);
+
+  color:
+    var(--ib-danger);
+}
+
+.quotaMessage {
+  padding:
+    11px
+    12px;
+
+  border:
+    1px solid
+    var(--ib-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface-muted);
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-sm);
+}
+
+.quotaMessage--error {
+  border-color:
+    var(--ib-danger-border);
+
+  background:
+    var(--ib-danger-soft);
+
+  color:
+    var(--ib-danger);
+}
+
+.quotaCard {
+  display: flex;
+  flex-direction: column;
+
+  gap:
+    var(--ib-space-3);
+
+  padding:
+    var(--ib-space-4);
+
+  border:
+    1px solid
+    var(--ib-border);
+
+  border-radius:
+    var(--ib-radius-sm);
+
+  background:
+    var(--ib-surface-muted);
+}
+
+.quotaCard--unlimited {
+  background:
+    var(--ib-accent-soft);
+}
+
+.quotaPrimary {
+  display: flex;
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+.quotaPrimary strong {
+  color:
+    var(--ib-text);
+
+  font-size:
+    var(--ib-font-size-sm);
+}
+
+.quotaPrimary span {
+  color:
+    var(--ib-text-muted);
+
+  font-size:
+    var(--ib-font-size-xs);
+}
+
+.quotaProgress {
+  width: 100%;
+  height: 8px;
+
+  overflow: hidden;
+
+  border-radius:
+    var(--ib-radius-pill);
+
+  background:
+    var(--ib-border);
+}
+
+.quotaProgress > span {
+  display: block;
+
+  height: 100%;
+
+  border-radius:
+    inherit;
+
+  background:
+    var(--ib-accent);
+
+  transition:
+    width
+      var(--ib-transition-fast);
+}
+
+.quotaBreakdown {
+  display: flex;
+  flex-wrap: wrap;
+
+  gap:
+    var(--ib-space-4);
+
+  color:
+    var(--ib-text-secondary);
+
+  font-size:
+    var(--ib-font-size-xs);
+}
+
+.quotaBreakdown strong {
+  color:
+    var(--ib-text);
+}
+
+.quotaLimitReached,
+.questionQuotaWarning {
+  margin: 0;
+
+  color:
+    var(--ib-danger);
+
+  font-size:
+    var(--ib-font-size-xs);
+
+  font-weight:
+    var(--ib-font-weight-medium);
+}
+
+.questionQuotaWarning {
+  margin-top:
+    var(--ib-space-2);
+}
+/* Live Firestore-backed question availability shown below practice goals. */
+.questionAvailability {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ib-space-2);
+}
+
+.questionAvailability p {
+  margin: 0;
+  color: var(--ib-text-muted);
+  font-size: var(--ib-font-size-sm);
+}
+
+.questionAvailabilityTotal {
+  color: var(--ib-text);
+  font-size: 1.4rem;
+  font-weight: var(--ib-font-weight-bold);
+}
+
+.questionAvailability .questionAvailabilityError {
+  color: var(--ib-danger);
+}

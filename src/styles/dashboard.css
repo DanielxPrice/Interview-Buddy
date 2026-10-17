@@ -1,0 +1,331 @@
+/* ============================================================
+   DASHBOARD
+   Sprint 3 mode selection redesign
+   ============================================================ */
+
+
+/* ------------------------------------------------------------
+   Welcome area
+   ------------------------------------------------------------ */
+
+.dashboardWelcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dashboardWelcomeTitle {
+  margin: 6px 0 4px;
+
+  color: var(--ib-text);
+
+  font-size: var(--ib-font-size-xl);
+  font-weight: var(--ib-font-weight-bold);
+  line-height: var(--ib-line-height-tight);
+}
+
+.dashboardWelcomeText {
+  margin: 0;
+
+  color: var(--ib-text-secondary);
+
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+}
+
+
+/* ------------------------------------------------------------
+   Section headers
+   ------------------------------------------------------------ */
+
+.dashboardSectionHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+
+  margin-bottom: var(--ib-space-4);
+}
+
+.dashboardSectionHeader h2 {
+  margin: 0 0 5px;
+
+  color: var(--ib-text);
+
+  font-size: var(--ib-font-size-lg);
+  font-weight: var(--ib-font-weight-semibold);
+}
+
+.dashboardSectionHeader p {
+  margin: 0;
+
+  color: var(--ib-text-secondary);
+
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+}
+
+
+/* ------------------------------------------------------------
+   Practice mode cards
+   ------------------------------------------------------------ */
+
+.dashboardPracticeGrid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: var(--ib-space-4);
+}
+
+.practiceModeCard {
+  min-height: 235px;
+
+  padding: var(--ib-space-5);
+
+  display: flex;
+  flex-direction: column;
+
+  background: var(--ib-surface);
+
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-md);
+
+  box-shadow: var(--ib-shadow-sm);
+
+  transition:
+    transform var(--ib-transition-base),
+    border-color var(--ib-transition-base),
+    box-shadow var(--ib-transition-base);
+}
+
+.practiceModeCard:hover {
+  transform: translateY(-2px);
+
+  border-color: var(--ib-accent-border);
+
+  box-shadow: var(--ib-shadow-card);
+}
+
+
+/* Icon */
+
+.practiceModeIcon {
+  width: 38px;
+  height: 38px;
+
+  margin-bottom: var(--ib-space-4);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: var(--ib-radius-sm);
+
+  background: var(--ib-accent-soft);
+  color: var(--ib-accent-700);
+
+  font-size: 1.1rem;
+  font-weight: var(--ib-font-weight-bold);
+}
+
+
+/* Card text */
+
+.practiceModeContent {
+  flex: 1;
+}
+
+.practiceModeTitle {
+  margin: 0 0 var(--ib-space-2);
+
+  color: var(--ib-text);
+
+  font-size: var(--ib-font-size-md);
+  font-weight: var(--ib-font-weight-semibold);
+}
+
+.practiceModeDescription {
+  margin: 0;
+
+  color: var(--ib-text-secondary);
+
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-relaxed);
+}
+
+
+/* Card button */
+
+.practiceModeButton {
+  width: 100%;
+
+  margin-top: var(--ib-space-5);
+}
+
+.practiceModeButtonArrow {
+  font-size: 1rem;
+}
+
+
+/* ------------------------------------------------------------
+   Quick access
+   ------------------------------------------------------------ */
+
+.dashboardQuickAccess {
+  min-height: 54px;
+
+  padding:
+    var(--ib-space-3)
+    var(--ib-space-4);
+
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+
+  gap: var(--ib-space-2);
+
+  background: var(--ib-surface);
+
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-md);
+
+  box-shadow: var(--ib-shadow-xs);
+}
+
+.dashboardQuickAccessLabel {
+  margin-right: var(--ib-space-1);
+
+  color: var(--ib-text-muted);
+
+  font-size: var(--ib-font-size-xs);
+  font-weight: var(--ib-font-weight-semibold);
+
+  letter-spacing: 0.04em;
+}
+
+.dashboardQuickAccessButton {
+  min-height: 31px;
+
+  padding: 6px 11px;
+
+  border: 1px solid var(--ib-accent-border);
+  border-radius: var(--ib-radius-xs);
+
+  background: var(--ib-surface);
+
+  color: var(--ib-accent-700);
+
+  font-size: var(--ib-font-size-xs);
+  font-weight: var(--ib-font-weight-medium);
+
+  transition:
+    background var(--ib-transition-fast),
+    border-color var(--ib-transition-fast),
+    color var(--ib-transition-fast);
+}
+
+.dashboardQuickAccessButton:hover {
+  background: var(--ib-accent-soft);
+
+  border-color: var(--ib-accent);
+}
+
+
+/* ------------------------------------------------------------
+   Workflow overview
+   ------------------------------------------------------------ */
+
+.dashboardOverviewCard {
+  padding: var(--ib-space-5);
+}
+
+.dashboardSteps {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: var(--ib-space-4);
+}
+
+.dashboardStep {
+  display: flex;
+  align-items: flex-start;
+
+  gap: var(--ib-space-3);
+
+  padding: var(--ib-space-4);
+
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-sm);
+
+  background: var(--ib-surface-muted);
+}
+
+.dashboardStepNumber {
+  flex-shrink: 0;
+
+  width: 28px;
+  height: 28px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: var(--ib-radius-pill);
+
+  background: var(--ib-accent-soft);
+  color: var(--ib-accent-700);
+
+  font-size: var(--ib-font-size-xs);
+  font-weight: var(--ib-font-weight-bold);
+}
+
+.dashboardStep h3 {
+  margin: 1px 0 5px;
+
+  color: var(--ib-text);
+
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-semibold);
+}
+
+.dashboardStep p {
+  margin: 0;
+
+  color: var(--ib-text-secondary);
+
+  font-size: var(--ib-font-size-xs);
+  line-height: var(--ib-line-height-normal);
+}
+
+
+/* ------------------------------------------------------------
+   Responsive layout
+   ------------------------------------------------------------ */
+
+@media (max-width: 950px) {
+  .dashboardPracticeGrid,
+  .dashboardSteps {
+    grid-template-columns: 1fr;
+  }
+
+  .practiceModeCard {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .dashboardQuickAccess {
+    align-items: stretch;
+  }
+
+  .dashboardQuickAccessLabel {
+    width: 100%;
+  }
+
+  .dashboardQuickAccessButton {
+    flex: 1;
+  }
+}

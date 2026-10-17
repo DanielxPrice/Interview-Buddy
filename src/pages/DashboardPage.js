@@ -1,59 +1,234 @@
 import React from "react";
+
 import PageLayout from "../components/layout/PageLayout";
 import PracticeModeCard from "../components/dashboard/PracticeModeCard";
 
-function DashboardPage({ currentPage, onNavigate, onSelectMode }) {
+import { useAuth } from "../context/AuthContext";
+import { PAGES } from "../utils/constants";
+
+function getUserDisplayName(user) {
+  if (user?.displayName?.trim()) {
+    return user.displayName.trim();
+  }
+
+  if (user?.email) {
+    const emailName =
+      user.email.split("@")[0];
+
+    if (emailName) {
+      return (
+        emailName.charAt(0).toUpperCase() +
+        emailName.slice(1)
+      );
+    }
+  }
+
+  return "there";
+}
+
+function DashboardPage({
+  currentPage,
+  onNavigate,
+  onSelectMode,
+}) {
+  const { user } = useAuth();
+
+  const displayName =
+    getUserDisplayName(user);
+
   return (
     <PageLayout
       title="Dashboard"
-      subtitle="Choose a preparation mode to get started."
+      subtitle="Your technical interview practice workspace."
       currentPage={currentPage}
       onNavigate={onNavigate}
     >
-      <div className="dashboardGrid">
-        <PracticeModeCard
-          title="Quiz Style"
-          description="Practice multiple choice interview questions with a simple question and answer format."
-          onOpen={() => onSelectMode("Quiz Style")}
-        />
+      {/* Welcome section */}
+      <section className="dashboardWelcome">
+        <div>
+          <span className="ib-eyebrow">
+            Practice Workspace
+          </span>
 
-        <PracticeModeCard
-          title="Code Style"
-          description="Practice technical coding prompts with a code box and written solution space."
-          onOpen={() => onSelectMode("Code Style")}
-        />
+          <h2 className="dashboardWelcomeTitle">
+            Welcome back, {displayName}!
+          </h2>
 
-        <PracticeModeCard
-          title="Theoretical Style"
-          description="Practice open response interview questions and longer conceptual explanations."
-          onOpen={() => onSelectMode("Theoretical Style")}
-        />
-      </div>
+          <p className="dashboardWelcomeText">
+            Ready to sharpen your technical interview
+            skills? Choose a training mode to get
+            started.
+          </p>
+        </div>
+      </section>
 
-      <div className="dashboardMiniGrid">
-        <div className="smallPanel" onClick={() => onNavigate("history")}>
-          <h3>History</h3>
-          <p>View past interview sessions.</p>
+      {/* Interview mode selection */}
+      <section
+        className="dashboardPracticeSection"
+        aria-labelledby="practiceModesTitle"
+      >
+        <div className="dashboardSectionHeader">
+          <div>
+            <h2 id="practiceModesTitle">
+              Choose a Practice Mode
+            </h2>
+
+            <p>
+              Each mode focuses on a different type
+              of technical interview preparation.
+            </p>
+          </div>
         </div>
 
-        <div className="smallPanel" onClick={() => onNavigate("leaderboard")}>
-          <h3>Leaderboard</h3>
-          <p>See your ranking against other users.</p>
+        <div className="dashboardPracticeGrid">
+          <PracticeModeCard
+            icon="▣"
+            title="Quiz Style"
+            description="Quick-fire multiple choice questions covering technical concepts and interview fundamentals."
+            buttonLabel="Start Quiz"
+            onOpen={() =>
+              onSelectMode("Quiz Style")
+            }
+          />
+
+          <PracticeModeCard
+            icon="‹›"
+            title="Code Style"
+            description="Practice coding interview questions and explain your solution in a focused technical environment."
+            buttonLabel="Start Coding"
+            onOpen={() =>
+              onSelectMode("Code Style")
+            }
+          />
+
+          <PracticeModeCard
+            icon="◎"
+            title="Theoretical Style"
+            description="Practice explaining technical concepts clearly through detailed written interview responses."
+            buttonLabel="Start Review"
+            onOpen={() =>
+              onSelectMode(
+                "Theoretical Style"
+              )
+            }
+          />
+        </div>
+      </section>
+
+      {/* Quick navigation */}
+      <section
+        className="dashboardQuickAccess"
+        aria-label="Quick access"
+      >
+        <span className="dashboardQuickAccessLabel">
+          QUICK ACCESS:
+        </span>
+
+        <button
+          type="button"
+          className="dashboardQuickAccessButton"
+          onClick={() =>
+            onNavigate(PAGES.HISTORY)
+          }
+        >
+          History
+        </button>
+
+        <button
+          type="button"
+          className="dashboardQuickAccessButton"
+          onClick={() =>
+            onNavigate(PAGES.LEADERBOARD)
+          }
+        >
+          Ranking
+        </button>
+
+        <button
+          type="button"
+          className="dashboardQuickAccessButton"
+          onClick={() =>
+            onNavigate(PAGES.ANALYTICS)
+          }
+        >
+          Stats
+        </button>
+
+        <button
+          type="button"
+          className="dashboardQuickAccessButton"
+          onClick={() =>
+            onNavigate(PAGES.SETTINGS)
+          }
+        >
+          Settings
+        </button>
+      </section>
+
+      {/* Workflow overview */}
+      <section className="dashboardOverviewCard ib-card">
+        <div className="dashboardSectionHeader">
+          <div>
+            <span className="ib-eyebrow">
+              Interview Workflow
+            </span>
+
+            <h2>
+              Practice with a focused session
+            </h2>
+
+            <p>
+              Interview Buddy guides you from
+              configuration to real interview
+              questions and response feedback.
+            </p>
+          </div>
         </div>
 
-        <div className="smallPanel" onClick={() => onNavigate("analytics")}>
-          <h3>Analytics</h3>
-          <p>Review progress and performance.</p>
-        </div>
-      </div>
+        <div className="dashboardSteps">
+          <div className="dashboardStep">
+            <span className="dashboardStepNumber">
+              1
+            </span>
 
-      <div className="largePanel">
-        <h2 className="panelTitle">Quick Overview</h2>
-        <p>
-          Select a mode, fill out your interview setup details, and then begin
-          a hardcoded session flow based on your capstone use case.
-        </p>
-      </div>
+            <div>
+              <h3>Select a Mode</h3>
+              <p>
+                Choose Quiz, Code, or
+                Theoretical practice.
+              </p>
+            </div>
+          </div>
+
+          <div className="dashboardStep">
+            <span className="dashboardStepNumber">
+              2
+            </span>
+
+            <div>
+              <h3>Configure</h3>
+              <p>
+                Select your role, experience
+                level, and practice goals.
+              </p>
+            </div>
+          </div>
+
+          <div className="dashboardStep">
+            <span className="dashboardStepNumber">
+              3
+            </span>
+
+            <div>
+              <h3>Practice</h3>
+              <p>
+                Receive questions, submit your
+                answers, and review feedback.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
     </PageLayout>
   );
 }

@@ -1,26 +1,85 @@
-import React, { useState } from "react";
+import React, {
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+
 import "./App.css";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import DashboardPage from "./pages/DashboardPage";
-import InterviewSetupPage from "./pages/InterviewSetupPage";
-import InterviewSessionPage from "./pages/InterviewSessionPage";
-import SessionResultsPage from "./pages/SessionResultsPage";
-import SettingsPage from "./pages/SettingsPage";
-import ChangePasswordPage from "./pages/ChangePasswordPage";
-import HistoryPage from "./pages/HistoryPage";
-import LeaderboardPage from "./pages/LeaderboardPage";
-import AnalyticsPage from "./pages/AnalyticsPage";
+
+import { PAGES } from "./utils/constants";
+
+import AppRoutes from "./utils/routes";
+import { interviewService } from "./services/interviewService";
+
+import { useAuth } from "./context/AuthContext";
 
 function App() {
-  const [currentPage, setCurrentPage] = useState("login");
-  const [selectedMode, setSelectedMode] = useState("");
-  const [setupData, setSetupData] = useState({
+  const navigate = useNavigate();
+
+  const location = useLocation();
+
+  const {
+    user,
+    loading,
+  } = useAuth();
+
+  console.log(
+    "Auth loading:",
+    loading
+  );
+
+  console.log(
+    "Current User:",
+    user
+  );
+
+  const currentPage =
+    location.pathname;
+
+  const authenticatedUid = user?.uid;
+
+  useEffect(() => {
+    if (!authenticatedUid || loading) return undefined;
+    const refresh = () => interviewService.refreshSetupMetadata().catch(() => {
+      // Bundled metadata remains usable while Firestore/network is unavailable.
+    });
+    refresh();
+    const timer = setInterval(refresh, 60000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      interviewService.resetMetadataVerification();
+    };
+  }, [authenticatedUid, loading]);
+
+  const [
+    selectedMode,
+    setSelectedMode,
+  ] = useState("");
+
+  const [
+    setupData,
+    setSetupData,
+  ] = useState({
     jobRole: "",
     experienceLevel: "",
+    tags: [],
     practiceGoals: "",
+    questionCount: 10,
   });
-  const [sessionResult, setSessionResult] = useState({
+
+  const [
+    sessionResult,
+    setSessionResult,
+  ] = useState({
     mode: "Quiz Style",
     date: "May 4, 2026",
     score: "0%",
@@ -29,21 +88,26 @@ function App() {
     isCorrect: null,
     answerSubmitted: false,
   });
-  // UC15 — banner shown on the login page after account deletion.
-  const [loginMessage, setLoginMessage] = useState("");
 
-  function handleNavigate(pageName) {
-    // Any navigation away from login clears the one-shot banner so it
-    // doesn't reappear if the user logs in and then logs out.
-    if (pageName !== "login") {
+  const [
+    loginMessage,
+    setLoginMessage,
+  ] = useState("");
+
+  useEffect(() => {
+    if (
+      currentPage !==
+      PAGES.LOGIN
+    ) {
       setLoginMessage("");
     }
-    setCurrentPage(pageName);
+  }, [currentPage]);
+
+  function handleNavigate(path) {
+    navigate(path);
   }
 
   function handleAccountDeleted() {
-    // UC15 happy path — clear sensitive state, set the success banner,
-    // and route back to the public login page.
     setSessionResult({
       mode: "Quiz Style",
       date: "May 4, 2026",
@@ -53,138 +117,89 @@ function App() {
       isCorrect: null,
       answerSubmitted: false,
     });
+
     setSelectedMode("");
-    setLoginMessage("Your account has been successfully deleted.");
-    setCurrentPage("login");
-  }
 
-  function handleSelectMode(modeName) {
-    setSelectedMode(modeName);
-    setCurrentPage("interviewSetup");
-  }
+    setLoginMessage(
+      "Your account has been successfully deleted."
+    );
 
-  function handleStartInterview(formData) {
-    setSetupData(formData);
-    setCurrentPage("interview");
-  }
-
-  function handleEndInterview(resultData) {
-    setSessionResult(resultData);
-    setCurrentPage("sessionResults");
-  }
-
-  if (currentPage === "login") {
-    return (
-      <LoginPage
-        onLogin={() => handleNavigate("dashboard")}
-        onGoToRegister={() => handleNavigate("register")}
-        loginMessage={loginMessage}
-      />
+    navigate(
+      PAGES.LOGIN,
+      {
+        replace: true,
+      }
     );
   }
 
-  if (currentPage === "register") {
-    return (
-      <RegisterPage
-        onRegister={() => handleNavigate("dashboard")}
-        onGoToLogin={() => handleNavigate("login")}
-      />
+  function handleSelectMode(
+    modeName
+  ) {
+    setSelectedMode(
+      modeName
+    );
+
+    navigate(
+      PAGES.INTERVIEW_SETUP
     );
   }
 
-  if (currentPage === "dashboard") {
-    return (
-      <DashboardPage
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-        onSelectMode={handleSelectMode}
-      />
+  function handleStartInterview(
+    sessionData
+  ) {
+    setSetupData(
+      sessionData
+    );
+
+    navigate(
+      PAGES.INTERVIEW
     );
   }
 
-  if (currentPage === "interviewSetup") {
-    return (
-      <InterviewSetupPage
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-        selectedMode={selectedMode}
-        onStartInterview={handleStartInterview}
-      />
+  function handleEndInterview(
+    resultData
+  ) {
+    setSessionResult(
+      resultData
     );
-  }
 
-  if (currentPage === "interview") {
-    return (
-      <InterviewSessionPage
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-        selectedMode={selectedMode}
-        setupData={setupData}
-        onEndInterview={handleEndInterview}
-      />
-    );
-  }
-
-  if (currentPage === "sessionResults") {
-    return (
-      <SessionResultsPage
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-        sessionResult={sessionResult}
-      />
-    );
-  }
-
-  if (currentPage === "settings") {
-    return (
-      <SettingsPage
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-        onAccountDeleted={handleAccountDeleted}
-      />
-    );
-  }
-
-  if (currentPage === "changePassword") {
-    return (
-      <ChangePasswordPage
-        onBackToSettings={() => handleNavigate("settings")}
-      />
-    );
-  }
-
-  if (currentPage === "history") {
-    return (
-      <HistoryPage
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-      />
-    );
-  }
-
-  if (currentPage === "leaderboard") {
-    return (
-      <LeaderboardPage
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-      />
-    );
-  }
-
-  if (currentPage === "analytics") {
-    return (
-      <AnalyticsPage
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-      />
+    navigate(
+      PAGES.SESSION_RESULTS
     );
   }
 
   return (
-    <DashboardPage
-      currentPage="dashboard"
-      onNavigate={handleNavigate}
-      onSelectMode={handleSelectMode}
+    <AppRoutes
+      currentPage={
+        currentPage
+      }
+      onNavigate={
+        handleNavigate
+      }
+      onSelectMode={
+        handleSelectMode
+      }
+      onStartInterview={
+        handleStartInterview
+      }
+      onEndInterview={
+        handleEndInterview
+      }
+      onAccountDeleted={
+        handleAccountDeleted
+      }
+      loginMessage={
+        loginMessage
+      }
+      selectedMode={
+        selectedMode
+      }
+      setupData={
+        setupData
+      }
+      sessionResult={
+        sessionResult
+      }
     />
   );
 }

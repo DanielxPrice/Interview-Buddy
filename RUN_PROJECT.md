@@ -3,9 +3,10 @@
 ## Prerequisites
 
 - Node.js 18 or newer
-- npm 9 or newer (installed with Node.js)
+- npm 9 or newer
+- A Firebase project with Cloud Firestore enabled for database-backed interview questions
 
-## Install dependencies
+## 1. Install the React client
 
 From the project root:
 
@@ -13,39 +14,61 @@ From the project root:
 npm install
 ```
 
-This downloads packages listed in `package.json`.
+Copy the client environment template:
 
-## Start the development server
+```bash
+cp .env.example .env.local
+```
+
+## 2. Configure the backend
+
+```bash
+cd server
+npm install
+cp .env.example .env
+```
+
+Edit `server/.env` and set `FIREBASE_PROJECT_ID`.
+
+Point `GOOGLE_APPLICATION_CREDENTIALS` to a Firebase service-account JSON file stored outside the repository.
+
+If you are testing AI answer evaluation, also set `ANTHROPIC_API_KEY` in `server/.env`.
+
+See `FIREBASE_SETUP.md` for full credential and repository-layer details.
+
+## 3. Test and seed Firebase
+
+From `server/`:
+
+```bash
+npm test
+npm run seed
+```
+
+The seed script writes through `QuestionRepository`; it does not access Firestore directly.
+
+## 4. Start both processes
+
+Terminal 1, from `server/`:
 
 ```bash
 npm start
 ```
 
-Then open your browser at:
+Terminal 2, from the project root:
+
+```bash
+npm start
+```
+
+Open `http://localhost:3000`.
+
+The backend defaults to `http://localhost:5001`.
+
+## Architecture note
+
+The client never accesses Firestore directly. The current flow is:
 
 ```text
-http://localhost:3000
+React -> interviewService -> Express route -> repository contract -> Firestore adapter -> Firestore
 ```
-
-The app reloads automatically when you change source files.
-
-## Build for production
-
-```bash
-npm run build
-```
-
-This creates an optimized production bundle in the `build` folder.
-
-## Run tests
-
-```bash
-npm test
-```
-
-This starts the Create React App test runner.
-
-## Notes
-
-- The project is built with Create React App.
-- If you want to deploy the app, use the contents of the `build` folder.

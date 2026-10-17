@@ -1,21 +1,46 @@
 import React from "react";
 
-function PracticeModeCard({ title, description, onOpen }) {
+function PracticeModeCard({
+  icon,
+  title,
+  description,
+  buttonLabel,
+  onOpen,
+}) {
   return (
-    <div className="modeCard">
-      <div className="modeCardTop">
-        <span className="modeTag">Practice Mode</span>
+    <article className="practiceModeCard">
+      <div
+        className="practiceModeIcon"
+        aria-hidden="true"
+      >
+        {icon}
       </div>
 
-      <h2 className="modeCardTitle">{title}</h2>
-      <p className="modeCardDescription">{description}</p>
+      <div className="practiceModeContent">
+        <h2 className="practiceModeTitle">
+          {title}
+        </h2>
 
-      <div className="modeCardBottom">
-        <button className="secondaryButton modeButton" onClick={onOpen}>
-          Open Mode
-        </button>
+        <p className="practiceModeDescription">
+          {description}
+        </p>
       </div>
-    </div>
+
+      <button
+        type="button"
+        className="ib-button ib-button--primary practiceModeButton"
+        onClick={onOpen}
+      >
+        {buttonLabel}
+
+        <span
+          className="practiceModeButtonArrow"
+          aria-hidden="true"
+        >
+          →
+        </span>
+      </button>
+    </article>
   );
 }
 

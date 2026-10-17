@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // The React client should not access Firestore directly. The Node
+    // application layer uses Firebase Admin and is therefore governed by IAM,
+    // not these client rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

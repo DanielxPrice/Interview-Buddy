@@ -1,518 +1,518 @@
-import React, { useState } from "react";
+
+import React, { useEffect, useRef, useState } from "react";
+
 import PageLayout from "../components/layout/PageLayout";
-import mockSettings from "../data/mockSettings";
+import SettingsSection from "../components/settings/SettingsSection";
+import DeleteAccountDialog from "../components/settings/DeleteAccountDialog";
+
+import { userService } from "../services/userService";
+import { settingsService } from "../services/settingsService";
+import { authService } from "../services/authService";
 import { useTheme } from "../context/ThemeContext";
 
-// UC15 — for the prototype we treat this as the "real" password.
-// In production it would be validated against the auth service.
-const MOCK_VALID_PASSWORD = "password123";
-const MAX_PASSWORD_ATTEMPTS = 3;
+import { useAuth } from "../context/AuthContext";
 
 function SettingsPage({ currentPage, onNavigate, onAccountDeleted }) {
-  // Theme is sourced from the app-wide ThemeContext so changing it
-  // actually flips the palette. Everything else stays in local state.
   const { theme, setTheme } = useTheme();
-  const [settings, setSettings] = useState({ ...mockSettings, theme });
-  const [editingField, setEditingField] = useState(null);
-  const [tempValue, setTempValue] = useState("");
-  const [saveStatus, setSaveStatus] = useState("");
 
-  // Keep the displayed value in sync with the live theme.
-  if (settings.theme !== theme) {
-    setSettings((s) => ({ ...s, theme }));
-  }
-
-  // UC15 dialog state — kept local so it resets every time the user
-  // closes the modal. `step` is what makes this a multi-step flow.
-  // 0 = closed, 1 = warning + acknowledgment, 2 = password entry
-  const [deleteStep, setDeleteStep] = useState(0);
-  const [acknowledged, setAcknowledged] = useState(false);
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [deleteError, setDeleteError] = useState("");
-  const [passwordAttempts, setPasswordAttempts] = useState(0);
-
-  function startEdit(field) {
-    setEditingField(field);
-    setTempValue(settings[field]);
-    setSaveStatus("");
-  }
-
-  function cancelEdit() {
-    setEditingField(null);
-    setTempValue("");
-  }
-
-  function saveEdit(field) {
-    if (!tempValue.trim()) return;
-    const newValue = tempValue.trim();
-    setSettings({ ...settings, [field]: newValue });
-    // Theme is special — push it into the context so the rest of the
-    // app re-renders against the new palette.
-    if (field === "theme") {
-      setTheme(newValue);
-    }
-    setEditingField(null);
-    setSaveStatus(`"${field}" updated successfully.`);
-  }
-
-  // ----- UC15 handlers -------------------------------------------------
-
-  function openDeleteDialog() {
-    // Reset every piece of dialog state so a previous abandoned attempt
-    // never leaks into a new one. Easy to forget.
-    setDeleteStep(1);
-    setAcknowledged(false);
-    setConfirmPassword("");
-    setDeleteError("");
-    setPasswordAttempts(0);
-  }
+  const { user, updateProfileCache } = useAuth();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const deleteButtonRef = useRef(null);
+  const providerIds = user?.providerIds || [];
+  const supportsDeletion = providerIds.includes("password") ||
+    providerIds.includes("google.com");
 
   function closeDeleteDialog() {
-    setDeleteStep(0);
-    setDeleteError("");
+    setShowDeleteDialog(false);
+    // Restore keyboard focus after the dialog unmounts.
+    window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
   }
 
-  function handleAcknowledgmentNext() {
-    // Extension #4a — block the user if they didn't tick the checkbox.
-    if (!acknowledged) {
-      setDeleteError("You must agree to the acknowledgment to proceed.");
-      return;
-    }
-    setDeleteError("");
-    setDeleteStep(2);
-  }
+  // Account information
+  const [savedUsername, setSavedUsername] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
 
-  function handleConfirmDelete() {
-    // Extension #6a — empty password.
-    if (!confirmPassword.trim()) {
-      setDeleteError("Please enter your password to confirm account deletion.");
-      return;
-    }
+  // Request and feedback states
+  const [isLoading, setIsLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingTheme, setSavingTheme] = useState(false);
 
-    // Step 7 — validate the password.
-    if (confirmPassword !== MOCK_VALID_PASSWORD) {
-      const nextAttempts = passwordAttempts + 1;
-      setPasswordAttempts(nextAttempts);
+  // Password management
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [status, setStatus] = useState(null);
 
-      // Extension #6b — three failed attempts cancels the deletion.
-      if (nextAttempts >= MAX_PASSWORD_ATTEMPTS) {
-        closeDeleteDialog();
-        setSaveStatus(
-          "Too many failed attempts. Account deletion has been cancelled."
-        );
-        return;
+
+  // Load saved profile and display preferences.
+  useEffect(() => {
+    let active = true;
+
+    async function loadSettings() {
+      try {
+        const [profile, savedSettings] = await Promise.all([
+          userService.getProfile(),
+          settingsService.getSettings(),
+        ]);
+
+        if (!active) return;
+
+        const storedUsername = profile?.username || "";
+
+        setSavedUsername(storedUsername);
+        setUsername(storedUsername);
+        setEmail(profile?.email || "");
+
+        if (
+          savedSettings?.theme === "light" ||
+          savedSettings?.theme === "dark"
+        ) {
+          setTheme(
+            savedSettings.theme === "dark" ? "Dark" : "Light"
+          );
+        }
+      } catch (error) {
+        if (active) {
+          setStatus({
+            type: "error",
+            text: error.message || "Unable to load settings.",
+          });
+        }
+      } finally {
+        if (active) setIsLoading(false);
       }
+    }
 
-      const remaining = MAX_PASSWORD_ATTEMPTS - nextAttempts;
-      setDeleteError(
-        `Incorrect password. ${remaining} attempt${
-          remaining === 1 ? "" : "s"
-        } remaining.`
-      );
-      setConfirmPassword("");
+    loadSettings();
+
+    return () => {
+      active = false;
+    };
+  }, [setTheme]);
+
+  // Save username changes through the existing user service.
+  async function handleProfileSave(event) {
+    event.preventDefault();
+
+    const value = username.trim();
+
+    if (!value) {
+      setStatus({
+        type: "error",
+        text: "Username cannot be empty.",
+      });
       return;
     }
 
-    // Steps 8-10 (happy path). For the prototype we just bubble up
-    // to App.js, which clears state and routes back to login with a
-    // success banner.
-    closeDeleteDialog();
-    if (onAccountDeleted) {
-      onAccountDeleted();
-    } else {
-      onNavigate("login");
+    if (value === savedUsername || savingProfile) return;
+
+    setSavingProfile(true);
+    setStatus(null);
+
+    try {
+      const updatedProfile =
+        await userService.updateProfile({ username: value });
+
+      const saved = updatedProfile?.username || value;
+
+      setSavedUsername(saved);
+      setUsername(saved);
+
+      updateProfileCache({ username: saved });
+
+      setStatus({
+        type: "success",
+        text: "Profile changes saved.",
+      });
+    } catch (error) {
+      setStatus({
+        type: "error",
+        text: error.message || "Unable to save profile.",
+      });
+    } finally {
+      setSavingProfile(false);
     }
   }
 
-  const fields = [
-    {
-      key: "username",
-      label: "Username",
-      description: "Your public display name for the platform.",
-    },
-    {
-      key: "email",
-      label: "Email",
-      description: "Primary email connected to the account.",
-    },
-    {
-      key: "theme",
-      label: "Theme",
-      description: "Current display preference for the prototype.",
-      options: ["Light", "Dark"],
-    },
-    {
-      key: "notifications",
-      label: "Notifications",
-      description: "Whether you receive session reminder notifications.",
-      options: ["Enabled", "Disabled"],
-    },
-  ];
+  // Persist visual theme through the existing settings service.
+  async function handleThemeChange(nextTheme) {
+    if (
+      isLoading ||
+      savingTheme ||
+      nextTheme === theme
+    ) {
+      return;
+    }
+
+    setSavingTheme(true);
+    setStatus(null);
+
+    try {
+      await settingsService.updateSettings({
+        theme: nextTheme.toLowerCase(),
+      });
+
+      setTheme(nextTheme);
+
+      setStatus({
+        type: "success",
+        text: "Theme preference saved.",
+      });
+    } catch (error) {
+      setStatus({
+        type: "error",
+        text: error.message || "Unable to update theme.",
+      });
+    } finally {
+      setSavingTheme(false);
+    }
+  }
+
+
+  async function handlePasswordSave(event) {
+    event.preventDefault();
+
+    if (isLoading || savingPassword) {
+      return;
+    }
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setStatus({
+        type: "error",
+        text: "Please complete all password fields.",
+      });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setStatus({
+        type: "error",
+        text: "New password must be at least 6 characters long.",
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setStatus({
+        type: "error",
+        text: "New passwords do not match.",
+      });
+      return;
+    }
+
+    if (newPassword === currentPassword) {
+      setStatus({
+        type: "error",
+        text: "New password must differ from the current password.",
+      });
+      return;
+    }
+
+    setSavingPassword(true);
+    setStatus(null);
+
+    try {
+      await authService.changePassword(
+        currentPassword,
+        newPassword
+      );
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+
+      setStatus({
+        type: "success",
+        text: "Password updated successfully.",
+      });
+    } catch (error) {
+      setStatus({
+        type: "error",
+        text: error.message || "Unable to update password.",
+      });
+    } finally {
+      setSavingPassword(false);
+    }
+  }
+
+  const profileHasChanges =
+    username.trim() !== savedUsername;
 
   return (
     <PageLayout
       title="Settings"
-      subtitle="Manage your account settings and preferences."
+      subtitle="Manage your account and personalize your Interview Buddy workspace."
       currentPage={currentPage}
       onNavigate={onNavigate}
     >
-      {saveStatus && (
-        <p
-          style={{
-            backgroundColor: "#e6f4ea",
-            color: "#2e7d32",
-            padding: "8px 14px",
-            borderRadius: "6px",
-            marginBottom: "16px",
-            fontSize: "14px",
-          }}
-        >
-          ✓ {saveStatus}
-        </p>
-      )}
+      <div className="ib-settings-page">
 
-      <div className="settingsPanel">
-        {fields.map(({ key, label, description, options }) => (
-          <div className="settingsRowCard" key={key}>
-            <div className="settingsRowLeft">
-              <h3>{label}</h3>
-              <p>{description}</p>
-            </div>
-
-            {editingField === key ? (
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                {options ? (
-                  <select
-                    value={tempValue}
-                    onChange={(e) => setTempValue(e.target.value)}
-                    autoFocus
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "6px",
-                      border: "1px solid #ccc",
-                      fontSize: "14px",
-                      minWidth: "140px",
-                      backgroundColor: "#fff",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {options.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                ) : (
-                <input
-                  type="text"
-                  value={tempValue}
-                  onChange={(e) => setTempValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveEdit(key);
-                    if (e.key === "Escape") cancelEdit();
-                  }}
-                  autoFocus
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: "6px",
-                    border: "1px solid #ccc",
-                    fontSize: "14px",
-                    minWidth: "140px",
-                  }}
-                />
-                )}
-                <button
-                  className="primaryButton"
-                  style={{ padding: "6px 12px", fontSize: "13px" }}
-                  onClick={() => saveEdit(key)}
-                >
-                  Save
-                </button>
-                <button
-                  className="secondaryButton"
-                  style={{ padding: "6px 12px", fontSize: "13px" }}
-                  onClick={cancelEdit}
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                <div className="settingsValue">{settings[key]}</div>
-                <button
-                  className="secondaryButton"
-                  style={{ padding: "4px 10px", fontSize: "13px", display: "flex", alignItems: "center", gap: "5px" }}
-                  onClick={() => startEdit(key)}
-                  title="Edit"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                  Edit
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="largePanel" style={{ marginTop: "24px" }}>
-        <h2 className="panelTitle">Password</h2>
-        <p>
-          Password changes require current password verification. This feature
-          will be fully implemented in CPSC 491.
-        </p>
-        <button
-          className="primaryButton"
-          style={{ marginTop: "10px" }}
-          onClick={() => onNavigate("changePassword")}
-        >
-          Change Password
-        </button>
-      </div>
-
-      {/* UC15 — Account Management */}
-      <div
-        className="largePanel"
-        style={{
-          marginTop: "24px",
-          borderColor: "#f2c9c9",
-          background: "#fff7f7",
-          // Explicit dark text colors so the panel reads correctly in both
-          // light and dark themes (the pink background stays light in both).
-          color: "#5b6470",
-        }}
-      >
-        <h2 className="panelTitle" style={{ color: "#9f1c1c" }}>
-          Account Management
-        </h2>
-        <p style={{ color: "#5b6470" }}>
-          Permanently delete your Interview Buddy account and all associated
-          data. This action cannot be undone.
-        </p>
-        <button
-          className="primaryButton"
-          style={{
-            marginTop: "10px",
-            background: "#9f1c1c",
-          }}
-          onClick={openDeleteDialog}
-        >
-          Delete Account
-        </button>
-      </div>
-
-      {/* UC15 modal — shared overlay, two interior screens */}
-      {deleteStep > 0 && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="deleteAccountTitle"
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={closeDeleteDialog}
-        >
+        {/* Success and error messages */}
+        {status && (
           <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "white",
-              borderRadius: "16px",
-              padding: "28px",
-              width: "min(460px, 92vw)",
-              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.25)",
-              border: "2px solid #f2c9c9",
-            }}
+            className={`ib-settings-status ib-settings-status--${status.type}`}
+            role={status.type === "error" ? "alert" : "status"}
           >
-            {deleteStep === 1 && (
-              <>
-                <h2
-                  id="deleteAccountTitle"
-                  style={{
-                    fontSize: "1.4rem",
-                    marginBottom: "10px",
-                    color: "#9f1c1c",
-                  }}
-                >
-                  Delete your account?
-                </h2>
-                <p
-                  style={{
-                    color: "#5b6470",
-                    lineHeight: 1.5,
-                    marginBottom: "16px",
-                  }}
-                >
-                  This action is <strong>permanent</strong> and cannot be
-                  undone. All of your sessions, scores, and personal data will
-                  be removed from Interview Buddy.
-                </p>
+            {status.text}
+          </div>
+        )}
 
+        {/* Account Settings */}
+        <SettingsSection
+          id="account-settings-title"
+          title="Account Settings"
+          description="Your account information and public username."
+          icon="user"
+        >
+          <form onSubmit={handleProfileSave}>
+            <div className="ib-settings-grid">
+              <div className="ib-settings-field">
                 <label
-                  style={{
-                    display: "flex",
-                    gap: "10px",
-                    alignItems: "flex-start",
-                    cursor: "pointer",
-                    marginBottom: "20px",
-                  }}
+                  className="ib-label"
+                  htmlFor="settings-username"
                 >
-                  <input
-                    type="checkbox"
-                    checked={acknowledged}
-                    onChange={(e) => {
-                      setAcknowledged(e.target.checked);
-                      if (e.target.checked) setDeleteError("");
-                    }}
-                    style={{ marginTop: "4px" }}
-                  />
-                  <span style={{ color: "#1f2937", lineHeight: 1.5 }}>
-                    I acknowledge this is a permanent action.
-                  </span>
+                  Username
                 </label>
 
-                {deleteError && (
-                  <p
-                    style={{
-                      color: "#9f1c1c",
-                      backgroundColor: "#fff1f1",
-                      border: "1px solid #f2c9c9",
-                      padding: "8px 12px",
-                      borderRadius: "8px",
-                      marginBottom: "14px",
-                      fontSize: "14px",
-                    }}
-                  >
-                    {deleteError}
-                  </p>
-                )}
+                <input
+                  id="settings-username"
+                  className="ib-input"
+                  type="text"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(event) =>
+                    setUsername(event.target.value)
+                  }
+                  disabled={isLoading || savingProfile}
+                  maxLength={60}
+                  required
+                />
+              </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "10px",
-                    justifyContent: "flex-end",
-                  }}
+              <div className="ib-settings-field">
+                <label
+                  className="ib-label"
+                  htmlFor="settings-email"
                 >
-                  <button
-                    className="secondaryButton"
-                    style={{ padding: "8px 16px" }}
-                    onClick={closeDeleteDialog}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="primaryButton"
-                    style={{ padding: "8px 16px" }}
-                    onClick={handleAcknowledgmentNext}
-                  >
-                    Next
-                  </button>
-                </div>
-              </>
-            )}
-
-            {deleteStep === 2 && (
-              <>
-                <h2
-                  id="deleteAccountTitle"
-                  style={{
-                    fontSize: "1.4rem",
-                    marginBottom: "10px",
-                    color: "#9f1c1c",
-                  }}
-                >
-                  Confirm with your password
-                </h2>
-                <p
-                  style={{
-                    color: "#5b6470",
-                    lineHeight: 1.5,
-                    marginBottom: "16px",
-                  }}
-                >
-                  For your security, enter your password to confirm permanent
-                  deletion of your account.
-                  <br />
-                  <em style={{ fontSize: "0.85rem" }}>
-                    (Prototype hint: use{" "}
-                    <code>{MOCK_VALID_PASSWORD}</code>)
-                  </em>
-                </p>
+                  Email Address
+                </label>
 
                 <input
-                  className="textInput"
-                  type="password"
-                  placeholder="Password"
-                  value={confirmPassword}
-                  onChange={(e) => {
-                    setConfirmPassword(e.target.value);
-                    if (deleteError) setDeleteError("");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleConfirmDelete();
-                  }}
-                  autoFocus
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: deleteError
-                      ? "2px solid #9f1c1c"
-                      : "1px solid #ccc",
-                    fontSize: "14px",
-                    marginBottom: "12px",
-                  }}
+                  id="settings-email"
+                  className="ib-input ib-settings-readonly"
+                  type="email"
+                  value={email}
+                  readOnly
+                  aria-describedby="settings-email-help"
                 />
 
-                {deleteError && (
-                  <p
-                    style={{
-                      color: "#9f1c1c",
-                      backgroundColor: "#fff1f1",
-                      border: "1px solid #f2c9c9",
-                      padding: "8px 12px",
-                      borderRadius: "8px",
-                      marginBottom: "14px",
-                      fontSize: "14px",
-                    }}
-                  >
-                    {deleteError}
-                  </p>
-                )}
+                <small id="settings-email-help">
+                  Email changes aren't currently supported.
+                </small>
+              </div>
+            </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "10px",
-                    justifyContent: "flex-end",
-                  }}
+            <div className="ib-settings-actions">
+              <button
+                className="ib-button ib-button--primary"
+                type="submit"
+                disabled={
+                  isLoading ||
+                  savingProfile ||
+                  !username.trim() ||
+                  !profileHasChanges
+                }
+              >
+                {savingProfile
+                  ? "Saving..."
+                  : "Save Profile Changes"}
+              </button>
+            </div>
+          </form>
+        </SettingsSection>
+
+
+        {/* Security and Password - Firebase-backed */}
+        <SettingsSection
+          id="security-settings-title"
+          title="Security & Password"
+          description="Manage your account password."
+          icon="shield"
+        >
+          <form
+            className="ib-settings-password-form"
+            onSubmit={handlePasswordSave}
+          >
+            <div className="ib-settings-password-grid">
+              <div className="ib-settings-field">
+                <label
+                  className="ib-label"
+                  htmlFor="settings-current-password"
                 >
-                  <button
-                    className="secondaryButton"
-                    style={{ padding: "8px 16px" }}
-                    onClick={closeDeleteDialog}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="primaryButton"
-                    style={{ padding: "8px 16px", background: "#9f1c1c" }}
-                    onClick={handleConfirmDelete}
-                  >
-                    Confirm Delete
-                  </button>
-                </div>
-              </>
-            )}
+                  Current Password
+                </label>
+
+                <input
+                  id="settings-current-password"
+                  className="ib-input"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="Enter current password"
+                  value={currentPassword}
+                  onChange={(event) =>
+                    setCurrentPassword(event.target.value)
+                  }
+                  disabled={isLoading || savingPassword}
+                  required
+                />
+              </div>
+
+              <div className="ib-settings-field">
+                <label
+                  className="ib-label"
+                  htmlFor="settings-new-password"
+                >
+                  New Password
+                </label>
+
+                <input
+                  id="settings-new-password"
+                  className="ib-input"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(event) =>
+                    setNewPassword(event.target.value)
+                  }
+                  disabled={isLoading || savingPassword}
+                  minLength={6}
+                  required
+                />
+              </div>
+
+              <div className="ib-settings-field">
+                <label
+                  className="ib-label"
+                  htmlFor="settings-confirm-password"
+                >
+                  Confirm New Password
+                </label>
+
+                <input
+                  id="settings-confirm-password"
+                  className="ib-input"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(event) =>
+                    setConfirmPassword(event.target.value)
+                  }
+                  disabled={isLoading || savingPassword}
+                  minLength={6}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="ib-settings-password-footer">
+              <p className="ib-settings-password-note">
+                Enter your current password to verify your identity.
+                New passwords must contain at least 6 characters.
+              </p>
+
+              <button
+                type="submit"
+                className="ib-button ib-button--secondary"
+                disabled={isLoading || savingPassword}
+              >
+                {savingPassword
+                  ? "Updating..."
+                  : "Update Security"}
+              </button>
+            </div>
+          </form>
+        </SettingsSection>
+
+        {/* Display Preferences */}
+        <SettingsSection
+          id="display-settings-title"
+          title="Display Preferences"
+          description="Choose how Interview Buddy looks and feels."
+          icon="display"
+        >
+          <div className="ib-settings-preference-row">
+            <div>
+              <h3>Visual Theme</h3>
+              <p>Switch between Light and Dark mode.</p>
+            </div>
+
+            <div
+              className="ib-settings-segmented"
+              role="group"
+              aria-label="Visual Theme"
+            >
+              {["Light", "Dark"].map((option) => (
+                <button
+                  type="button"
+                  key={option}
+                  className={
+                    theme === option
+                      ? "ib-settings-segment is-active"
+                      : "ib-settings-segment"
+                  }
+                  aria-pressed={theme === option}
+                  onClick={() =>
+                    handleThemeChange(option)
+                  }
+                  disabled={isLoading || savingTheme}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        </SettingsSection>
+
+        {/* Danger Zone */}
+        <SettingsSection
+          id="danger-settings-title"
+          title="Danger Zone"
+          icon="warning"
+          danger
+        >
+          <div className="ib-settings-split-row">
+            <p>
+              Permanently delete your Interview Buddy account, profile,
+              interview sessions, responses, and settings. This cannot be undone.
+            </p>
+            <button
+              ref={deleteButtonRef}
+              type="button"
+              className="ib-button ib-button--danger"
+              onClick={() => setShowDeleteDialog(true)}
+              disabled={isLoading || !supportsDeletion}
+            >
+              Delete Account
+            </button>
+          </div>
+        </SettingsSection>
+
+        {showDeleteDialog && (
+          <DeleteAccountDialog
+            providerIds={providerIds}
+            onCancel={closeDeleteDialog}
+            onDeleted={() => {
+              setShowDeleteDialog(false);
+              if (onAccountDeleted) onAccountDeleted();
+            }}
+          />
+        )}
+
+      </div>
     </PageLayout>
   );
 }

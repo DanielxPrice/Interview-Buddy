@@ -504,6 +504,13 @@
   gap: 14px;
 }
 
+.loginLogo{
+  display: block;
+  width: 100px;
+  height: auto;
+  margin: 0 auto 16px;
+}
+
 .textInput {
   width: 100%;
   padding: 14px 16px;
@@ -527,7 +534,7 @@
 
 .primaryButton {
   background: var(--primary-button-bg);
-  color: white;
+  color: var(--primary-button-text);
 }
 
 .primaryButton:hover {
@@ -539,6 +546,11 @@
   color: var(--text-primary);
   padding: 8px;
   font-weight: 600;
+}
+
+.socialButton {
+display: flex;
+gap: 12px;
 }
 
 .textButton:hover {

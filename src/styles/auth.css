@@ -1,0 +1,265 @@
+
+/* Authentication-only styles; all selectors are scoped to ib-auth. */
+
+.ib-auth-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      var(--ib-accent-soft),
+      transparent 56%
+    ),
+    var(--ib-canvas);
+  color: var(--ib-text);
+  font-family: var(--ib-font-family);
+}
+
+.ib-auth-layout {
+  width: 100%;
+  max-width: 480px;
+}
+
+.ib-auth-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.ib-auth-logo {
+  display: block;
+  width: 74px;
+  height: 74px;
+  object-fit: contain;
+  margin-bottom: 12px;
+}
+
+.ib-auth-brand-name {
+  color: var(--ib-text);
+  font-size: var(--ib-font-size-2xl);
+  line-height: var(--ib-line-height-tight);
+  font-weight: var(--ib-font-weight-bold);
+  letter-spacing: -0.035em;
+}
+
+.ib-auth-brand-description {
+  margin-top: 8px;
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+}
+
+.ib-auth-card {
+  padding: 34px;
+  border-radius: var(--ib-radius-xl);
+  box-shadow: var(--ib-shadow-card);
+}
+
+.ib-auth-card-header {
+  margin-bottom: 26px;
+}
+
+.ib-auth-eyebrow {
+  margin-bottom: 9px;
+}
+
+.ib-auth-title {
+  color: var(--ib-text);
+  font-size: var(--ib-font-size-2xl);
+  font-weight: var(--ib-font-weight-bold);
+  letter-spacing: -0.035em;
+  line-height: var(--ib-line-height-tight);
+}
+
+.ib-auth-subtitle {
+  margin-top: 9px;
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-relaxed);
+}
+
+.ib-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ib-auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ib-auth-field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ib-auth-input {
+  min-height: 45px;
+  padding: 11px 12px;
+  border-radius: var(--ib-radius-md);
+}
+
+.ib-auth-input:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
+.ib-auth-link,
+.ib-auth-switch-button {
+  color: var(--ib-accent-700);
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-semibold);
+  text-decoration: none;
+}
+
+.ib-auth-link:hover,
+.ib-auth-switch-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.ib-auth-link:focus-visible,
+.ib-auth-switch-button:focus-visible {
+  outline: 3px solid var(--ib-focus-ring);
+  outline-offset: 3px;
+  border-radius: var(--ib-radius-xs);
+}
+
+.ib-auth-message {
+  border: 1px solid;
+  border-radius: var(--ib-radius-md);
+  padding: 12px 14px;
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+}
+
+.ib-auth-message--success {
+  margin-bottom: 18px;
+  color: var(--ib-success);
+  background: var(--ib-success-soft);
+  border-color: var(--ib-success-border);
+}
+
+.ib-auth-message--error {
+  color: var(--ib-danger);
+  background: var(--ib-danger-soft);
+  border-color: var(--ib-danger-border);
+}
+
+.ib-auth-action {
+  width: 100%;
+  min-height: 45px;
+  border-radius: var(--ib-radius-md);
+  font-size: var(--ib-font-size-sm);
+}
+
+.ib-auth-separator {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin: 24px 0;
+  color: var(--ib-text-muted);
+  font-size: var(--ib-font-size-xs);
+  white-space: nowrap;
+}
+
+.ib-auth-separator::before,
+.ib-auth-separator::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--ib-border);
+}
+
+.ib-auth-google-button {
+  gap: 10px;
+}
+
+.ib-auth-google-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ib-surface-muted);
+  color: var(--ib-text);
+  font-weight: var(--ib-font-weight-bold);
+  font-size: 15px;
+}
+
+.ib-auth-switch {
+  margin-top: 26px;
+  text-align: center;
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+}
+
+.ib-auth-switch-button {
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.ib-auth-switch-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.ib-auth-footnote {
+  margin-top: 22px;
+  color: var(--ib-text-muted);
+  font-size: var(--ib-font-size-xs);
+  line-height: var(--ib-line-height-normal);
+  text-align: center;
+}
+
+/* Responsive mobile layout */
+@media (max-width: 520px) {
+  .ib-auth-page {
+    align-items: flex-start;
+    padding: 32px 16px;
+  }
+
+  .ib-auth-card {
+    padding: 26px 20px;
+  }
+
+  .ib-auth-brand {
+    margin-bottom: 24px;
+  }
+
+  .ib-auth-logo {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+.ib-auth-google-account {
+  margin-bottom: 22px;
+  padding: 12px 14px;
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-md);
+  background: var(--ib-surface-muted);
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+  overflow-wrap: anywhere;
+}
+
+.ib-auth-field-help {
+  margin: 0;
+  color: var(--ib-text-muted);
+  font-size: var(--ib-font-size-xs);
+  line-height: var(--ib-line-height-normal);
+}

@@ -1,6 +1,6 @@
-# Run This Project
+# Run the Project 
 
-## Prerequisites
+## Prerequisites for the application.
 
 - Node.js 18 or newer
 - npm 9 or newer (installed with Node.js)
@@ -24,7 +24,7 @@ npm start
 Then open your browser at:
 
 ```text
-http://localhost:3000
+
 ```
 
 The app reloads automatically when you change source files.

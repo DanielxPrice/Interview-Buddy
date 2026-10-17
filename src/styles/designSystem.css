@@ -1,0 +1,540 @@
+/*
+ * Interview Buddy Design System
+ *
+ * Shared visual language for the Sprint 3 frontend redesign.
+ *
+ * Design direction:
+ * - dark navy application sidebar
+ * - light neutral workspace
+ * - white card surfaces
+ * - compact dashboard/SaaS typography
+ * - light orange accent
+ * - matching light and dark themes
+ *
+ * New redesigned UI should prefer the --ib-* variables below
+ * instead of hard-coding colors, spacing, radii, or shadows.
+ *
+ * The compatibility variables at the bottom allow older pages
+ * to continue working while we redesign the app one screen at a time.
+ */
+
+
+/* ============================================================
+   LIGHT THEME COLORS
+   ============================================================ */
+
+:root,
+[data-theme="light"] {
+  /* Brand / Orange Accent */
+  --ib-accent-50: #fff7f0;
+  --ib-accent-100: #ffead9;
+  --ib-accent-200: #ffd4b3;
+  --ib-accent-300: #fbbc8a;
+  --ib-accent-400: #f7a66b;
+  --ib-accent-500: #f59e5b;
+  --ib-accent-600: #e8883f;
+  --ib-accent-700: #c96d2f;
+
+  /*
+   * These are the main variables we will normally use.
+   */
+  --ib-accent: var(--ib-accent-500);
+  --ib-accent-hover: var(--ib-accent-600);
+  --ib-accent-pressed: var(--ib-accent-700);
+  --ib-accent-soft: var(--ib-accent-50);
+  --ib-accent-border: var(--ib-accent-200);
+
+  /*
+   * Because our orange is intentionally light, dark text gives
+   * better contrast than white text on orange buttons.
+   */
+  --ib-accent-text: #2a1a10;
+
+  --ib-focus-ring: rgba(245, 158, 91, 0.28);
+
+  /* Main application surfaces */
+  --ib-canvas: #f5f7fb;
+  --ib-surface: #ffffff;
+  --ib-surface-muted: #f8fafc;
+  --ib-surface-subtle: #f1f4f8;
+
+  /* Sidebar */
+  --ib-sidebar: #050d1f;
+  --ib-sidebar-hover: #111b31;
+  --ib-sidebar-active: #16223a;
+
+  /* Text */
+  --ib-text: #142033;
+  --ib-text-secondary: #667085;
+  --ib-text-muted: #8b97a8;
+  --ib-text-inverse: #f8fafc;
+
+  /* Borders */
+  --ib-border: #e2e7ef;
+  --ib-border-strong: #cfd7e3;
+  --ib-input-border: #cfd8e5;
+
+  /* Success */
+  --ib-success: #209447;
+  --ib-success-soft: #ecf8f0;
+  --ib-success-border: #ccebd7;
+
+  /* Warning */
+  --ib-warning: #c47b16;
+  --ib-warning-soft: #fff7e8;
+  --ib-warning-border: #f1d8aa;
+
+  /* Error / Danger */
+  --ib-danger: #c43f3f;
+  --ib-danger-soft: #fff0f0;
+  --ib-danger-border: #f0c4c4;
+
+  /* Informational */
+  --ib-info: #3d6fdc;
+  --ib-info-soft: #eef4ff;
+
+  /* Shadows */
+  --ib-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --ib-shadow-sm: 0 3px 10px rgba(15, 23, 42, 0.05);
+  --ib-shadow-card: 0 6px 18px rgba(15, 23, 42, 0.06);
+  --ib-shadow-modal: 0 20px 50px rgba(15, 23, 42, 0.18);
+}
+
+
+/* ============================================================
+   DARK THEME COLORS
+   ============================================================ */
+
+[data-theme="dark"] {
+  /* Orange remains visible against dark surfaces */
+  --ib-accent-50: #332419;
+  --ib-accent-100: #432d1d;
+  --ib-accent-200: #654126;
+  --ib-accent-300: #8b582f;
+  --ib-accent-400: #d4874c;
+  --ib-accent-500: #f3a66c;
+  --ib-accent-600: #f7b681;
+  --ib-accent-700: #fac79d;
+
+  --ib-accent: var(--ib-accent-500);
+  --ib-accent-hover: var(--ib-accent-600);
+  --ib-accent-pressed: var(--ib-accent-400);
+  --ib-accent-soft: #332419;
+  --ib-accent-border: #68462d;
+  --ib-accent-text: #16100c;
+
+  --ib-focus-ring: rgba(243, 166, 108, 0.32);
+
+  /* Main application surfaces */
+  --ib-canvas: #0f1624;
+  --ib-surface: #151f30;
+  --ib-surface-muted: #1a2638;
+  --ib-surface-subtle: #202d40;
+
+  /* Sidebar */
+  --ib-sidebar: #050a15;
+  --ib-sidebar-hover: #111a2a;
+  --ib-sidebar-active: #1a273d;
+
+  /* Text */
+  --ib-text: #f5f7fa;
+  --ib-text-secondary: #a8b3c3;
+  --ib-text-muted: #78869a;
+  --ib-text-inverse: #f8fafc;
+
+  /* Borders */
+  --ib-border: #2c394d;
+  --ib-border-strong: #3a4960;
+  --ib-input-border: #3b4a61;
+
+  /* Success */
+  --ib-success: #57c477;
+  --ib-success-soft: #173522;
+  --ib-success-border: #28543a;
+
+  /* Warning */
+  --ib-warning: #e7a23c;
+  --ib-warning-soft: #382a17;
+  --ib-warning-border: #5d4725;
+
+  /* Error */
+  --ib-danger: #f08080;
+  --ib-danger-soft: #3a2024;
+  --ib-danger-border: #64343a;
+
+  /* Informational */
+  --ib-info: #78a4ff;
+  --ib-info-soft: #1d2b48;
+
+  /* Shadows */
+  --ib-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --ib-shadow-sm: 0 3px 10px rgba(0, 0, 0, 0.22);
+  --ib-shadow-card: 0 8px 22px rgba(0, 0, 0, 0.26);
+  --ib-shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+
+/* ============================================================
+   SHARED DESIGN VALUES
+   ============================================================ */
+
+:root {
+  /* Typography */
+  --ib-font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  --ib-font-size-xs: 0.75rem;
+  --ib-font-size-sm: 0.875rem;
+  --ib-font-size-md: 1rem;
+  --ib-font-size-lg: 1.125rem;
+  --ib-font-size-xl: 1.375rem;
+  --ib-font-size-2xl: 1.75rem;
+  --ib-font-size-3xl: 2.125rem;
+
+  --ib-font-weight-regular: 400;
+  --ib-font-weight-medium: 500;
+  --ib-font-weight-semibold: 600;
+  --ib-font-weight-bold: 700;
+
+  --ib-line-height-tight: 1.2;
+  --ib-line-height-normal: 1.5;
+  --ib-line-height-relaxed: 1.65;
+
+  /* Spacing */
+  --ib-space-1: 4px;
+  --ib-space-2: 8px;
+  --ib-space-3: 12px;
+  --ib-space-4: 16px;
+  --ib-space-5: 20px;
+  --ib-space-6: 24px;
+  --ib-space-8: 32px;
+  --ib-space-10: 40px;
+  --ib-space-12: 48px;
+
+  /* Border radius */
+  --ib-radius-xs: 4px;
+  --ib-radius-sm: 6px;
+  --ib-radius-md: 8px;
+  --ib-radius-lg: 10px;
+  --ib-radius-xl: 14px;
+  --ib-radius-pill: 999px;
+
+  /* Layout */
+  --ib-sidebar-width: 176px;
+  --ib-topbar-height: 64px;
+  --ib-content-max-width: 1200px;
+
+  /* Animation */
+  --ib-transition-fast: 120ms ease;
+  --ib-transition-base: 180ms ease;
+}
+
+
+/* ============================================================
+   REUSABLE CARD
+   ============================================================ */
+
+.ib-card {
+  background: var(--ib-surface);
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-md);
+  box-shadow: var(--ib-shadow-sm);
+}
+
+.ib-card--interactive {
+  transition:
+    border-color var(--ib-transition-base),
+    box-shadow var(--ib-transition-base),
+    transform var(--ib-transition-base);
+}
+
+.ib-card--interactive:hover {
+  border-color: var(--ib-accent-border);
+  box-shadow: var(--ib-shadow-card);
+  transform: translateY(-2px);
+}
+
+
+/* ============================================================
+   TYPOGRAPHY HELPERS
+   ============================================================ */
+
+.ib-eyebrow {
+  color: var(--ib-accent-700);
+  font-size: var(--ib-font-size-xs);
+  font-weight: var(--ib-font-weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ib-label {
+  color: var(--ib-text);
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-semibold);
+}
+
+.ib-help-text {
+  color: var(--ib-text-secondary);
+  font-size: var(--ib-font-size-sm);
+  line-height: var(--ib-line-height-normal);
+}
+
+
+/* ============================================================
+   INPUTS / TEXTAREAS / SELECTS
+   ============================================================ */
+
+.ib-input,
+.ib-textarea,
+.ib-select {
+  width: 100%;
+  border: 1px solid var(--ib-input-border);
+  border-radius: var(--ib-radius-sm);
+  background: var(--ib-surface);
+  color: var(--ib-text);
+
+  transition:
+    border-color var(--ib-transition-fast),
+    box-shadow var(--ib-transition-fast),
+    background var(--ib-transition-fast);
+}
+
+.ib-input,
+.ib-select {
+  min-height: 40px;
+  padding: 9px 11px;
+}
+
+.ib-textarea {
+  min-height: 160px;
+  padding: 12px;
+  resize: vertical;
+}
+
+.ib-input::placeholder,
+.ib-textarea::placeholder {
+  color: var(--ib-text-muted);
+}
+
+.ib-input:focus,
+.ib-textarea:focus,
+.ib-select:focus {
+  border-color: var(--ib-accent);
+  box-shadow: 0 0 0 3px var(--ib-focus-ring);
+  outline: none;
+}
+
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+
+.ib-button {
+  min-height: 40px;
+  padding: 9px 16px;
+
+  border: 1px solid transparent;
+  border-radius: var(--ib-radius-sm);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ib-space-2);
+
+  font-weight: var(--ib-font-weight-semibold);
+  line-height: 1;
+
+  transition:
+    background var(--ib-transition-fast),
+    border-color var(--ib-transition-fast),
+    color var(--ib-transition-fast),
+    transform var(--ib-transition-fast);
+}
+
+.ib-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ib-button:focus-visible {
+  outline: 3px solid var(--ib-focus-ring);
+  outline-offset: 2px;
+}
+
+.ib-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+
+/* Primary */
+
+.ib-button--primary {
+  background: var(--ib-accent);
+  color: var(--ib-accent-text);
+}
+
+.ib-button--primary:hover:not(:disabled) {
+  background: var(--ib-accent-hover);
+}
+
+
+/* Secondary */
+
+.ib-button--secondary {
+  background: var(--ib-surface);
+  border-color: var(--ib-border-strong);
+  color: var(--ib-text);
+}
+
+.ib-button--secondary:hover:not(:disabled) {
+  background: var(--ib-surface-muted);
+  border-color: var(--ib-accent-border);
+}
+
+
+/* Danger */
+
+.ib-button--danger {
+  background: var(--ib-surface);
+  border-color: var(--ib-danger-border);
+  color: var(--ib-danger);
+}
+
+.ib-button--danger:hover:not(:disabled) {
+  background: var(--ib-danger-soft);
+}
+
+
+/* ============================================================
+   CHIPS / PILLS
+   ============================================================ */
+
+.ib-chip {
+  min-height: 30px;
+  padding: 6px 10px;
+
+  border: 1px solid var(--ib-border);
+  border-radius: var(--ib-radius-pill);
+
+  background: var(--ib-surface-muted);
+  color: var(--ib-text-secondary);
+
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-medium);
+}
+
+.ib-chip--selected {
+  border-color: var(--ib-accent-border);
+  background: var(--ib-accent-soft);
+  color: var(--ib-accent-700);
+}
+
+
+/* ============================================================
+   PROGRESS BAR
+   ============================================================ */
+
+.ib-progress-track {
+  width: 100%;
+  height: 5px;
+
+  overflow: hidden;
+
+  border-radius: var(--ib-radius-pill);
+  background: var(--ib-surface-subtle);
+}
+
+.ib-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ib-accent);
+
+  transition: width 220ms ease;
+}
+
+
+/* ============================================================
+   STATUS COLORS
+   ============================================================ */
+
+.ib-status--success {
+  border-color: var(--ib-success-border);
+  background: var(--ib-success-soft);
+  color: var(--ib-success);
+}
+
+.ib-status--warning {
+  border-color: var(--ib-warning-border);
+  background: var(--ib-warning-soft);
+  color: var(--ib-warning);
+}
+
+.ib-status--danger {
+  border-color: var(--ib-danger-border);
+  background: var(--ib-danger-soft);
+  color: var(--ib-danger);
+}
+
+
+/* ============================================================
+   LEGACY COMPATIBILITY
+   ============================================================ */
+
+/*
+ * The current Interview Buddy CSS already uses variables such as:
+ *
+ * --bg-page
+ * --bg-panel
+ * --text-primary
+ * --primary-button-bg
+ *
+ * Instead of rewriting every page immediately, we point those older
+ * variables at the new design system.
+ *
+ * That means:
+ *
+ * OLD PAGE
+ *   var(--primary-button-bg)
+ *
+ * now automatically receives:
+ *
+ * NEW DESIGN SYSTEM
+ *   var(--ib-accent)
+ *
+ * This lets us migrate one Jira ticket at a time.
+ */
+
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --bg-page: var(--ib-canvas);
+  --bg-panel: var(--ib-surface);
+  --bg-muted: var(--ib-surface-muted);
+  --bg-chip: var(--ib-surface-subtle);
+
+  --text-primary: var(--ib-text);
+  --text-secondary: var(--ib-text-secondary);
+
+  --border-panel: var(--ib-border);
+  --border-input: var(--ib-input-border);
+
+  --sidebar-bg: var(--ib-sidebar);
+  --sidebar-button-bg: transparent;
+  --sidebar-button-hover: var(--ib-sidebar-hover);
+  --sidebar-button-active: var(--ib-sidebar-active);
+
+  --primary-button-bg: var(--ib-accent);
+  --primary-button-hover: var(--ib-accent-hover);
+  --primary-button-text: var(--ib-accent-text);
+
+  --panel-shadow: var(--ib-shadow-card);
+}
