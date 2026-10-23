@@ -95,3 +95,5 @@ Code Style and Theoretical Style now use the main branch's provider-independent 
 The Firebase backend now uses explicit repository contracts and concrete Firestore adapters. Express routes do not call Firestore directly.
 
 See [`REPOSITORY_ARCHITECTURE.md`](REPOSITORY_ARCHITECTURE.md) for the acceptance-criteria mapping and [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md) for configuration instructions.
+
+# Adding this for merge
