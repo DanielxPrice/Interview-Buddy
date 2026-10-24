@@ -1,11 +1,11 @@
+
 /**
  * Data-access contract for Interview Buddy interview sessions.
  *
- * The application layer only knows about these methods. It does not know how
- * sessions are stored in Firestore.
+ * Routes use this interface instead of depending on Firestore details.
  */
 
-   /* eslint-disable no-unused-vars */
+/* eslint-disable no-unused-vars */
 class SessionRepository {
   constructor() {
     if (new.target === SessionRepository) {
@@ -15,20 +15,25 @@ class SessionRepository {
     }
   }
 
-  // Create a new session owned by one user. Returns the saved session,
-  // including its generated id.
+  // Create a new session owned by one user.
   async createSession({ userId, mode, jobRole, experienceLevel }) {
     throw new Error("createSession() must be implemented.");
   }
 
-  // Return one session by id, or null if it does not exist.
+  // Return one session by ID, or null if it does not exist.
   async findById(sessionId) {
     throw new Error("findById() must be implemented.");
   }
 
-  // Return all sessions that belong to one user, newest first.
+  // Return all sessions belonging to a user, newest created first.
   async listByUser(userId) {
     throw new Error("listByUser() must be implemented.");
+  }
+
+  // Return only completed sessions for a user, newest completed first.
+  // This intentionally excludes unfinished sessions from history.
+  async listCompletedByUser(userId) {
+    throw new Error("listCompletedByUser() must be implemented.");
   }
 
   // Mark a session as completed and record when it finished.

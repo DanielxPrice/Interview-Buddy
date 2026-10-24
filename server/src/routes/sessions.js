@@ -8,7 +8,7 @@ function createSessionRouter({ sessionRepository }) {
 
   const router = express.Router();
 
-  // Additional safeguard; app.js also applies requireAuth before this router.
+  // Defense in depth: app.js also applies Firebase requireAuth to this router.
   router.use((req, res, next) => {
     if (!req.user?.uid) {
       return res.status(401).json({
@@ -52,10 +52,23 @@ function createSessionRouter({ sessionRepository }) {
     }
   });
 
-  // GET /api/sessions
+  // GET /api/sessions                   -> all of the current user's sessions
+  // GET /api/sessions?status=completed  -> completed sessions for history
   router.get("/", async (req, res, next) => {
     try {
-      const sessions = await sessionRepository.listByUser(req.user.uid);
+      const { status } = req.query;
+
+      // Allow the new filter without silently changing the old endpoint.
+      if (status !== undefined && status !== "completed") {
+        return res.status(400).json({
+          error: "Unsupported session status filter.",
+        });
+      }
+
+      const sessions = status === "completed"
+        ? await sessionRepository.listCompletedByUser(req.user.uid)
+        : await sessionRepository.listByUser(req.user.uid);
+
       return res.json(sessions);
     } catch (error) {
       return next(error);

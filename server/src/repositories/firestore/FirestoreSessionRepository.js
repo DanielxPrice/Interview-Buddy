@@ -3,6 +3,9 @@ const SessionRepository = require("../contracts/SessionRepository");
 
 /**
  * Firestore implementation for interview session persistence.
+ *
+ * Session documents live in the `sessions` collection. A session's
+ * individual answer records live in its `responses` subcollection.
  */
 class FirestoreSessionRepository extends SessionRepository {
   constructor({ db, admin }) {
@@ -19,15 +22,13 @@ class FirestoreSessionRepository extends SessionRepository {
     this.sessions = db.collection("sessions");
   }
 
-  // Return a Firestore server timestamp when available.
-  // The fallback supports isolated tests without Firebase Admin.
+  // Server timestamps are used in production; strings keep unit tests isolated.
   getTimestamp() {
     return this.admin?.firestore?.FieldValue?.serverTimestamp
       ? this.admin.firestore.FieldValue.serverTimestamp()
       : new Date().toISOString();
   }
 
-  // Create a new interview session.
   async createSession({ userId, mode, jobRole, experienceLevel }) {
     if (!userId || !mode) {
       throw new Error("userId and mode are required.");
@@ -52,8 +53,7 @@ class FirestoreSessionRepository extends SessionRepository {
     };
   }
 
-  // Retrieve a session by ID.
-  // Authorization is enforced by the API routes.
+  // The API route checks ownership before returning session details.
   async findById(sessionId) {
     if (!sessionId) {
       throw new Error("sessionId is required.");
@@ -71,7 +71,7 @@ class FirestoreSessionRepository extends SessionRepository {
     };
   }
 
-  // Retrieve a user's sessions, newest first.
+  // Existing query: retain compatibility with callers needing all sessions.
   async listByUser(userId) {
     if (!userId) {
       throw new Error("userId is required.");
@@ -88,7 +88,25 @@ class FirestoreSessionRepository extends SessionRepository {
     }));
   }
 
-  // Complete an existing interview session.
+  // Sprint 4: history must include only completed sessions for this user.
+  async listCompletedByUser(userId) {
+    if (!userId) {
+      throw new Error("userId is required.");
+    }
+
+    const snapshot = await this.sessions
+      .where("userId", "==", userId)
+      .where("status", "==", "completed")
+      .orderBy("completedAt", "desc")
+      .get();
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  }
+
+  // Existing completion behavior; results persistence follows in SCRUM-82.
   async completeSession(sessionId) {
     if (!sessionId) {
       throw new Error("sessionId is required.");
@@ -96,7 +114,6 @@ class FirestoreSessionRepository extends SessionRepository {
 
     const sessionRef = this.sessions.doc(sessionId);
 
-    // Use a transaction to avoid competing updates.
     return this.db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(sessionRef);
 
@@ -106,7 +123,6 @@ class FirestoreSessionRepository extends SessionRepository {
 
       const session = snapshot.data();
 
-      // Do not complete an already completed session again.
       if (session.status === "completed") {
         return {
           id: snapshot.id,
@@ -114,16 +130,21 @@ class FirestoreSessionRepository extends SessionRepository {
         };
       }
 
+      const completedAt = this.getTimestamp();
+      const updatedAt = this.getTimestamp();
+
       transaction.update(sessionRef, {
         status: "completed",
-        completedAt: this.getTimestamp(),
-        updatedAt: this.getTimestamp(),
+        completedAt,
+        updatedAt,
       });
 
       return {
         id: snapshot.id,
         ...session,
         status: "completed",
+        // Firestore serverTimestamp() is a sentinel, not a resolved timestamp.
+        // The persisted timestamp is available on a subsequent read.
       };
     });
   }
