@@ -111,6 +111,7 @@ app.use(
   requireAuth,
   createSessionRouter({
     sessionRepository,
+    questionRepository,
   })
 );
 

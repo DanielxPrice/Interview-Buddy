@@ -515,7 +515,8 @@ function InterviewSessionPage({
         const result =
           await interviewService.checkQuizAnswer(
             currentQuestion.id,
-            selectedQuizAnswer
+            selectedQuizAnswer,
+            setupData?.id
           );
 
         const normalizedResult = {
@@ -727,10 +728,15 @@ function InterviewSessionPage({
         throw new Error("Session ID is missing.");
       }
 
-      await interviewService.endSession(setupData.id);
+      const savedSession = await interviewService.endSession(setupData.id);
 
-      const averageScore =
-        calculateAverageScore(answeredQuestions);
+      // Use the backend-calculated score when it is available.
+      // The fallback preserves compatibility with older test fixtures.
+      const savedScore = savedSession?.result?.score;
+
+      const averageScore = Number.isFinite(savedScore)
+        ? savedScore
+        : calculateAverageScore(answeredQuestions);
 
       const lastAnswer =
         answeredQuestions[answeredQuestions.length - 1];

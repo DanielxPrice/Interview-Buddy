@@ -47,7 +47,7 @@ describe("Session API endpoints", () => {
       createSession: jest.fn(),
       findById: jest.fn(),
       listByUser: jest.fn(),
-      completeSession: jest.fn(),
+      finalizeSessionWithResults: jest.fn(),
     };
 
     app = createTestApp(sessionRepository);
@@ -189,7 +189,7 @@ describe("Session API endpoints", () => {
     expect(response.body.error).toBe(
       "You do not have access to this session."
     );
-    expect(sessionRepository.completeSession).not.toHaveBeenCalled();
+    expect(sessionRepository.finalizeSessionWithResults).not.toHaveBeenCalled();
   });
 
   test("completes an existing session owned by the authenticated user", async () => {
@@ -200,7 +200,7 @@ describe("Session API endpoints", () => {
     };
 
     sessionRepository.findById.mockResolvedValue(testSession);
-    sessionRepository.completeSession.mockResolvedValue(completedSession);
+    sessionRepository.finalizeSessionWithResults.mockResolvedValue(completedSession);
 
     const response = await request(app).patch(
       `/api/sessions/${TEST_SESSION_ID}/complete`
@@ -208,8 +208,8 @@ describe("Session API endpoints", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(completedSession);
-    expect(sessionRepository.completeSession).toHaveBeenCalledWith(
-      TEST_SESSION_ID
+    expect(sessionRepository.finalizeSessionWithResults).toHaveBeenCalledWith(
+      TEST_SESSION_ID, TEST_USER_ID
     );
   });
 
@@ -224,7 +224,7 @@ describe("Session API endpoints", () => {
     );
 
     expect(response.status).toBe(403);
-    expect(sessionRepository.completeSession).not.toHaveBeenCalled();
+    expect(sessionRepository.finalizeSessionWithResults).not.toHaveBeenCalled();
   });
 
   test("returns 404 when completing an unknown session", async () => {
@@ -235,20 +235,20 @@ describe("Session API endpoints", () => {
     );
 
     expect(response.status).toBe(404);
-    expect(sessionRepository.completeSession).not.toHaveBeenCalled();
+    expect(sessionRepository.finalizeSessionWithResults).not.toHaveBeenCalled();
   });
 
   test("returns 404 if the session disappears during completion", async () => {
     sessionRepository.findById.mockResolvedValue(testSession);
-    sessionRepository.completeSession.mockResolvedValue(null);
+    sessionRepository.finalizeSessionWithResults.mockResolvedValue(null);
 
     const response = await request(app).patch(
       `/api/sessions/${TEST_SESSION_ID}/complete`
     );
 
     expect(response.status).toBe(404);
-    expect(sessionRepository.completeSession).toHaveBeenCalledWith(
-      TEST_SESSION_ID
+    expect(sessionRepository.finalizeSessionWithResults).toHaveBeenCalledWith(
+      TEST_SESSION_ID, TEST_USER_ID
     );
   });
 

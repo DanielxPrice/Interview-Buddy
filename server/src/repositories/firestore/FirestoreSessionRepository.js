@@ -1,12 +1,16 @@
 
 const SessionRepository = require("../contracts/SessionRepository");
 
-/**
- * Firestore implementation for interview session persistence.
- *
- * Session documents live in the `sessions` collection. A session's
- * individual answer records live in its `responses` subcollection.
- */
+function sessionError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function normalizeAnswer(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 class FirestoreSessionRepository extends SessionRepository {
   constructor({ db, admin }) {
     super();
@@ -22,7 +26,6 @@ class FirestoreSessionRepository extends SessionRepository {
     this.sessions = db.collection("sessions");
   }
 
-  // Server timestamps are used in production; strings keep unit tests isolated.
   getTimestamp() {
     return this.admin?.firestore?.FieldValue?.serverTimestamp
       ? this.admin.firestore.FieldValue.serverTimestamp()
@@ -53,7 +56,6 @@ class FirestoreSessionRepository extends SessionRepository {
     };
   }
 
-  // The API route checks ownership before returning session details.
   async findById(sessionId) {
     if (!sessionId) {
       throw new Error("sessionId is required.");
@@ -61,17 +63,11 @@ class FirestoreSessionRepository extends SessionRepository {
 
     const snapshot = await this.sessions.doc(sessionId).get();
 
-    if (!snapshot.exists) {
-      return null;
-    }
-
-    return {
-      id: snapshot.id,
-      ...snapshot.data(),
-    };
+    return snapshot.exists
+      ? { id: snapshot.id, ...snapshot.data() }
+      : null;
   }
 
-  // Existing query: retain compatibility with callers needing all sessions.
   async listByUser(userId) {
     if (!userId) {
       throw new Error("userId is required.");
@@ -88,7 +84,7 @@ class FirestoreSessionRepository extends SessionRepository {
     }));
   }
 
-  // Sprint 4: history must include only completed sessions for this user.
+  // SCRUM-81: Completed-session queries.
   async listCompletedByUser(userId) {
     if (!userId) {
       throw new Error("userId is required.");
@@ -106,7 +102,7 @@ class FirestoreSessionRepository extends SessionRepository {
     }));
   }
 
-  // Existing completion behavior; results persistence follows in SCRUM-82.
+  // Legacy compatibility method.
   async completeSession(sessionId) {
     if (!sessionId) {
       throw new Error("sessionId is required.");
@@ -130,21 +126,245 @@ class FirestoreSessionRepository extends SessionRepository {
         };
       }
 
-      const completedAt = this.getTimestamp();
-      const updatedAt = this.getTimestamp();
-
       transaction.update(sessionRef, {
         status: "completed",
-        completedAt,
-        updatedAt,
+        completedAt: this.getTimestamp(),
+        updatedAt: this.getTimestamp(),
       });
 
       return {
         id: snapshot.id,
         ...session,
         status: "completed",
-        // Firestore serverTimestamp() is a sentinel, not a resolved timestamp.
-        // The persisted timestamp is available on a subsequent read.
+      };
+    });
+  }
+
+  // SCRUM-82: Persist server-graded Quiz responses.
+  async saveQuizAnswer({ sessionId, userId, question, answer }) {
+    if (
+      !sessionId ||
+      !userId ||
+      !question?.id ||
+      typeof answer !== "string"
+    ) {
+      throw sessionError(
+        "Session, user, question and answer are required.",
+        400
+      );
+    }
+
+    if (question.mode !== "Quiz Style" || question.active === false) {
+      throw sessionError(
+        "This is not an available Quiz question.",
+        400
+      );
+    }
+
+    const selectedAnswer = answer.trim();
+
+    if (!selectedAnswer || selectedAnswer.length > 1000) {
+      throw sessionError(
+        "A valid Quiz answer is required.",
+        400
+      );
+    }
+
+    if (
+      Array.isArray(question.options) &&
+      question.options.length > 0 &&
+      !question.options.some(
+        (option) =>
+          normalizeAnswer(option) === normalizeAnswer(selectedAnswer)
+      )
+    ) {
+      throw sessionError(
+        "Answer must match a provided Quiz option.",
+        400
+      );
+    }
+
+    const correctAnswer = normalizeAnswer(question.correctAnswer);
+
+    if (!correctAnswer) {
+      throw sessionError(
+        "Quiz question has no configured answer.",
+        500
+      );
+    }
+
+    const sessionRef = this.sessions.doc(sessionId);
+
+    const responseRef = sessionRef
+      .collection("responses")
+      .doc(question.id);
+
+    return this.db.runTransaction(async (transaction) => {
+      const sessionSnapshot = await transaction.get(sessionRef);
+
+      if (!sessionSnapshot.exists) {
+        throw sessionError("Session not found.", 404);
+      }
+
+      const session = sessionSnapshot.data();
+
+      if (session.userId !== userId) {
+        throw sessionError(
+          "You do not have access to this session.",
+          403
+        );
+      }
+
+      if (session.mode !== "Quiz Style") {
+        throw sessionError(
+          "Question mode does not match the session.",
+          400
+        );
+      }
+
+      if (session.status !== "active") {
+        throw sessionError(
+          "This session has already been completed.",
+          409
+        );
+      }
+
+      const existing = await transaction.get(responseRef);
+
+      if (existing.exists) {
+        throw sessionError(
+          "This question has already been answered.",
+          409
+        );
+      }
+
+      const isCorrect =
+        normalizeAnswer(selectedAnswer) === correctAnswer;
+
+      const explanation =
+        question.explanation ||
+        (isCorrect
+          ? "Correct."
+          : "That answer is not correct. Review the topic and try another question.");
+
+      const timestamp = this.getTimestamp();
+
+      transaction.set(responseRef, {
+        questionId: question.id,
+        questionPrompt: question.prompt || "",
+        mode: "Quiz Style",
+        candidateResponse: selectedAnswer,
+        evaluation: {
+          score: isCorrect ? 100 : 0,
+          isCorrect,
+          feedback: explanation,
+        },
+        evaluatedAt: timestamp,
+      });
+
+      transaction.update(sessionRef, {
+        updatedAt: timestamp,
+      });
+
+      return {
+        questionId: question.id,
+        isCorrect,
+        explanation,
+      };
+    });
+  }
+
+  // SCRUM-82: Calculate and persist final session results.
+  async finalizeSessionWithResults(sessionId, userId) {
+    if (!sessionId || !userId) {
+      throw sessionError(
+        "Session ID and authenticated user are required.",
+        400
+      );
+    }
+
+    const sessionRef = this.sessions.doc(sessionId);
+    const responsesQuery = sessionRef.collection("responses");
+
+    return this.db.runTransaction(async (transaction) => {
+      const sessionSnapshot = await transaction.get(sessionRef);
+
+      if (!sessionSnapshot.exists) {
+        throw sessionError("Session not found.", 404);
+      }
+
+      const session = sessionSnapshot.data();
+
+      if (session.userId !== userId) {
+        throw sessionError(
+          "You do not have access to this session.",
+          403
+        );
+      }
+
+      // Repeated completion must not apply results twice.
+      if (session.status === "completed") {
+        return {
+          id: sessionSnapshot.id,
+          ...session,
+        };
+      }
+
+      if (session.status !== "active") {
+        throw sessionError(
+          "This session cannot be completed.",
+          409
+        );
+      }
+
+      // Read graded answers inside the same transaction.
+      const responseSnapshot = await transaction.get(responsesQuery);
+
+      const responses = responseSnapshot.docs.map((doc) => doc.data());
+
+      let totalScore = 0;
+
+      for (const response of responses) {
+        const score = response?.evaluation?.score;
+
+        if (
+          response?.mode !== session.mode ||
+          typeof score !== "number" ||
+          !Number.isFinite(score) ||
+          score < 0 ||
+          score > 100
+        ) {
+          throw sessionError(
+            "Saved responses contain invalid scoring data.",
+            409
+          );
+        }
+
+        totalScore += score;
+      }
+
+      const result = {
+        score: responses.length
+          ? Math.round(totalScore / responses.length)
+          : 0,
+        questionsAnswered: responses.length,
+        totalScore,
+      };
+
+      const timestamp = this.getTimestamp();
+
+      transaction.update(sessionRef, {
+        status: "completed",
+        completedAt: timestamp,
+        updatedAt: timestamp,
+        result,
+      });
+
+      return {
+        id: sessionSnapshot.id,
+        ...session,
+        status: "completed",
+        result,
       };
     });
   }

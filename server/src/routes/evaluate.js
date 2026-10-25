@@ -141,6 +141,13 @@ if (
             error: "This session has already been completed.",
           });
         }
+
+        if (session.mode && session.mode !== question.mode) {
+          return res.status(409).json({
+            error: "Question mode does not match the active interview session.",
+          });
+        }
+
       }
 
       const evaluation = await aiService.generateEvaluation({

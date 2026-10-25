@@ -92,6 +92,43 @@ describe("interviewService", () => {
     expect(options.headers.Authorization).toBe("Bearer test-id-token");
   });
 
+  test("checkQuizAnswer sends the answer to its session persistence endpoint", async () => {
+    const savedResult = {
+      questionId: "quiz-1",
+      isCorrect: true,
+      explanation: "Correct.",
+    };
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => savedResult,
+    });
+
+    const result = await interviewService.checkQuizAnswer(
+      "quiz-1",
+      "A",
+      "session-123"
+    );
+
+    expect(result).toEqual(savedResult);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/sessions/session-123/quiz-answers",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer test-id-token",
+        },
+        body: JSON.stringify({
+          questionId: "quiz-1",
+          answer: "A",
+        }),
+      }
+    );
+  });
+
   test("getAvailableQuestionCount rejects invalid server counts", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true, status: 200, json: async () => ({ availableCount: -1 }),
