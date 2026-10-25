@@ -594,13 +594,13 @@ describe(
         );
 
 
-        await waitFor(() => {
+        await waitFor(() => {  
           expect(
-            interviewService
-              .checkQuizAnswer
+            interviewService.checkQuizAnswer
           ).toHaveBeenCalledWith(
             "quiz-test-001",
-            "Queue"
+            "Queue",
+            "mock-session-1"
           );
         });
 
@@ -1194,11 +1194,11 @@ test(
 
         await waitFor(() => {
           expect(
-            interviewService
-              .checkQuizAnswer
+            interviewService.checkQuizAnswer
           ).toHaveBeenCalledWith(
             "quiz-test-001",
-            "Queue"
+            "Queue",
+            "mock-session-1"
           );
         });
 

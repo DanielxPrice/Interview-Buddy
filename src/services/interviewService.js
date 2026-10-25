@@ -416,54 +416,43 @@ export const interviewService = {
    * Validate a Quiz Style answer
    * on the server.
    */
-  async checkQuizAnswer(
-    questionId,
-    answer
-  ) {
+  
+  /**
+   * Grade and persist a Quiz answer under its real interview session.
+   */
+  async checkQuizAnswer(questionId, answer, sessionId) {
     if (!questionId) {
-      throw new Error(
-        "Question ID is required."
-      );
+      throw new Error("Question ID is required.");
     }
 
-    if (
-      !answer ||
-      !String(answer).trim()
-    ) {
-      throw new Error(
-        "An answer is required."
-      );
+    if (!answer || !String(answer).trim()) {
+      throw new Error("An answer is required.");
     }
 
-    const idToken =
-      await getIdToken();
+    if (!sessionId) {
+      throw new Error("Session ID is required to save a Quiz answer.");
+    }
 
-    const response =
-      await fetch(
-        `${API_BASE_URL}/questions/${encodeURIComponent(
-          questionId
-        )}/check`,
-        {
-          method: "POST",
+    const idToken = await getIdToken();
 
-          headers: {
-            "Content-Type":
-              "application/json",
-
-            Authorization:
-              `Bearer ${idToken}`,
-          },
-
-          body: JSON.stringify({
-            answer,
-          }),
-        }
-      );
-
-    return readJsonResponse(
-      response
+    const response = await fetch(
+      `${API_BASE_URL}/sessions/${encodeURIComponent(sessionId)}/quiz-answers`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          questionId,
+          answer,
+        }),
+      }
     );
+
+    return readJsonResponse(response);
   },
+
 
   /**
    * Retained for the service contract

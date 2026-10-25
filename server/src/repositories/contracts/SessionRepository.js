@@ -1,11 +1,7 @@
 
-/**
- * Data-access contract for Interview Buddy interview sessions.
- *
- * Routes use this interface instead of depending on Firestore details.
- */
-
+/** Repository contract for Interview Buddy sessions. */
 /* eslint-disable no-unused-vars */
+
 class SessionRepository {
   constructor() {
     if (new.target === SessionRepository) {
@@ -15,30 +11,36 @@ class SessionRepository {
     }
   }
 
-  // Create a new session owned by one user.
   async createSession({ userId, mode, jobRole, experienceLevel }) {
     throw new Error("createSession() must be implemented.");
   }
 
-  // Return one session by ID, or null if it does not exist.
   async findById(sessionId) {
     throw new Error("findById() must be implemented.");
   }
 
-  // Return all sessions belonging to a user, newest created first.
   async listByUser(userId) {
     throw new Error("listByUser() must be implemented.");
   }
 
-  // Return only completed sessions for a user, newest completed first.
-  // This intentionally excludes unfinished sessions from history.
   async listCompletedByUser(userId) {
     throw new Error("listCompletedByUser() must be implemented.");
   }
 
-  // Mark a session as completed and record when it finished.
+  // Legacy status-only operation retained for existing repository callers.
+  // The HTTP completion endpoint uses finalizeSessionWithResults instead.
   async completeSession(sessionId) {
     throw new Error("completeSession() must be implemented.");
+  }
+
+  // Grade and persist a Quiz response on the server.
+  async saveQuizAnswer({ sessionId, userId, question, answer }) {
+    throw new Error("saveQuizAnswer() must be implemented.");
+  }
+
+  // Calculate results from saved answers and complete the session atomically.
+  async finalizeSessionWithResults(sessionId, userId) {
+    throw new Error("finalizeSessionWithResults() must be implemented.");
   }
 }
 

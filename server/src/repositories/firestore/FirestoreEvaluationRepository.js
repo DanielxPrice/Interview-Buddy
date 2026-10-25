@@ -71,6 +71,15 @@ class FirestoreEvaluationRepository extends EvaluationRepository {
         throw error;
       }
 
+      if (session.mode && session.mode !== mode) {
+        const error = new Error(
+          "Evaluation mode does not match the session."
+        );
+
+        error.statusCode = 409;
+        throw error;
+      }
+
       const timestamp = this.getTimestamp(evaluatedAt);
 
       transaction.update(sessionReference, {

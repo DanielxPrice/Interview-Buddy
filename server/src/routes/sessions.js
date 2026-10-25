@@ -1,14 +1,15 @@
 
 const express = require("express");
 
-function createSessionRouter({ sessionRepository }) {
+function createSessionRouter({ sessionRepository, questionRepository }) {
   if (!sessionRepository) {
-    throw new Error("createSessionRouter requires sessionRepository.");
+    throw new Error(
+      "createSessionRouter requires sessionRepository."
+    );
   }
 
   const router = express.Router();
 
-  // Defense in depth: app.js also applies Firebase requireAuth to this router.
   router.use((req, res, next) => {
     if (!req.user?.uid) {
       return res.status(401).json({
@@ -31,8 +32,10 @@ function createSessionRouter({ sessionRepository }) {
       }
 
       if (
-        typeof jobRole !== "string" || !jobRole.trim() ||
-        typeof experienceLevel !== "string" || !experienceLevel.trim()
+        typeof jobRole !== "string" ||
+        !jobRole.trim() ||
+        typeof experienceLevel !== "string" ||
+        !experienceLevel.trim()
       ) {
         return res.status(400).json({
           error: "Job role and experience level are required.",
@@ -52,13 +55,12 @@ function createSessionRouter({ sessionRepository }) {
     }
   });
 
-  // GET /api/sessions                   -> all of the current user's sessions
-  // GET /api/sessions?status=completed  -> completed sessions for history
+  // GET /api/sessions
+  // GET /api/sessions?status=completed
   router.get("/", async (req, res, next) => {
     try {
       const { status } = req.query;
 
-      // Allow the new filter without silently changing the old endpoint.
       if (status !== undefined && status !== "completed") {
         return res.status(400).json({
           error: "Unsupported session status filter.",
@@ -78,10 +80,14 @@ function createSessionRouter({ sessionRepository }) {
   // GET /api/sessions/:sessionId
   router.get("/:sessionId", async (req, res, next) => {
     try {
-      const session = await sessionRepository.findById(req.params.sessionId);
+      const session = await sessionRepository.findById(
+        req.params.sessionId
+      );
 
       if (!session) {
-        return res.status(404).json({ error: "Session not found." });
+        return res.status(404).json({
+          error: "Session not found.",
+        });
       }
 
       if (session.userId !== req.user.uid) {
@@ -96,13 +102,69 @@ function createSessionRouter({ sessionRepository }) {
     }
   });
 
+  // POST /api/sessions/:sessionId/quiz-answers
+  router.post("/:sessionId/quiz-answers", async (req, res, next) => {
+    try {
+      const questionId = req.body?.questionId;
+      const answer = req.body?.answer;
+
+      if (
+        typeof questionId !== "string" ||
+        !questionId.trim() ||
+        typeof answer !== "string" ||
+        !answer.trim()
+      ) {
+        return res.status(400).json({
+          error: "Question ID and answer are required.",
+        });
+      }
+
+      if (!questionRepository) {
+        return res.status(503).json({
+          error: "Quiz answer storage is unavailable.",
+        });
+      }
+
+      const question = await questionRepository.findById(
+        questionId.trim()
+      );
+
+      if (!question) {
+        return res.status(404).json({
+          error: "Question not found.",
+        });
+      }
+
+      const result = await sessionRepository.saveQuizAnswer({
+        sessionId: req.params.sessionId,
+        userId: req.user.uid,
+        question,
+        answer,
+      });
+
+      return res.json(result);
+    } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({
+          error: error.message,
+        });
+      }
+
+      return next(error);
+    }
+  });
+
   // PATCH /api/sessions/:sessionId/complete
   router.patch("/:sessionId/complete", async (req, res, next) => {
     try {
-      const session = await sessionRepository.findById(req.params.sessionId);
+      const session = await sessionRepository.findById(
+        req.params.sessionId
+      );
 
       if (!session) {
-        return res.status(404).json({ error: "Session not found." });
+        return res.status(404).json({
+          error: "Session not found.",
+        });
       }
 
       if (session.userId !== req.user.uid) {
@@ -111,16 +173,26 @@ function createSessionRouter({ sessionRepository }) {
         });
       }
 
-      const completedSession = await sessionRepository.completeSession(
-        req.params.sessionId
-      );
+      const completedSession =
+        await sessionRepository.finalizeSessionWithResults(
+          req.params.sessionId,
+          req.user.uid
+        );
 
       if (!completedSession) {
-        return res.status(404).json({ error: "Session not found." });
+        return res.status(404).json({
+          error: "Session not found.",
+        });
       }
 
       return res.json(completedSession);
     } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({
+          error: error.message,
+        });
+      }
+
       return next(error);
     }
   });
