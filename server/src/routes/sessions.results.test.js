@@ -1,4 +1,3 @@
-
 const express = require("express");
 const request = require("supertest");
 const createSessionRouter = require("./sessions");
@@ -56,6 +55,19 @@ describe("SCRUM-82 results endpoints", () => {
           totalScore: 170,
         },
       }),
+
+      listResponses: jest.fn().mockResolvedValue([
+        {
+          questionId: "quiz-1",
+          questionPrompt: "What is 2 + 2?",
+          evaluation: { score: 100, isCorrect: true, feedback: "Correct." },
+        },
+        {
+          questionId: "quiz-2",
+          questionPrompt: "Pick the sorted list.",
+          evaluation: { score: 70, isCorrect: false, feedback: "Close." },
+        },
+      ]),
 
       saveQuizAnswer: jest.fn().mockResolvedValue({
         questionId: "quiz-1",
@@ -182,6 +194,61 @@ describe("SCRUM-82 results endpoints", () => {
 
     expect(response.status).toBe(403);
 
+    expect(
+      sessionRepository.finalizeSessionWithResults
+    ).not.toHaveBeenCalled();
+  });
+  test("completion returns ELO change and per-question breakdown", async () => {
+    const response = await request(
+      makeApp({ sessionRepository, questionRepository })
+    )
+      .patch("/api/sessions/session-1/complete");
+
+    expect(response.status).toBe(200);
+    expect(response.body.eloChange).toBe("+2");
+    expect(response.body.breakdownAvailable).toBe(true);
+    expect(response.body.breakdown).toEqual([
+      {
+        questionId: "quiz-1",
+        questionPrompt: "What is 2 + 2?",
+        score: 100,
+        isCorrect: true,
+        feedback: "Correct.",
+      },
+      {
+        questionId: "quiz-2",
+        questionPrompt: "Pick the sorted list.",
+        score: 70,
+        isCorrect: false,
+        feedback: "Close.",
+      },
+    ]);
+  });
+
+  test("completion errors include a machine-readable code", async () => {
+    const error = new Error("Saved responses contain invalid scoring data.");
+    error.statusCode = 409;
+    sessionRepository.finalizeSessionWithResults.mockRejectedValue(error);
+
+    const response = await request(
+      makeApp({ sessionRepository, questionRepository })
+    )
+      .patch("/api/sessions/session-1/complete");
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe("INVALID_SCORING_DATA");
+  });
+
+  test("missing session on completion returns SESSION_NOT_FOUND", async () => {
+    sessionRepository.findById.mockResolvedValue(null);
+
+    const response = await request(
+      makeApp({ sessionRepository, questionRepository })
+    )
+      .patch("/api/sessions/session-1/complete");
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe("SESSION_NOT_FOUND");
     expect(
       sessionRepository.finalizeSessionWithResults
     ).not.toHaveBeenCalled();

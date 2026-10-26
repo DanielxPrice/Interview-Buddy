@@ -44,6 +44,8 @@ function SessionResultsPage({
       ? sessionResult.questionsAnswered
       : breakdown.length;
   const analyticsAvailable = breakdown.length > 0;
+  // Set by the server when the score saved but the breakdown failed to load.
+  const breakdownUnavailable = sessionResult.breakdownAvailable === false;
   const aiFeedback = sessionResult.aiFeedback || "";
   const aiFeedbackAvailable = Boolean(aiFeedback.trim());
 
@@ -95,7 +97,9 @@ function SessionResultsPage({
 
         {!analyticsAvailable ? (
           <p style={{ color: "var(--text-secondary)" }}>
-            No submitted question results are available for this session.
+            {breakdownUnavailable
+              ? "Your score was saved, but the per-question breakdown could not be loaded."
+              : "No submitted question results are available for this session."}
           </p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>

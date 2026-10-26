@@ -1,4 +1,3 @@
-
 /** Repository contract for Interview Buddy sessions. */
 /* eslint-disable no-unused-vars */
 
@@ -36,6 +35,11 @@ class SessionRepository {
   // Grade and persist a Quiz response on the server.
   async saveQuizAnswer({ sessionId, userId, question, answer }) {
     throw new Error("saveQuizAnswer() must be implemented.");
+  }
+
+  // Read the graded responses saved for a session (used for the results breakdown).
+  async listResponses(sessionId) {
+    throw new Error("listResponses() must be implemented.");
   }
 
   // Calculate results from saved answers and complete the session atomically.
