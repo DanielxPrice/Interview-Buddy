@@ -13,6 +13,7 @@ import "./styles/dashboard.css";
 import "./styles/interviewSession.css";
 import "./styles/settings.css";
 import "./styles/sidebar.css";
+import "./styles/history.css";
 
 import App from "./App";
 

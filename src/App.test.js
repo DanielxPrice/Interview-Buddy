@@ -126,7 +126,7 @@ describe("Interview Buddy application routing", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Chat History",
+        name: "Interview History",
       }),
     ).toBeInTheDocument();
   });

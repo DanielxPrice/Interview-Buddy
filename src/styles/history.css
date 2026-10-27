@@ -1,0 +1,111 @@
+/* Completed-interview history and results. Uses the shared Interview Buddy theme. */
+.ibVisuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.ibHistoryPage, .ibResultsPage { width: 100%; max-width: 1160px; }
+.ibHistoryToolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; margin-bottom: 16px; }
+.ibHistorySearch, .ibHistorySelect, .ibHistoryDates { display: flex; align-items: center; min-height: 44px; background: var(--ib-surface); border: 1px solid var(--ib-border); border-radius: 9px; box-shadow: var(--ib-shadow-xs); }
+.ibHistorySearch { flex: 1 1 260px; gap: 8px; padding: 0 13px; color: var(--ib-text-muted); }
+.ibHistorySearch input { border: 0; outline: 0; flex: 1; background: transparent; color: var(--ib-text); min-width: 0; font-size: 0.88rem; }
+.ibHistorySearch input::placeholder { color: var(--ib-text-muted); }
+.ibHistorySelect { min-width: 130px; }
+/* Native history dropdowns follow the current Interview Buddy theme. */
+.ibHistorySelect select {
+  border: none;
+  background: var(--ib-surface);
+  color: var(--ib-text);
+  color-scheme: light;
+  width: 100%;
+  padding: 11px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.ibHistorySelect select option {
+  background-color: var(--ib-surface);
+  color: var(--ib-text);
+}
+
+[data-theme="dark"] .ibHistorySelect select {
+  color-scheme: dark;
+}
+.ibHistoryDates { gap: 9px; padding: 0 10px; }
+.ibHistoryDates label { display: flex; align-items: center; gap: 5px; color: var(--ib-text-secondary); font-size: 0.75rem; }
+.ibHistoryDates input { color: var(--ib-text); color-scheme: light; background: transparent; border: 0; max-width: 125px; font-size: 0.78rem; }
+[data-theme="dark"] .ibHistoryDates input { color-scheme: dark; }
+.ibHistoryToolbar input:focus-visible, .ibHistoryToolbar select:focus-visible, .ibHistoryToolbar button:focus-visible { outline: 2px solid var(--ib-accent); outline-offset: 2px; }
+.ibHistoryStatusBar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; color: var(--ib-text-secondary); font-size: 0.8rem; }
+.ibHistoryStatusActions { display: flex; align-items: center; gap: 14px; }
+.ibHistoryStatusActions button { background: none; color: var(--ib-text-secondary); font-size: 0.81rem; padding: 5px 0; }
+.ibHistoryStatusActions button:hover { color: var(--ib-text); text-decoration: underline; }
+.ibHistoryStatusActions button:disabled { opacity: 0.5; cursor: default; }
+.ibHistoryList { display: flex; flex-direction: column; gap: 12px; }
+.ibHistoryCard { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; padding: 21px 22px; border: 1px solid var(--ib-border); border-radius: 12px; box-shadow: var(--ib-shadow-sm); background: var(--ib-surface); }
+.ibHistoryIcon { display: flex; justify-content: center; align-items: center; flex: 0 0 46px; height: 46px; border-radius: 10px; font-size: 1.1rem; font-weight: 800; }
+.ibHistoryIcon.isCode { color: #504de0; background: #ecebff; }
+.ibHistoryIcon.isQuiz { color: #0f9e72; background: #ddf8ee; }
+.ibHistoryIcon.isTheory { color: #dd873a; background: #fff0dd; }
+.ibHistoryCardInfo { flex: 1 1 220px; min-width: 0; }
+.ibHistoryCardLabels { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; flex-wrap: wrap; }
+.ibHistoryCardLabels time { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.045em; color: var(--ib-text-muted); }
+.ibHistoryMode { color: var(--ib-text-secondary); background: var(--ib-surface-subtle); font-weight: 700; font-size: 0.64rem; padding: 3px 6px; border-radius: 5px; text-transform: uppercase; }
+.ibHistoryCardInfo h2 { font-size: 0.99rem; font-weight: 700; margin: 0 0 4px; color: var(--ib-text); }
+.ibHistoryCardInfo p { font-size: 0.8rem; line-height: 1.4; color: var(--ib-text-secondary); margin: 0; }
+.ibHistoryQuestions { font-size: 0.71rem; color: var(--ib-text-muted); display: inline-block; margin-top: 5px; }
+.ibHistoryMetrics { display: flex; align-items: center; gap: 25px; }
+.ibHistoryMetrics > div { min-width: 66px; display: flex; flex-direction: column; gap: 4px; text-align: center; }
+.ibHistoryMetricLabel { font-size: 0.64rem; font-weight: 800; letter-spacing: 0.035em; color: var(--ib-text-muted); white-space: nowrap; }
+.ibHistoryMetrics strong { color: var(--ib-text); font-size: 0.99rem; }
+.ibHistoryMetrics strong.ibHistoryScoreLow { color: var(--ib-danger); }
+.ibHistoryMetrics strong.ibHistoryElo { color: var(--ib-text-secondary); }
+.ibHistoryActions { display: flex; gap: 8px; align-items: center; }
+.ibHistoryViewButton { color: var(--ib-accent-text); background: var(--ib-accent); padding: 11px 15px; border-radius: 8px; white-space: nowrap; font-size: 0.81rem; font-weight: 700; }
+.ibHistoryViewButton:hover { background: var(--ib-accent-hover); }
+.ibHistoryRepeatButton { display: grid; place-items: center; background: var(--ib-surface); border: 1px solid var(--ib-border); color: var(--ib-text-secondary); width: 39px; height: 39px; border-radius: 8px; font-size: 1.25rem; }
+.ibHistoryRepeatButton:hover { background: var(--ib-surface-muted); color: var(--ib-text); }
+.ibHistoryLoadMore { display: flex; justify-content: center; margin: 26px 0 16px; }
+.ibHistoryLoadMore button { font-size: 0.85rem; }
+.ibHistoryEmpty, .ibResultsState { background: var(--ib-surface); border: 1px solid var(--ib-border); border-radius: 12px; padding: 38px 26px; text-align: center; color: var(--ib-text-secondary); }
+.ibHistoryEmpty h2, .ibResultsState h2 { font-size: 1.12rem; margin-bottom: 8px; color: var(--ib-text); }
+.ibHistoryEmpty p, .ibResultsState p { margin-bottom: 16px; }
+.ibHistoryFootnote { font-size: 0.74rem; color: var(--ib-text-muted); margin-top: 19px; line-height: 1.5; }
+.ibResultsPage { max-width: 1040px; }
+.ibResultsHero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; padding: 28px 32px; background: var(--ib-surface); border: 1px solid var(--ib-border); border-radius: 14px; box-shadow: var(--ib-shadow-sm); }
+.ibResultsEyebrow { display: inline-block; font-size: 0.69rem; font-weight: 800; letter-spacing: 0.075em; color: var(--ib-accent-700); margin-bottom: 10px; }
+.ibResultsHeroMain h2 { color: var(--ib-text); font-size: clamp(1.4rem, 3vw, 1.9rem); margin-bottom: 5px; }
+.ibResultsHeroMain p { color: var(--ib-text-secondary); font-size: 0.95rem; }
+.ibResultsDate { color: var(--ib-text-muted); display: inline-block; font-size: 0.78rem; margin-top: 12px; }
+.ibResultsScoreBubble { min-width: 148px; min-height: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 7px; border-radius: 12px; background: var(--ib-accent-soft); border: 1px solid var(--ib-accent-border); }
+.ibResultsScoreBubble span { font-size: 0.68rem; font-weight: 800; color: var(--ib-text-secondary); }
+.ibResultsScoreBubble strong { font-size: 2.05rem; color: var(--ib-text); }
+.ibResultsStats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.ibResultsStat { display: flex; flex-direction: column; gap: 9px; padding: 17px 20px; border: 1px solid var(--ib-border); border-radius: 12px; background: var(--ib-surface); }
+.ibResultsStat > span { color: var(--ib-text-secondary); font-size: 0.76rem; }
+.ibResultsStat strong { font-size: 1.11rem; color: var(--ib-text); }
+.ibResultsStat small { font-size: 0.71rem; color: var(--ib-text-muted); line-height: 1.35; }
+.ibResultsNotice { padding: 13px 17px; color: var(--ib-text); background: var(--ib-info-soft); border-radius: 9px; margin: 0 0 16px; }
+.ibResultsPanel { background: var(--ib-surface); padding: 25px; border: 1px solid var(--ib-border); border-radius: 12px; }
+.ibResultsPanelHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
+.ibResultsPanelHeading h2 { font-size: 1.16rem; color: var(--ib-text); }
+.ibResultsPanelHeading span { font-size: 0.8rem; color: var(--ib-text-muted); }
+.ibResultsQuestionList { display: flex; flex-direction: column; gap: 13px; }
+.ibResultsQuestion { background: var(--ib-surface-muted); border: 1px solid var(--ib-border); border-radius: 10px; padding: 19px; }
+.ibResultsQuestionTop { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.ibResultsQuestionTop h3 { color: var(--ib-text); font-size: 1rem; }
+.ibResultsQuestionBadges { display: flex; align-items: center; gap: 12px; color: var(--ib-text); font-size: 0.87rem; }
+.ibResultsOutcome { font-size: 0.72rem; font-weight: 700; padding: 5px 9px; border-radius: 99px; }
+.ibResultsOutcome.isCorrect { color: var(--ib-success); background: var(--ib-success-soft); }
+.ibResultsOutcome.isIncorrect { color: var(--ib-danger); background: var(--ib-danger-soft); }
+.ibResultsOutcome.isEvaluated { color: var(--ib-info); background: var(--ib-info-soft); }
+.ibResultsPrompt { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.93rem; color: var(--ib-text); line-height: 1.6; margin: 0 0 15px; }
+.ibResultsAnswer, .ibResultsFeedbackGroup { margin-top: 13px; }
+.ibResultsAnswer { background: var(--ib-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--ib-border); }
+.ibResultsAnswer p, .ibResultsFeedbackGroup p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; color: var(--ib-text-secondary); font-size: 0.88rem; }
+.ibResultsAnswer h4, .ibResultsFeedbackGroup h4 { margin: 0 0 7px; color: var(--ib-text); font-size: 0.84rem; }
+.ibResultsFeedbackGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.ibResultsFeedbackGroup ul { color: var(--ib-text-secondary); padding-left: 18px; font-size: 0.86rem; line-height: 1.6; }
+.ibResultsSummaryOnly { padding: 22px; background: var(--ib-surface-muted); border: 1px dashed var(--ib-border-strong); border-radius: 10px; }
+.ibResultsSummaryOnly h3 { color: var(--ib-text); font-size: 0.95rem; margin-bottom: 7px; }
+.ibResultsSummaryOnly p { color: var(--ib-text-secondary); line-height: 1.6; font-size: 0.89rem; }
+.ibResultsActions, .ibResultsStateActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 19px; }
+.ibResultsStateActions { justify-content: center; }
+@media (max-width: 1100px) { .ibHistoryCard { gap: 15px; } .ibHistoryActions { margin-left: 64px; } }
+@media (max-width: 700px) { .ibHistoryToolbar { flex-direction: column; } .ibHistorySelect, .ibHistorySearch { width: 100%; flex-basis: auto; } .ibHistoryDates { padding: 11px; flex-wrap: wrap; } .ibHistoryCard { padding: 16px; } .ibHistoryMetrics { margin-left: 0; flex: 1 1 100%; justify-content: flex-start; } .ibHistoryActions { margin-left: 0; width: 100%; } .ibHistoryViewButton { flex: 1; } .ibResultsHero { padding: 21px; } .ibResultsScoreBubble { min-height: 100px; min-width: 110px; } .ibResultsStats { grid-template-columns: 1fr; } .ibResultsPanel { padding: 15px; } }

@@ -244,7 +244,8 @@ function Sidebar({ currentPage, onNavigate, badgeSrc }) {
         >
           {NAV_ITEMS.map((item) => {
             const isActive =
-              item.activePaths.includes(currentPage);
+              item.activePaths.includes(currentPage) ||
+              (item.path === PAGES.INTERVIEW && currentPage.startsWith(`${PAGES.SESSION_RESULTS}/`));
 
             return (
               <button

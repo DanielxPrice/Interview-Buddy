@@ -1,237 +1,106 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import PageLayout from "../components/layout/PageLayout";
-import FeedbackBox from "../components/interview/FeedbackBox";
 import { PAGES } from "../utils/constants";
+import { historyService } from "../services/historyService";
+import { normalizeHistorySession } from "../utils/historyResults";
 
-function SessionResultsPage({
-  currentPage,
-  onNavigate,
-  sessionResult,
-  onRetrySession,
-}) {
-  if (!sessionResult) {
-    return (
-      <PageLayout
-        title="Session Results"
-        subtitle="Unable to load session results."
-        currentPage={currentPage}
-        onNavigate={onNavigate}
-      >
-        <div className="resultSummaryCard">
-          <p style={{ color: "#9f1c1c", marginBottom: "16px" }}>
-            Unable to load session results. Please try again later.
-          </p>
-          <button
-            className="primaryButton"
-            onClick={() => onNavigate(PAGES.DASHBOARD)}
-          >
-            Return to Home
-          </button>
-        </div>
-      </PageLayout>
-    );
-  }
+function DetailsList({ title, items }) {
+  if (!Array.isArray(items) || !items.length) return null;
+  return <div className="ibResultsFeedbackGroup"><h4>{title}</h4><ul>{items.map((item, index) => <li key={index}>{String(item)}</li>)}</ul></div>;
+}
 
-  const mode = sessionResult.mode || "Interview Mode";
-  const date = sessionResult.date || "Unknown date";
-  const score = sessionResult.score || "0%";
-  const eloChange = sessionResult.eloChange || "0";
-  const breakdown = Array.isArray(sessionResult.perQuestion)
-    ? sessionResult.perQuestion
-    : [];
-  const questionsAnswered =
-    sessionResult.questionsAnswered != null
-      ? sessionResult.questionsAnswered
-      : breakdown.length;
-  const analyticsAvailable = breakdown.length > 0;
-  // Set by the server when the score saved but the breakdown failed to load.
-  const breakdownUnavailable = sessionResult.breakdownAvailable === false;
-  const aiFeedback = sessionResult.aiFeedback || "";
-  const aiFeedbackAvailable = Boolean(aiFeedback.trim());
+function SessionResultsPage({ currentPage, onNavigate, onSelectMode, sessionResult }) {
+  const { sessionId } = useParams();
+  const currentResult = sessionResult && (!sessionId || sessionResult.sessionId === sessionId)
+    ? sessionResult : null;
+  const [storedResult, setStoredResult] = useState(null);
+  const [status, setStatus] = useState(currentResult ? "success" : "loading");
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
-  function handleStartNewSession() {
-    onNavigate(PAGES.DASHBOARD);
-  }
-
-  function handleReturnHome() {
-    onNavigate(PAGES.DASHBOARD);
-  }
-
-  function handleRetrySession() {
-    if (onRetrySession) {
-      onRetrySession(sessionResult);
-    } else {
-      onNavigate(PAGES.INTERVIEW_SETUP);
+  useEffect(() => {
+    // Fresh completions include the detailed breakdown that the existing
+    // GET /sessions/:id endpoint cannot provide on a later page refresh.
+    if (currentResult) {
+      setStoredResult(currentResult);
+      setStatus("success");
+      return undefined;
     }
-  }
+    if (!sessionId) {
+      setStoredResult(null);
+      setStatus("missing");
+      return undefined;
+    }
+    let active = true;
+    setStatus("loading");
+    setError("");
+    historyService.getSessionById(sessionId).then((session) => {
+      if (!active) return;
+      if (!session || session.status !== "completed") {
+        setStatus("missing");
+        setStoredResult(null);
+      } else {
+        setStoredResult(normalizeHistorySession(session));
+        setStatus("success");
+      }
+    }).catch((err) => {
+      if (!active) return;
+      setError(err.message || "Unable to retrieve these results.");
+      setStatus("error");
+    });
+    return () => { active = false; };
+  }, [sessionId, currentResult, reloadKey]);
+
+  const result = storedResult;
+  const breakdown = Array.isArray(result?.perQuestion) ? result.perQuestion : [];
+  const hasBreakdown = breakdown.length > 0;
+  const score = result?.score ?? "Not available";
+  const isHistorical = Boolean(result?.historicalSummary);
+  const isEstimatedElo = !isHistorical && result?.eloChange !== undefined && result?.eloChange !== null;
 
   return (
-    <PageLayout
-      title="Session Results"
-      subtitle="Detailed breakdown of your most recent practice session."
-      currentPage={currentPage}
-      onNavigate={onNavigate}
-    >
-      <div className="resultSummaryCard">
-        <div className="resultSummaryTop">
-          <h2>{mode}</h2>
-          <span className="resultSummaryScore">{score}</span>
-        </div>
-
-        <p className="resultMeta">Date: {date}</p>
-        <p className="resultMeta">Questions Attempted: {questionsAnswered}</p>
-        <p className="resultMeta">ELO Change: {eloChange}</p>
-
-        {sessionResult.feedbackMessage && (
-          <FeedbackBox
-            feedbackType={sessionResult.feedbackType}
-            feedbackMessage={sessionResult.feedbackMessage}
-          />
-        )}
-      </div>
-
-      <div className="resultSummaryCard" style={{ marginTop: "20px" }}>
-        <h2 style={{ color: "var(--text-primary)", marginBottom: "14px" }}>
-          Per-Question Breakdown
-        </h2>
-
-        {!analyticsAvailable ? (
-          <p style={{ color: "var(--text-secondary)" }}>
-            {breakdownUnavailable
-              ? "Your score was saved, but the per-question breakdown could not be loaded."
-              : "No submitted question results are available for this session."}
-          </p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {breakdown.map((question, index) => {
-              const isQuizResult = typeof question.isCorrect === "boolean";
-              const resultLabel = isQuizResult
-                ? question.isCorrect
-                  ? "Correct"
-                  : "Incorrect"
-                : "AI evaluated";
-
-              const resultColor = isQuizResult
-                ? question.isCorrect
-                  ? "#1f6b3d"
-                  : "#9f1c1c"
-                : "#0c4a6e";
-
-              return (
-                <div
-                  key={question.questionId || index}
-                  style={{
-                    border: "2px solid #e5ebf2",
-                    borderRadius: "12px",
-                    padding: "14px 16px",
-                    background: "#fbfcfe",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "baseline",
-                      gap: "10px",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    <h3
-                      style={{
-                        fontSize: "1rem",
-                        color: "#1f2937",
-                        margin: 0,
-                      }}
-                    >
-                      Question {index + 1}
-                    </h3>
-                    <span style={{ fontWeight: 700, color: resultColor }}>
-                      {resultLabel}
-                      {question.score != null && ` · ${question.score}%`}
-                    </span>
-                  </div>
-
-                  <p style={{ color: "#2f3542", marginBottom: "8px" }}>
-                    <strong>Prompt:</strong> {question.prompt}
-                  </p>
-
-                  {question.userAnswer && (
-                    <p style={{ color: "#415064", marginBottom: "8px" }}>
-                      <strong>Your answer:</strong> {question.userAnswer}
-                    </p>
-                  )}
-
-                  {question.feedback && (
-                    <p style={{ color: "#415064", marginBottom: "8px" }}>
-                      <strong>Feedback:</strong> {question.feedback}
-                    </p>
-                  )}
-
-                  {question.strengths?.length > 0 && (
-                    <p style={{ color: "#415064", marginBottom: "6px" }}>
-                      <strong>Strengths:</strong> {question.strengths.join("; ")}
-                    </p>
-                  )}
-
-                  {question.weaknesses?.length > 0 && (
-                    <p style={{ color: "#415064", marginBottom: "6px" }}>
-                      <strong>Weaknesses:</strong> {question.weaknesses.join("; ")}
-                    </p>
-                  )}
-
-                  {question.suggestions?.length > 0 && (
-                    <p style={{ color: "#415064", marginBottom: "8px" }}>
-                      <strong>Suggestions:</strong> {question.suggestions.join("; ")}
-                    </p>
-                  )}
-
-                  {question.criterionResults?.length > 0 && (
-                    <div style={{ marginTop: "10px" }}>
-                      <strong style={{ color: "#2f3542" }}>Rubric:</strong>
-                      <ul style={{ margin: "6px 0 0 20px", color: "#415064" }}>
-                        {question.criterionResults.map((criterion) => (
-                          <li key={criterion.name} style={{ marginBottom: "5px" }}>
-                            {criterion.name}: {criterion.awardedPoints}/
-                            {criterion.maxPoints} — {criterion.feedback}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {mode !== "Quiz Style" && (
-        <div className="resultSummaryCard" style={{ marginTop: "20px" }}>
-          <h2 style={{ color: "var(--text-primary)", marginBottom: "10px" }}>
-            AI Feedback Summary
-          </h2>
-          {aiFeedbackAvailable ? (
-            <div className="quizFeedback ai-feedback">
-              <p style={{ whiteSpace: "pre-line" }}>{aiFeedback}</p>
+    <PageLayout title="Session Results" subtitle="Review your interview performance and feedback." currentPage={currentPage} onNavigate={onNavigate}>
+      <div className="ibResultsPage">
+        {status === "loading" && <div className="ibResultsState" role="status">Loading saved session results...</div>}
+        {status === "error" && <div className="ibResultsState" role="alert"><h2>Couldn't load these results</h2><p>{error}</p><div className="ibResultsStateActions"><button className="primaryButton" type="button" onClick={() => setReloadKey((key) => key + 1)}>Try again</button><button className="secondaryButton" type="button" onClick={() => onNavigate(PAGES.HISTORY)}>Back to History</button></div></div>}
+        {status === "missing" && <div className="ibResultsState"><h2>Results unavailable</h2><p>This session could not be found, has not been completed, or no result was selected.</p><button className="primaryButton" type="button" onClick={() => onNavigate(PAGES.HISTORY)}>View Interview History</button></div>}
+        {status === "success" && result && <>
+          <section className="ibResultsHero" aria-label="Session score summary">
+            <div className="ibResultsHeroMain">
+              <span className="ibResultsEyebrow">COMPLETED INTERVIEW</span>
+              <h2>{result.mode || "Interview"}</h2>
+              <p>{result.jobRole ? `${result.jobRole}${result.experienceLevel ? ` · ${result.experienceLevel}` : ""}` : "Your practice session results"}</p>
+              <span className="ibResultsDate">{result.date || "Date unavailable"}</span>
             </div>
-          ) : (
-            <p style={{ color: "var(--text-secondary)", fontStyle: "italic" }}>
-              No AI feedback was returned for this session.
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="actionRow resultActionRow" style={{ gap: "10px" }}>
-        <button className="primaryButton" onClick={handleStartNewSession}>
-          Start new Session
-        </button>
-        <button className="secondaryButton" onClick={handleReturnHome}>
-          Return to Home
-        </button>
-        <button className="secondaryButton" onClick={handleRetrySession}>
-          Retry Session
-        </button>
+            <div className="ibResultsScoreBubble"><span>OVERALL SCORE</span><strong>{score}</strong></div>
+          </section>
+          <div className="ibResultsStats">
+            <div className="ibResultsStat"><span>Interview Mode</span><strong>{result.mode || "—"}</strong></div>
+            <div className="ibResultsStat"><span>Questions Answered</span><strong>{result.questionsAnswered ?? (hasBreakdown ? breakdown.length : "—")}</strong></div>
+            <div className="ibResultsStat"><span>{isEstimatedElo ? "Estimated ELO Change" : "Saved ELO Change"}</span><strong>{result.eloChange ?? "—"}</strong>{isEstimatedElo && <small>Estimate only; not a confirmed ranking update.</small>}</div>
+          </div>
+          {result.feedbackMessage && <div className="ibResultsNotice">{result.feedbackMessage}</div>}
+          <section className="ibResultsPanel" aria-label="Question results">
+            <div className="ibResultsPanelHeading"><h2>Per-Question Breakdown</h2><span>{hasBreakdown ? `${breakdown.length} results` : "Summary only"}</span></div>
+            {hasBreakdown ? <div className="ibResultsQuestionList">
+              {breakdown.map((question, index) => {
+                const isQuiz = result.mode === "Quiz Style" && typeof question.isCorrect === "boolean";
+                const isCorrect = question.isCorrect === true;
+                const points = Number.isFinite(Number(question.score)) && question.score !== null && question.score !== undefined ? `${question.score}%` : null;
+                return <article className="ibResultsQuestion" key={`${question.questionId || "question"}-${index}`}>
+                  <div className="ibResultsQuestionTop"><h3>Question {index + 1}</h3><div className="ibResultsQuestionBadges"><span className={`ibResultsOutcome ${isQuiz ? (isCorrect ? "isCorrect" : "isIncorrect") : "isEvaluated"}`}>{isQuiz ? (isCorrect ? "Correct" : "Incorrect") : "AI Evaluated"}</span>{points && <strong>{points}</strong>}</div></div>
+                  <p className="ibResultsPrompt">{question.prompt || question.question || "Question prompt unavailable"}</p>
+                  {question.userAnswer && <div className="ibResultsAnswer"><h4>Your Answer</h4><p>{question.userAnswer}</p></div>}
+                  {question.feedback && <div className="ibResultsFeedbackGroup"><h4>Feedback</h4><p>{question.feedback}</p></div>}
+                  <div className="ibResultsFeedbackGrid"><DetailsList title="Strengths" items={question.strengths}/><DetailsList title="Areas to Improve" items={question.weaknesses}/><DetailsList title="Suggestions" items={question.suggestions}/></div>
+                  {Array.isArray(question.criterionResults) && question.criterionResults.length > 0 && <div className="ibResultsFeedbackGroup"><h4>Evaluation Rubric</h4><ul>{question.criterionResults.map((criterion, i) => <li key={`${criterion.name || "criterion"}-${i}`}><strong>{criterion.name || "Criterion"}</strong>: {criterion.awardedPoints ?? "—"}/{criterion.maxPoints ?? "—"}{criterion.feedback ? ` — ${criterion.feedback}` : ""}</li>)}</ul></div>}
+                </article>;
+              })}
+            </div> : <div className="ibResultsSummaryOnly"><h3>{isHistorical ? "This session's score is saved" : "Detailed question results are unavailable"}</h3><p>{isHistorical ? "The existing backend returns this completed session's score and metadata, but does not yet expose its saved question answers or AI feedback for review. Those details appear directly after an interview when available." : result.breakdownAvailable === false ? "Your score was saved, but the question breakdown could not be loaded." : "No question-level evaluations were provided for this session."}</p></div>}
+          </section>
+          <div className="ibResultsActions"><button className="primaryButton" type="button" onClick={() => onNavigate(PAGES.HISTORY)}>View Interview History</button><button className="secondaryButton" type="button" onClick={() => onNavigate(PAGES.DASHBOARD)}>Back to Dashboard</button>{onSelectMode && result.mode && ["Code Style", "Quiz Style", "Theoretical Style"].includes(result.mode) && <button className="secondaryButton" type="button" onClick={() => onSelectMode(result.mode)}>Practice Again</button>}</div>
+        </>}
       </div>
     </PageLayout>
   );
