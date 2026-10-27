@@ -1,8 +1,13 @@
+
 import React from "react";
+
 import {
+  fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
+
 import {
   MemoryRouter,
   Route,
@@ -11,13 +16,37 @@ import {
 
 import ProtectedRoute from "./protectedRoute";
 import { useAuth } from "../../context/AuthContext";
+import { emailVerificationService } from "../../services/emailVerificationService";
 import { PAGES } from "../../utils/constants";
 
 jest.mock("../../context/AuthContext", () => ({
   useAuth: jest.fn(),
 }));
 
-function renderProtectedRoute() {
+jest.mock("../../services/emailVerificationService", () => ({
+  emailVerificationService: {
+    send: jest.fn(),
+    check: jest.fn(),
+    signOut: jest.fn(),
+  },
+}));
+
+function renderRoute(state) {
+  useAuth.mockReturnValue({
+    user: {
+      uid: "u1",
+      email: "test@example.com",
+      emailVerified: true,
+    },
+    loading: false,
+    profileComplete: true,
+    profileError: "",
+    refreshProfile: jest.fn().mockResolvedValue({
+      uid: "u1",
+    }),
+    ...state,
+  });
+
   render(
     <MemoryRouter initialEntries={["/dashboard"]}>
       <Routes>
@@ -39,131 +68,154 @@ function renderProtectedRoute() {
   );
 }
 
-describe("ProtectedRoute", () => {
+describe("SEC-02 protected frontend admission", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test("allows an authenticated user to access protected content", () => {
-    useAuth.mockReturnValue({
-      user: {
-        uid: "test-user",
-        email: "test@example.com",
-      },
-      loading: false,
-      profileComplete: true,
-      profileError: "",
-    });
-
-    renderProtectedRoute();
+  test("accepts a verified user with a complete profile", () => {
+    renderRoute();
 
     expect(
       screen.getByText("Protected Content")
     ).toBeInTheDocument();
-
-    expect(
-      screen.queryByText("Login Page")
-    ).not.toBeInTheDocument();
   });
 
-  test("redirects an unauthenticated user to login", async () => {
-    useAuth.mockReturnValue({
+  test("redirects unauthenticated users", async () => {
+    renderRoute({
       user: null,
-      loading: false,
-      profileComplete: false,
-      profileError: "",
     });
-
-    renderProtectedRoute();
 
     expect(
       await screen.findByText("Login Page")
     ).toBeInTheDocument();
-
-    expect(
-      screen.queryByText("Protected Content")
-    ).not.toBeInTheDocument();
   });
 
-  test("shows loading state while authentication is resolving", () => {
-    useAuth.mockReturnValue({
-      user: null,
+  test("shows a loading state while auth is resolving", () => {
+    renderRoute({
       loading: true,
-      profileComplete: false,
-      profileError: "",
     });
-
-    renderProtectedRoute();
 
     expect(
       screen.getByText("Loading...")
     ).toBeInTheDocument();
+  });
+
+  test("keeps incomplete Google/password onboarding on login", async () => {
+    renderRoute({
+      profileComplete: false,
+    });
+
+    expect(
+      await screen.findByText("Login Page")
+    ).toBeInTheDocument();
+  });
+
+  test("fails closed if loading the profile failed", () => {
+    renderRoute({
+      profileError: "Profile unavailable",
+    });
+
+    expect(
+      screen.getByRole("alert")
+    ).toHaveTextContent(
+      /unable to verify/i
+    );
+  });
+
+  test("blocks an unverified email and offers an email action", async () => {
+    emailVerificationService.send.mockResolvedValue(
+      undefined
+    );
+
+    renderRoute({
+      user: {
+        uid: "u1",
+        email: "test@example.com",
+        emailVerified: false,
+      },
+    });
 
     expect(
       screen.queryByText("Protected Content")
     ).not.toBeInTheDocument();
 
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /send verification email/i,
+      })
+    );
+
+    await waitFor(() =>
+      expect(
+        emailVerificationService.send
+      ).toHaveBeenCalledTimes(1)
+    );
+
     expect(
-      screen.queryByText("Login Page")
-    ).not.toBeInTheDocument();
+      await screen.findByRole("status")
+    ).toHaveTextContent(/email sent/i);
   });
 
-  test(
-    "redirects authenticated users without an application profile",
-    async () => {
-      useAuth.mockReturnValue({
-        user: {
-          uid: "google-user",
-          email: "google@example.com",
-        },
-        loading: false,
-        profileComplete: false,
-        profileError: "",
+  test("refreshes the profile after confirming verification", async () => {
+    emailVerificationService.check.mockResolvedValue(
+      true
+    );
+
+    const refreshProfile =
+      jest.fn().mockResolvedValue({
+        uid: "u1",
       });
 
-      renderProtectedRoute();
+    renderRoute({
+      user: {
+        uid: "u1",
+        email: "test@example.com",
+        emailVerified: false,
+      },
+      refreshProfile,
+    });
 
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /i've verified my email/i,
+      })
+    );
+
+    await waitFor(() =>
       expect(
-        await screen.findByText(
-          "Login Page"
-        )
-      ).toBeInTheDocument();
+        refreshProfile
+      ).toHaveBeenCalledTimes(1)
+    );
+  });
 
-      expect(
-        screen.queryByText(
-          "Protected Content"
-        )
-      ).not.toBeInTheDocument();
-    }
-  );
+  test("does not grant access when verification is still pending", async () => {
+    emailVerificationService.check.mockResolvedValue(
+      false
+    );
 
-  test(
-    "does not allow protected access when profile verification fails",
-    () => {
-      useAuth.mockReturnValue({
-        user: {
-          uid: "test-user",
-          email: "test@example.com",
-        },
-        loading: false,
-        profileComplete: false,
-        profileError:
-          "Profile service unavailable.",
-      });
+    renderRoute({
+      user: {
+        uid: "u1",
+        email: "test@example.com",
+        emailVerified: false,
+      },
+    });
 
-      renderProtectedRoute();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /i've verified my email/i,
+      })
+    );
 
-      expect(
-        screen.getByRole("alert")
-      ).toHaveTextContent(
-        /unable to verify your interview buddy profile/i
-      );
+    expect(
+      await screen.findByRole("status")
+    ).toHaveTextContent(
+      /not verified yet/i
+    );
 
-      expect(
-        screen.queryByText(
-          "Protected Content"
-        )
-      ).not.toBeInTheDocument();
-    }
-  );
+    expect(
+      screen.queryByText("Protected Content")
+    ).not.toBeInTheDocument();
+  });
 });

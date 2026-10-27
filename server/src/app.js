@@ -9,6 +9,7 @@ const createSessionRouter = require("./routes/sessions");
 const createAccountDeletionRouter = require("./routes/accountDeletion");
 
 const requireAuth = require("./middleware/requireAuth");
+const createRequireAccountReady = require("./middleware/requireAccountReady");
 const getHealthPayload = require("./health");
 
 const {
@@ -30,23 +31,24 @@ const {
   authClient,
 } = require("./repositories");
 
-// Initialize question metadata service.
 const questionMetadataService =
   createQuestionMetadataService({
     questionRepository,
     catalogRepository: questionCatalogRepository,
   });
 
-// Initialize daily question quota service.
 const questionQuotaService =
   createQuestionQuotaService({
     usageRepository: questionUsageRepository,
   });
 
-// Create Express application.
+const requireAccountReady =
+  createRequireAccountReady({
+    userRepository,
+  });
+
 const app = express();
 
-// Configure CORS.
 app.use(
   cors({
     origin:
@@ -55,22 +57,25 @@ app.use(
   })
 );
 
-// Configure JSON request parsing.
+// Preserve SEC-01 request-parser protections.
 app.use(
   express.json({
     limit: "1mb",
+    inflate: false,
   })
 );
 
-// Health endpoint.
+// Public health endpoint.
 app.get("/api/health", (req, res) => {
   res.json(getHealthPayload());
 });
 
-// Protected question routes.
+// Authentication and account-readiness
+// checks run before protected question routes.
 app.use(
   "/api/questions",
   requireAuth,
+  requireAccountReady,
   createQuestionRouter({
     questionRepository,
     questionQuotaService,
@@ -82,6 +87,7 @@ app.use(
 app.use(
   "/api/evaluate",
   requireAuth,
+  requireAccountReady,
   createEvaluateRouter({
     questionRepository,
     evaluationRepository,
@@ -89,37 +95,77 @@ app.use(
   })
 );
 
-// Protected user routes.
+// Protected profile/settings routes.
 app.use(
   "/api/users",
   requireAuth,
+  requireAccountReady,
   createUserRouter({
     userRepository,
   })
 );
 
-// Secure account deletion is separate from ordinary profile routes.
+// Secure account deletion.
+// Incomplete accounts can still delete themselves.
 app.use(
   "/api/users",
   requireAuth,
-  createAccountDeletionRouter({ accountDeletionService, authClient })
+  requireAccountReady,
+  createAccountDeletionRouter({
+    accountDeletionService,
+    authClient,
+  })
 );
 
-// Protected session routes.
+// Protected interview session routes.
 app.use(
   "/api/sessions",
   requireAuth,
+  requireAccountReady,
   createSessionRouter({
     sessionRepository,
     questionRepository,
   })
 );
 
-// Centralized error handler.
+// Preserve SEC-01 parser error handling.
 app.use((error, req, res, _next) => {
+  if (
+    error &&
+    error.type === "encoding.unsupported"
+  ) {
+    return res.status(415).json({
+      code: "UNSUPPORTED_CONTENT_ENCODING",
+      error:
+        "Compressed request bodies are not supported.",
+    });
+  }
+
+  if (
+    error &&
+    error.type === "entity.too.large"
+  ) {
+    return res.status(413).json({
+      code: "REQUEST_BODY_TOO_LARGE",
+      error:
+        "Request body exceeds the allowed size.",
+    });
+  }
+
+  if (
+    error &&
+    error.type === "entity.parse.failed"
+  ) {
+    return res.status(400).json({
+      code: "INVALID_JSON",
+      error:
+        "Request body must contain valid JSON.",
+    });
+  }
+
   console.error(error);
 
-  res.status(500).json({
+  return res.status(500).json({
     error:
       "The Interview Buddy server could not complete the request.",
   });
