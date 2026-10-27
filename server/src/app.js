@@ -30,44 +30,38 @@ const {
   authClient,
 } = require("./repositories");
 
-// Initialize question metadata service.
-const questionMetadataService =
-  createQuestionMetadataService({
-    questionRepository,
-    catalogRepository: questionCatalogRepository,
-  });
+const questionMetadataService = createQuestionMetadataService({
+  questionRepository,
+  catalogRepository: questionCatalogRepository,
+});
 
-// Initialize daily question quota service.
-const questionQuotaService =
-  createQuestionQuotaService({
-    usageRepository: questionUsageRepository,
-  });
+const questionQuotaService = createQuestionQuotaService({
+  usageRepository: questionUsageRepository,
+});
 
-// Create Express application.
 const app = express();
 
-// Configure CORS.
 app.use(
   cors({
-    origin:
-      process.env.CLIENT_ORIGIN ||
-      "http://localhost:3000",
+    origin: process.env.CLIENT_ORIGIN || "http://localhost:3000",
   })
 );
 
-// Configure JSON request parsing.
+// Requests from the React client are plain JSON.
+// Reject compressed request bodies to prevent decompression attacks.
 app.use(
   express.json({
     limit: "1mb",
+    inflate: false,
   })
 );
 
-// Health endpoint.
+// Public health endpoint.
 app.get("/api/health", (req, res) => {
   res.json(getHealthPayload());
 });
 
-// Protected question routes.
+// Protected question endpoints.
 app.use(
   "/api/questions",
   requireAuth,
@@ -78,7 +72,7 @@ app.use(
   })
 );
 
-// Protected AI evaluation routes.
+// Protected AI evaluation endpoints.
 app.use(
   "/api/evaluate",
   requireAuth,
@@ -89,23 +83,24 @@ app.use(
   })
 );
 
-// Protected user routes.
+// Protected user profile endpoints.
 app.use(
   "/api/users",
   requireAuth,
-  createUserRouter({
-    userRepository,
+  createUserRouter({ userRepository })
+);
+
+// Account deletion endpoints.
+app.use(
+  "/api/users",
+  requireAuth,
+  createAccountDeletionRouter({
+    accountDeletionService,
+    authClient,
   })
 );
 
-// Secure account deletion is separate from ordinary profile routes.
-app.use(
-  "/api/users",
-  requireAuth,
-  createAccountDeletionRouter({ accountDeletionService, authClient })
-);
-
-// Protected session routes.
+// Protected interview session endpoints.
 app.use(
   "/api/sessions",
   requireAuth,
@@ -115,11 +110,32 @@ app.use(
   })
 );
 
-// Centralized error handler.
+// Centralized error handling.
 app.use((error, req, res, _next) => {
+  if (error && error.type === "encoding.unsupported") {
+    return res.status(415).json({
+      code: "UNSUPPORTED_CONTENT_ENCODING",
+      error: "Compressed request bodies are not supported.",
+    });
+  }
+
+  if (error && error.type === "entity.too.large") {
+    return res.status(413).json({
+      code: "REQUEST_BODY_TOO_LARGE",
+      error: "Request body exceeds the allowed size.",
+    });
+  }
+
+  if (error && error.type === "entity.parse.failed") {
+    return res.status(400).json({
+      code: "INVALID_JSON",
+      error: "Request body must contain valid JSON.",
+    });
+  }
+
   console.error(error);
 
-  res.status(500).json({
+  return res.status(500).json({
     error:
       "The Interview Buddy server could not complete the request.",
   });
