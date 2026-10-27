@@ -1,4 +1,3 @@
-
 const express = require("express");
 const request = require("supertest");
 const createSessionRouter = require("./sessions");
@@ -48,6 +47,7 @@ describe("Session API endpoints", () => {
       findById: jest.fn(),
       listByUser: jest.fn(),
       finalizeSessionWithResults: jest.fn(),
+      listResponses: jest.fn().mockResolvedValue([]),
     };
 
     app = createTestApp(sessionRepository);
@@ -207,7 +207,10 @@ describe("Session API endpoints", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(completedSession);
+    // The results pipeline adds result, eloChange and breakdown on top of
+    // the completed session fields.
+    expect(response.body).toMatchObject(completedSession);
+    expect(response.body.breakdown).toEqual([]);
     expect(sessionRepository.finalizeSessionWithResults).toHaveBeenCalledWith(
       TEST_SESSION_ID, TEST_USER_ID
     );
@@ -278,3 +281,4 @@ describe("Session API endpoints", () => {
     expect(response.body.error).toBe("Firestore unavailable.");
   });
 });
+

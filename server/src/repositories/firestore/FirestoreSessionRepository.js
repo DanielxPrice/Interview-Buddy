@@ -1,4 +1,3 @@
-
 const SessionRepository = require("../contracts/SessionRepository");
 
 function sessionError(message, statusCode) {
@@ -8,7 +7,9 @@ function sessionError(message, statusCode) {
 }
 
 function normalizeAnswer(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 class FirestoreSessionRepository extends SessionRepository {
@@ -17,7 +18,7 @@ class FirestoreSessionRepository extends SessionRepository {
 
     if (!db) {
       throw new Error(
-        "FirestoreSessionRepository requires a Firestore db instance."
+        "FirestoreSessionRepository requires a Firestore db instance.",
       );
     }
 
@@ -63,9 +64,7 @@ class FirestoreSessionRepository extends SessionRepository {
 
     const snapshot = await this.sessions.doc(sessionId).get();
 
-    return snapshot.exists
-      ? { id: snapshot.id, ...snapshot.data() }
-      : null;
+    return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null;
   }
 
   async listByUser(userId) {
@@ -140,64 +139,61 @@ class FirestoreSessionRepository extends SessionRepository {
     });
   }
 
+  // Results pipeline: read graded responses for the per-question breakdown.
+  async listResponses(sessionId) {
+    if (!sessionId) {
+      throw new Error("sessionId is required.");
+    }
+
+    const snapshot = await this.sessions
+      .doc(sessionId)
+      .collection("responses")
+      .get();
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  }
+
   // SCRUM-82: Persist server-graded Quiz responses.
   async saveQuizAnswer({ sessionId, userId, question, answer }) {
-    if (
-      !sessionId ||
-      !userId ||
-      !question?.id ||
-      typeof answer !== "string"
-    ) {
+    if (!sessionId || !userId || !question?.id || typeof answer !== "string") {
       throw sessionError(
         "Session, user, question and answer are required.",
-        400
+        400,
       );
     }
 
     if (question.mode !== "Quiz Style" || question.active === false) {
-      throw sessionError(
-        "This is not an available Quiz question.",
-        400
-      );
+      throw sessionError("This is not an available Quiz question.", 400);
     }
 
     const selectedAnswer = answer.trim();
 
     if (!selectedAnswer || selectedAnswer.length > 1000) {
-      throw sessionError(
-        "A valid Quiz answer is required.",
-        400
-      );
+      throw sessionError("A valid Quiz answer is required.", 400);
     }
 
     if (
       Array.isArray(question.options) &&
       question.options.length > 0 &&
       !question.options.some(
-        (option) =>
-          normalizeAnswer(option) === normalizeAnswer(selectedAnswer)
+        (option) => normalizeAnswer(option) === normalizeAnswer(selectedAnswer),
       )
     ) {
-      throw sessionError(
-        "Answer must match a provided Quiz option.",
-        400
-      );
+      throw sessionError("Answer must match a provided Quiz option.", 400);
     }
 
     const correctAnswer = normalizeAnswer(question.correctAnswer);
 
     if (!correctAnswer) {
-      throw sessionError(
-        "Quiz question has no configured answer.",
-        500
-      );
+      throw sessionError("Quiz question has no configured answer.", 500);
     }
 
     const sessionRef = this.sessions.doc(sessionId);
 
-    const responseRef = sessionRef
-      .collection("responses")
-      .doc(question.id);
+    const responseRef = sessionRef.collection("responses").doc(question.id);
 
     return this.db.runTransaction(async (transaction) => {
       const sessionSnapshot = await transaction.get(sessionRef);
@@ -209,37 +205,24 @@ class FirestoreSessionRepository extends SessionRepository {
       const session = sessionSnapshot.data();
 
       if (session.userId !== userId) {
-        throw sessionError(
-          "You do not have access to this session.",
-          403
-        );
+        throw sessionError("You do not have access to this session.", 403);
       }
 
       if (session.mode !== "Quiz Style") {
-        throw sessionError(
-          "Question mode does not match the session.",
-          400
-        );
+        throw sessionError("Question mode does not match the session.", 400);
       }
 
       if (session.status !== "active") {
-        throw sessionError(
-          "This session has already been completed.",
-          409
-        );
+        throw sessionError("This session has already been completed.", 409);
       }
 
       const existing = await transaction.get(responseRef);
 
       if (existing.exists) {
-        throw sessionError(
-          "This question has already been answered.",
-          409
-        );
+        throw sessionError("This question has already been answered.", 409);
       }
 
-      const isCorrect =
-        normalizeAnswer(selectedAnswer) === correctAnswer;
+      const isCorrect = normalizeAnswer(selectedAnswer) === correctAnswer;
 
       const explanation =
         question.explanation ||
@@ -279,7 +262,7 @@ class FirestoreSessionRepository extends SessionRepository {
     if (!sessionId || !userId) {
       throw sessionError(
         "Session ID and authenticated user are required.",
-        400
+        400,
       );
     }
 
@@ -296,10 +279,7 @@ class FirestoreSessionRepository extends SessionRepository {
       const session = sessionSnapshot.data();
 
       if (session.userId !== userId) {
-        throw sessionError(
-          "You do not have access to this session.",
-          403
-        );
+        throw sessionError("You do not have access to this session.", 403);
       }
 
       // Repeated completion must not apply results twice.
@@ -311,10 +291,7 @@ class FirestoreSessionRepository extends SessionRepository {
       }
 
       if (session.status !== "active") {
-        throw sessionError(
-          "This session cannot be completed.",
-          409
-        );
+        throw sessionError("This session cannot be completed.", 409);
       }
 
       // Read graded answers inside the same transaction.
@@ -336,7 +313,7 @@ class FirestoreSessionRepository extends SessionRepository {
         ) {
           throw sessionError(
             "Saved responses contain invalid scoring data.",
-            409
+            409,
           );
         }
 
@@ -344,9 +321,7 @@ class FirestoreSessionRepository extends SessionRepository {
       }
 
       const result = {
-        score: responses.length
-          ? Math.round(totalScore / responses.length)
-          : 0,
+        score: responses.length ? Math.round(totalScore / responses.length) : 0,
         questionsAnswered: responses.length,
         totalScore,
       };
