@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import HistoryPage from "./HistoryPage";
 import { historyService } from "../services/historyService";
 
@@ -42,5 +42,5 @@ test("shows empty and failed-request states without placeholder sessions", async
   unmount();
   historyService.getSessions.mockRejectedValueOnce(new Error("Offline"));
   render(<HistoryPage currentPage="/history" onNavigate={jest.fn()} />);
-  await waitFor(() => expect(screen.getByText("Offline")).toBeInTheDocument());
+  expect(await screen.findByText("Offline")).toBeInTheDocument();
 });
