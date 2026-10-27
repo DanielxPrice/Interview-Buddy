@@ -527,59 +527,46 @@ describe("interviewService", () => {
 });
 
 describe("historyService", () => {
-  test("getSessions returns prototype session history", async () => {
+  const completedSession = {
+    id: "saved-1", mode: "Code Style", status: "completed",
+    result: { score: 88, questionsAnswered: 4 },
+  };
+
+  test("getSessions uses authenticated completed-session API", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => [completedSession] });
     const sessions = await historyService.getSessions();
-
-    expect(Array.isArray(sessions)).toBe(true);
-    expect(sessions.length).toBeGreaterThan(0);
+    expect(sessions).toEqual([completedSession]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/sessions?status=completed",
+      { headers: { Authorization: "Bearer test-id-token" } }
+    );
   });
 
-  test("getSessionById retrieves an existing session", async () => {
-    const sessions = await historyService.getSessions();
-    const targetSession = sessions[0];
-
-    const result =
-      await historyService.getSessionById(targetSession.id);
-
-    expect(result).toEqual(targetSession);
+  test("getSessionById retrieves an authorized saved session", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => completedSession });
+    expect(await historyService.getSessionById("saved-1")).toEqual(completedSession);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/sessions/saved-1",
+      { headers: { Authorization: "Bearer test-id-token" } }
+    );
   });
 
-  test("getSessionById returns null for an unknown session", async () => {
-    const result =
-      await historyService.getSessionById("does-not-exist");
-
-    expect(result).toBeNull();
+  test("getSessionById returns null for a missing session", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({ error: "Session not found." }) });
+    expect(await historyService.getSessionById("missing")).toBeNull();
   });
 
-  test("getSessionById requires a session ID", async () => {
-    await expect(
-      historyService.getSessionById()
-    ).rejects.toThrow("Session ID is required.");
+  test("getSessionById requires an ID", async () => {
+    await expect(historyService.getSessionById()).rejects.toThrow("Session ID is required.");
   });
 
-  test("getSessions returns copies instead of the original mock objects", async () => {
-    const firstResult = await historyService.getSessions();
-
-    const originalMode = firstResult[0].mode;
-
-    firstResult[0].mode = "Changed Mode";
-
-    const secondResult = await historyService.getSessions();
-
-    expect(secondResult[0].mode).toBe(originalMode);
+  test("rejects an unauthorized session", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) });
+    await expect(historyService.getSessionById("another-user-session")).rejects.toThrow("permission");
   });
 
-  test("deleteSession simulates deleting an existing session", async () => {
-    const sessions = await historyService.getSessions();
-
-    const result =
-      await historyService.deleteSession(sessions[0].id);
-
-    expect(result).toEqual({
-      success: true,
-      sessionId: sessions[0].id,
-      simulated: true,
-    });
+  test("does not falsely claim deletion is supported", async () => {
+    await expect(historyService.deleteSession("saved-1")).rejects.toThrow("not supported");
   });
 });
 
