@@ -9,6 +9,7 @@ const createSessionRouter = require("./routes/sessions");
 const createAccountDeletionRouter = require("./routes/accountDeletion");
 
 const requireAuth = require("./middleware/requireAuth");
+const createRequireAccountReady = require("./middleware/requireAccountReady");
 const getHealthPayload = require("./health");
 
 const {
@@ -30,25 +31,33 @@ const {
   authClient,
 } = require("./repositories");
 
-const questionMetadataService = createQuestionMetadataService({
-  questionRepository,
-  catalogRepository: questionCatalogRepository,
-});
+const questionMetadataService =
+  createQuestionMetadataService({
+    questionRepository,
+    catalogRepository: questionCatalogRepository,
+  });
 
-const questionQuotaService = createQuestionQuotaService({
-  usageRepository: questionUsageRepository,
-});
+const questionQuotaService =
+  createQuestionQuotaService({
+    usageRepository: questionUsageRepository,
+  });
+
+const requireAccountReady =
+  createRequireAccountReady({
+    userRepository,
+  });
 
 const app = express();
 
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN || "http://localhost:3000",
+    origin:
+      process.env.CLIENT_ORIGIN ||
+      "http://localhost:3000",
   })
 );
 
-// Requests from the React client are plain JSON.
-// Reject compressed request bodies to prevent decompression attacks.
+// Preserve SEC-01 request-parser protections.
 app.use(
   express.json({
     limit: "1mb",
@@ -61,10 +70,12 @@ app.get("/api/health", (req, res) => {
   res.json(getHealthPayload());
 });
 
-// Protected question endpoints.
+// Authentication and account-readiness
+// checks run before protected question routes.
 app.use(
   "/api/questions",
   requireAuth,
+  requireAccountReady,
   createQuestionRouter({
     questionRepository,
     questionQuotaService,
@@ -72,10 +83,11 @@ app.use(
   })
 );
 
-// Protected AI evaluation endpoints.
+// Protected AI evaluation routes.
 app.use(
   "/api/evaluate",
   requireAuth,
+  requireAccountReady,
   createEvaluateRouter({
     questionRepository,
     evaluationRepository,
@@ -83,53 +95,71 @@ app.use(
   })
 );
 
-// Protected user profile endpoints.
+// Protected profile/settings routes.
 app.use(
   "/api/users",
   requireAuth,
-  createUserRouter({ userRepository })
+  requireAccountReady,
+  createUserRouter({
+    userRepository,
+  })
 );
 
-// Account deletion endpoints.
+// Secure account deletion.
+// Incomplete accounts can still delete themselves.
 app.use(
   "/api/users",
   requireAuth,
+  requireAccountReady,
   createAccountDeletionRouter({
     accountDeletionService,
     authClient,
   })
 );
 
-// Protected interview session endpoints.
+// Protected interview session routes.
 app.use(
   "/api/sessions",
   requireAuth,
+  requireAccountReady,
   createSessionRouter({
     sessionRepository,
     questionRepository,
   })
 );
 
-// Centralized error handling.
+// Preserve SEC-01 parser error handling.
 app.use((error, req, res, _next) => {
-  if (error && error.type === "encoding.unsupported") {
+  if (
+    error &&
+    error.type === "encoding.unsupported"
+  ) {
     return res.status(415).json({
       code: "UNSUPPORTED_CONTENT_ENCODING",
-      error: "Compressed request bodies are not supported.",
+      error:
+        "Compressed request bodies are not supported.",
     });
   }
 
-  if (error && error.type === "entity.too.large") {
+  if (
+    error &&
+    error.type === "entity.too.large"
+  ) {
     return res.status(413).json({
       code: "REQUEST_BODY_TOO_LARGE",
-      error: "Request body exceeds the allowed size.",
+      error:
+        "Request body exceeds the allowed size.",
     });
   }
 
-  if (error && error.type === "entity.parse.failed") {
+  if (
+    error &&
+    error.type === "entity.parse.failed"
+  ) {
     return res.status(400).json({
       code: "INVALID_JSON",
-      error: "Request body must contain valid JSON.",
+      error:
+        "Request body must contain valid JSON.",
     });
   }
 

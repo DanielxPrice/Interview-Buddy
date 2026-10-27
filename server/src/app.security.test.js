@@ -2,8 +2,6 @@
 const request = require("supertest");
 const zlib = require("node:zlib");
 
-// Mock Firebase-backed dependencies.
-// These tests must never contact production services.
 jest.mock("./repositories", () => ({
   questionRepository: {},
   questionCatalogRepository: {
@@ -35,13 +33,19 @@ jest.mock("./middleware/requireAuth", () =>
   (_req, _res, next) => next()
 );
 
-// Create an isolated test-only endpoint.
-// This does not exist in the real production application.
+// Parser security is tested independently from
+// the new account-readiness authorization layer.
+jest.mock("./middleware/requireAccountReady", () => () =>
+  (_req, _res, next) => next()
+);
+
 jest.mock("./routes/users", () => () => {
   const router = require("express").Router();
 
   router.post("/__test_echo", (req, res) => {
-    res.json({ body: req.body });
+    res.json({
+      body: req.body,
+    });
   });
 
   return router;
@@ -55,19 +59,25 @@ describe("SEC-01 request body parser security", () => {
   test("accepts ordinary uncompressed JSON", async () => {
     const response = await request(app)
       .post(testPath)
-      .send({ message: "hello" });
+      .send({
+        message: "hello",
+      });
 
     expect(response.status).toBe(200);
 
     expect(response.body).toEqual({
-      body: { message: "hello" },
+      body: {
+        message: "hello",
+      },
     });
   });
 
   test("rejects compressed JSON without decompressing it", async () => {
     const compressed = zlib.gzipSync(
       Buffer.from(
-        JSON.stringify({ message: "hello" })
+        JSON.stringify({
+          message: "hello",
+        })
       )
     );
 
@@ -78,6 +88,7 @@ describe("SEC-01 request body parser security", () => {
       .send(compressed);
 
     expect(response.status).toBe(415);
+
     expect(response.body.code).toBe(
       "UNSUPPORTED_CONTENT_ENCODING"
     );
@@ -90,7 +101,10 @@ describe("SEC-01 request body parser security", () => {
       .send('{"message":');
 
     expect(response.status).toBe(400);
-    expect(response.body.code).toBe("INVALID_JSON");
+
+    expect(response.body.code).toBe(
+      "INVALID_JSON"
+    );
   });
 
   test("rejects payloads over 1 MB with 413", async () => {
@@ -101,6 +115,7 @@ describe("SEC-01 request body parser security", () => {
       });
 
     expect(response.status).toBe(413);
+
     expect(response.body.code).toBe(
       "REQUEST_BODY_TOO_LARGE"
     );
