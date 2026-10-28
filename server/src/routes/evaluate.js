@@ -40,6 +40,20 @@ function createEvaluateRouter({
     );
   }
 
+  // SEC-04 requires reservation-aware persistence. Fail closed if a test or
+  // deployment accidentally injects a legacy repository.
+  for (const method of [
+    "reserveEvaluation",
+    "completeReservedEvaluation",
+    "failReservedEvaluation",
+    "markProviderStarted",
+    "markUncertainEvaluation",
+  ]) {
+    if (typeof evaluationRepository[method] !== "function") {
+      throw new Error(`createEvaluateRouter requires evaluationRepository.${method}.`);
+    }
+  }
+
   const router = express.Router();
 
   // POST /api/evaluate
@@ -86,6 +100,19 @@ function createEvaluateRouter({
           error:
             "candidateResponse exceeds the maximum length of 10000 characters.",
           code: "CANDIDATE_RESPONSE_TOO_LONG",
+        });
+      }
+
+      // requestId is informational only; it is not the reservation key.
+      if (
+        requestId !== null &&
+        (typeof requestId !== "string" ||
+          requestId.length > 128 ||
+          !/^[A-Za-z0-9_-]+$/.test(requestId))
+      ) {
+        return res.status(400).json({
+          error: "requestId has an invalid format.",
+          code: "INVALID_REQUEST_ID",
         });
       }
 
@@ -246,16 +273,74 @@ function createEvaluateRouter({
       const answer =
         candidateResponse.trim();
 
-      // Only authorized requests reach AI.
-      const evaluation =
-        await aiService.generateEvaluation({
+      // Atomic claim happens BEFORE the paid provider call. Question ID is
+      // the lock key, so a changed client requestId cannot evade it.
+      const admission = await evaluationRepository.reserveEvaluation({
+        userId: req.user.uid,
+        role: req.user.role,
+        sessionId,
+        questionId: question.id,
+        mode: question.mode,
+        candidateResponse: answer,
+        requestId,
+      });
+
+      if (admission.kind === "replay") {
+        return res.json({
+          requestId,
+          questionId: question.id,
+          evaluation: admission.evaluation,
+          replayed: true,
+        });
+      }
+
+      if (admission.kind !== "reserved" || !admission.attemptId) {
+        throw new Error("Evaluation reservation returned an invalid result.");
+      }
+
+      // The ONLY allowed path to the provider is through this durable
+      // dispatch marker. An undispatched reservation may be reclaimed after
+      // expiry; a provider_started reservation must not be reclaimed blindly.
+      await evaluationRepository.markProviderStarted({
+        userId: req.user.uid,
+        sessionId,
+        questionId: question.id,
+        mode: question.mode,
+        attemptId: admission.attemptId,
+      });
+
+      let evaluation;
+      try {
+        // Exactly one application-level attempt; SDK retries are disabled.
+        evaluation = await aiService.generateEvaluation({
           question,
           candidateResponse: answer,
         });
+      } catch (_providerError) {
+        // Connection reset, timeout, invalid response, or SDK error does not
+        // prove the provider did not process and bill this evaluation.
+        try {
+          await evaluationRepository.markUncertainEvaluation({
+            userId: req.user.uid,
+            sessionId,
+            questionId: question.id,
+            attemptId: admission.attemptId,
+          });
+        } catch (stateError) {
+          // provider_started remains a durable fail-closed lock even if this
+          // transition fails. Log operational detail only on the backend.
+          console.error("Unable to mark uncertain AI evaluation:", stateError);
+        }
+        return res.status(503).json({
+          error: "The evaluation could not be confirmed. Its outcome needs review before retrying.",
+          code: "EVALUATION_REVIEW_REQUIRED",
+          requestId,
+        });
+      }
 
-      // Recheck authorization inside
-      // the Firestore persistence transaction.
-      await evaluationRepository.saveEvaluation({
+      // Persistence transaction checks session, assignment and ownership
+      // *again* and requires the same server-generated reservation token.
+      await evaluationRepository.completeReservedEvaluation({
         userId: req.user.uid,
         sessionId,
         questionId: question.id,
@@ -263,17 +348,8 @@ function createEvaluateRouter({
         mode: question.mode,
         candidateResponse: answer,
         evaluation,
-
-        // These fields come from the server's
-        // saved session, not the request.
-        metadata: {
-          jobRole: session.jobRole,
-          experienceLevel:
-            session.experienceLevel,
-        },
-
-        evaluatedAt:
-          new Date().toISOString(),
+        attemptId: admission.attemptId,
+        evaluatedAt: new Date().toISOString(),
       });
 
       return res.json({

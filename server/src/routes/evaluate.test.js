@@ -33,7 +33,10 @@ const successfulEvaluation = {
 
 function getPostHandler(router) {
   const layer = router.stack.find(
-    (entry) => entry.route && entry.route.path === "/" && entry.route.methods.post
+    (entry) =>
+      entry.route &&
+      entry.route.path === "/" &&
+      entry.route.methods.post
   );
   return layer.route.stack[0].handle;
 }
@@ -42,10 +45,12 @@ function createResponse() {
   return {
     statusCode: 200,
     payload: null,
+
     status(code) {
       this.statusCode = code;
       return this;
     },
+
     json(payload) {
       this.payload = payload;
       return this;
@@ -53,17 +58,15 @@ function createResponse() {
   };
 }
 
-
 function createTestContext(body = {}) {
   const normalizedBody = {
     ...body,
-    metadata:
-      Object.prototype.hasOwnProperty.call(
-        body,
-        "metadata"
-      )
-        ? body.metadata
-        : { sessionId: SESSION_ID },
+    metadata: Object.prototype.hasOwnProperty.call(
+      body,
+      "metadata"
+    )
+      ? body.metadata
+      : { sessionId: SESSION_ID },
   };
 
   return {
@@ -75,7 +78,6 @@ function createTestContext(body = {}) {
     next: jest.fn(),
   };
 }
-
 
 describe("POST /api/evaluate route", () => {
   let questionRepository;
@@ -91,9 +93,24 @@ describe("POST /api/evaluate route", () => {
     };
 
     evaluationRepository = {
-      saveEvaluation: jest.fn().mockResolvedValue(undefined),
+      reserveEvaluation: jest.fn().mockResolvedValue({
+        kind: "reserved",
+        attemptId: "test-attempt-id",
+      }),
+
+      completeReservedEvaluation:
+        jest.fn().mockResolvedValue(undefined),
+
+      failReservedEvaluation:
+        jest.fn().mockResolvedValue(true),
+
+      markProviderStarted:
+        jest.fn().mockResolvedValue(true),
+
+      markUncertainEvaluation:
+        jest.fn().mockResolvedValue(true),
     };
-    
+
     sessionRepository = {
       findById: jest.fn().mockResolvedValue({
         id: SESSION_ID,
@@ -115,12 +132,20 @@ describe("POST /api/evaluate route", () => {
 
     handler = getPostHandler(router);
 
-    aiService.generateEvaluation.mockResolvedValue(successfulEvaluation);
+    aiService.generateEvaluation.mockResolvedValue(
+      successfulEvaluation
+    );
   });
 
   async function submit(body) {
     const context = createTestContext(body);
-    await handler(context.req, context.res, context.next);
+
+    await handler(
+      context.req,
+      context.res,
+      context.next
+    );
+
     return context;
   }
 
@@ -136,15 +161,21 @@ describe("POST /api/evaluate route", () => {
       },
     });
 
-    expect(questionRepository.findById).toHaveBeenCalledWith(QUESTION_ID);
-    expect(sessionRepository.findById).toHaveBeenCalledWith(SESSION_ID);
+    expect(questionRepository.findById)
+      .toHaveBeenCalledWith(QUESTION_ID);
 
-    expect(aiService.generateEvaluation).toHaveBeenCalledWith({
-      question: privateQuestion,
-      candidateResponse: "Candidate answer",
-    });
+    expect(sessionRepository.findById)
+      .toHaveBeenCalledWith(SESSION_ID);
 
-    expect(evaluationRepository.saveEvaluation).toHaveBeenCalledWith(
+    expect(aiService.generateEvaluation)
+      .toHaveBeenCalledWith({
+        question: privateQuestion,
+        candidateResponse: "Candidate answer",
+      });
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: SESSION_ID,
         questionId: QUESTION_ID,
@@ -154,32 +185,40 @@ describe("POST /api/evaluate route", () => {
     );
 
     expect(res.statusCode).toBe(200);
+
     expect(res.payload).toEqual({
       requestId: "request-1",
       questionId: QUESTION_ID,
       evaluation: successfulEvaluation,
     });
+
     expect(next).not.toHaveBeenCalled();
   });
 
   it.each([
     ["one below the limit", 9999],
     ["exactly at the limit", 10000],
-  ])("accepts a response %s (%i characters)", async (_, length) => {
-    const candidateResponse = "a".repeat(length);
+  ])(
+    "accepts a response %s (%i characters)",
+    async (_, length) => {
+      const candidateResponse = "a".repeat(length);
 
-    const { res, next } = await submit({
-      questionId: QUESTION_ID,
-      candidateResponse,
-    });
+      const { res, next } = await submit({
+        questionId: QUESTION_ID,
+        candidateResponse,
+      });
 
-    expect(res.statusCode).toBe(200);
-    expect(aiService.generateEvaluation).toHaveBeenCalledWith({
-      question: privateQuestion,
-      candidateResponse,
-    });
-    expect(next).not.toHaveBeenCalled();
-  });
+      expect(res.statusCode).toBe(200);
+
+      expect(aiService.generateEvaluation)
+        .toHaveBeenCalledWith({
+          question: privateQuestion,
+          candidateResponse,
+        });
+
+      expect(next).not.toHaveBeenCalled();
+    }
+  );
 
   it("rejects a response above the 10000-character limit", async () => {
     const { res, next } = await submit({
@@ -189,10 +228,19 @@ describe("POST /api/evaluate route", () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.payload.error).toMatch(/maximum length/i);
-    expect(res.payload.code).toBe("CANDIDATE_RESPONSE_TOO_LONG");
-    expect(questionRepository.findById).not.toHaveBeenCalled();
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(res.payload.code).toBe(
+      "CANDIDATE_RESPONSE_TOO_LONG"
+    );
+
+    expect(questionRepository.findById)
+      .not.toHaveBeenCalled();
+
+    expect(aiService.generateEvaluation)
+      .not.toHaveBeenCalled();
+
+    expect(evaluationRepository.completeReservedEvaluation)
+      .not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -201,19 +249,33 @@ describe("POST /api/evaluate route", () => {
     ["array", ["My answer"]],
     ["number", 123],
     ["boolean", true],
-  ])("rejects a %s candidate response", async (_, candidateResponse) => {
-    const { res, next } = await submit({
-      questionId: QUESTION_ID,
-      candidateResponse,
-    });
+  ])(
+    "rejects a %s candidate response",
+    async (_, candidateResponse) => {
+      const { res, next } = await submit({
+        questionId: QUESTION_ID,
+        candidateResponse,
+      });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.payload.code).toBe("CANDIDATE_RESPONSE_REQUIRED");
-    expect(questionRepository.findById).not.toHaveBeenCalled();
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
+      expect(res.statusCode).toBe(400);
+
+      expect(res.payload.code).toBe(
+        "CANDIDATE_RESPONSE_REQUIRED"
+      );
+
+      expect(questionRepository.findById)
+        .not.toHaveBeenCalled();
+
+      expect(aiService.generateEvaluation)
+        .not.toHaveBeenCalled();
+
+      expect(
+        evaluationRepository.completeReservedEvaluation
+      ).not.toHaveBeenCalled();
+
+      expect(next).not.toHaveBeenCalled();
+    }
+  );
 
   it("rejects a missing question ID", async () => {
     const { res, next } = await submit({
@@ -221,10 +283,17 @@ describe("POST /api/evaluate route", () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.payload.error).toBe("questionId is required.");
+    expect(res.payload.error).toBe(
+      "questionId is required."
+    );
     expect(res.payload.code).toBe("QUESTION_NOT_FOUND");
-    expect(questionRepository.findById).not.toHaveBeenCalled();
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
+
+    expect(questionRepository.findById)
+      .not.toHaveBeenCalled();
+
+    expect(aiService.generateEvaluation)
+      .not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -238,11 +307,23 @@ describe("POST /api/evaluate route", () => {
       });
 
       expect(res.statusCode).toBe(400);
-      expect(res.payload.error).toBe("candidateResponse is required.");
-      expect(res.payload.code).toBe("CANDIDATE_RESPONSE_REQUIRED");
-      expect(questionRepository.findById).not.toHaveBeenCalled();
-      expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-      expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+      expect(res.payload.error).toBe(
+        "candidateResponse is required."
+      );
+      expect(res.payload.code).toBe(
+        "CANDIDATE_RESPONSE_REQUIRED"
+      );
+
+      expect(questionRepository.findById)
+        .not.toHaveBeenCalled();
+
+      expect(aiService.generateEvaluation)
+        .not.toHaveBeenCalled();
+
+      expect(
+        evaluationRepository.completeReservedEvaluation
+      ).not.toHaveBeenCalled();
+
       expect(next).not.toHaveBeenCalled();
     }
   );
@@ -258,8 +339,14 @@ describe("POST /api/evaluate route", () => {
     expect(res.statusCode).toBe(404);
     expect(res.payload.error).toBe("Question not found.");
     expect(res.payload.code).toBe("QUESTION_NOT_FOUND");
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(aiService.generateEvaluation)
+      .not.toHaveBeenCalled();
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -275,10 +362,18 @@ describe("POST /api/evaluate route", () => {
     });
 
     expect(res.statusCode).toBe(409);
-    expect(res.payload.error).toBe("This question is inactive.");
+    expect(res.payload.error).toBe(
+      "This question is inactive."
+    );
     expect(res.payload.code).toBe("QUESTION_INACTIVE");
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(aiService.generateEvaluation)
+      .not.toHaveBeenCalled();
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -295,9 +390,17 @@ describe("POST /api/evaluate route", () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.payload.error).toMatch(/Quiz Style/);
-    expect(res.payload.code).toBe("UNSUPPORTED_EVALUATION_MODE");
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+    expect(res.payload.code).toBe(
+      "UNSUPPORTED_EVALUATION_MODE"
+    );
+
+    expect(aiService.generateEvaluation)
+      .not.toHaveBeenCalled();
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -307,12 +410,20 @@ describe("POST /api/evaluate route", () => {
     const { res, next } = await submit({
       questionId: QUESTION_ID,
       candidateResponse: "My answer",
-      metadata: { sessionId: "missing-session" },
+      metadata: {
+        sessionId: "missing-session",
+      },
     });
 
     expect(res.statusCode).toBe(404);
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(aiService.generateEvaluation)
+      .not.toHaveBeenCalled();
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -326,12 +437,20 @@ describe("POST /api/evaluate route", () => {
     const { res, next } = await submit({
       questionId: QUESTION_ID,
       candidateResponse: "My answer",
-      metadata: { sessionId: SESSION_ID },
+      metadata: {
+        sessionId: SESSION_ID,
+      },
     });
 
     expect(res.statusCode).toBe(403);
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(aiService.generateEvaluation)
+      .not.toHaveBeenCalled();
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -345,49 +464,82 @@ describe("POST /api/evaluate route", () => {
     const { res, next } = await submit({
       questionId: QUESTION_ID,
       candidateResponse: "My answer",
-      metadata: { sessionId: SESSION_ID },
+      metadata: {
+        sessionId: SESSION_ID,
+      },
     });
 
     expect(res.statusCode).toBe(409);
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(aiService.generateEvaluation)
+      .not.toHaveBeenCalled();
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
   it("passes Firestore persistence failures to the error handler", async () => {
-    const databaseError = new Error("Firestore write failed.");
-    evaluationRepository.saveEvaluation.mockRejectedValue(databaseError);
+    const databaseError = new Error(
+      "Firestore write failed."
+    );
+
+    evaluationRepository.completeReservedEvaluation
+      .mockRejectedValue(databaseError);
 
     const { res, next } = await submit({
       questionId: QUESTION_ID,
       candidateResponse: "My answer",
-      metadata: { sessionId: SESSION_ID },
+      metadata: {
+        sessionId: SESSION_ID,
+      },
     });
 
-    expect(aiService.generateEvaluation).toHaveBeenCalledTimes(1);
-    expect(evaluationRepository.saveEvaluation).toHaveBeenCalledTimes(1);
+    expect(aiService.generateEvaluation)
+      .toHaveBeenCalledTimes(1);
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).toHaveBeenCalledTimes(1);
+
     expect(next).toHaveBeenCalledWith(databaseError);
     expect(res.payload).toBeNull();
   });
 
   it("does not persist an evaluation when AI fails", async () => {
-    const aiError = new Error("AI evaluation unavailable.");
+    const aiError = new Error(
+      "AI evaluation unavailable."
+    );
     aiError.statusCode = 503;
+
     aiService.generateEvaluation.mockRejectedValue(aiError);
 
     const { res, next } = await submit({
       requestId: "request-failed",
       questionId: QUESTION_ID,
       candidateResponse: "My answer",
-      metadata: { sessionId: SESSION_ID },
+      metadata: {
+        sessionId: SESSION_ID,
+      },
     });
 
     expect(res.statusCode).toBe(503);
-    expect(res.payload).toEqual({
-      error: "AI evaluation unavailable.",
+
+    expect(res.payload).toMatchObject({
+      code: "EVALUATION_REVIEW_REQUIRED",
       requestId: "request-failed",
     });
-    expect(evaluationRepository.saveEvaluation).not.toHaveBeenCalled();
+
+    expect(
+      evaluationRepository.markUncertainEvaluation
+    ).toHaveBeenCalledTimes(1);
+
+    expect(
+      evaluationRepository.completeReservedEvaluation
+    ).not.toHaveBeenCalled();
+
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -396,14 +548,18 @@ describe("POST /api/evaluate route", () => {
       requestId: "reference-test",
       questionId: QUESTION_ID,
       candidateResponse: "My explanation.",
-      metadata: { sessionId: SESSION_ID },
+      metadata: {
+        sessionId: SESSION_ID,
+      },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(aiService.generateEvaluation).toHaveBeenCalledWith({
-      question: privateQuestion,
-      candidateResponse: "My explanation.",
-    });
+
+    expect(aiService.generateEvaluation)
+      .toHaveBeenCalledWith({
+        question: privateQuestion,
+        candidateResponse: "My explanation.",
+      });
 
     expect(res.payload).toEqual({
       requestId: "reference-test",
@@ -411,64 +567,79 @@ describe("POST /api/evaluate route", () => {
       evaluation: successfulEvaluation,
     });
 
-    expect(res.payload).not.toHaveProperty("referenceAnswer");
-    expect(res.payload).not.toHaveProperty("gradingCriteria");
+    expect(res.payload).not.toHaveProperty(
+      "referenceAnswer"
+    );
+    expect(res.payload).not.toHaveProperty(
+      "gradingCriteria"
+    );
+
     expect(next).not.toHaveBeenCalled();
   });
-  
-  
-it.each([
-  ["null", null],
-  ["a string", "invalid"],
-  ["an array", []],
-  ["a number", 123],
-])(
-  "rejects metadata supplied as %s",
-  async (_, metadata) => {
-    const { req, res, next } = createTestContext({
-      questionId: privateQuestion.id,
-      candidateResponse: "My answer",
-      metadata,
-    });
 
-    await handler(req, res, next);
+  it.each([
+    ["null", null],
+    ["a string", "invalid"],
+    ["an array", []],
+    ["a number", 123],
+  ])(
+    "rejects metadata supplied as %s",
+    async (_, metadata) => {
+      const { req, res, next } = createTestContext({
+        questionId: privateQuestion.id,
+        candidateResponse: "My answer",
+        metadata,
+      });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.payload.code).toBe("METADATA_INVALID");
-    expect(questionRepository.findById).not.toHaveBeenCalled();
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  }
-);
+      await handler(req, res, next);
 
-it.each([
-  ["sessionId", 123],
-  ["jobRole", {}],
-  ["experienceLevel", []],
-])(
-  "rejects an invalid %s metadata field",
-  async (field, value) => {
-    const { req, res, next } = createTestContext({
-      questionId: privateQuestion.id,
-      candidateResponse: "My answer",
-      metadata: {
-        sessionId: "session-1",
-        jobRole: "Software Engineer",
-        experienceLevel: "Intermediate",
-        [field]: value,
-      },
-    });
+      expect(res.statusCode).toBe(400);
+      expect(res.payload.code).toBe(
+        "METADATA_INVALID"
+      );
 
-    await handler(req, res, next);
+      expect(questionRepository.findById)
+        .not.toHaveBeenCalled();
 
-    expect(res.statusCode).toBe(400);
-    expect(res.payload.code).toBe("METADATA_FIELD_INVALID");
-    expect(questionRepository.findById).not.toHaveBeenCalled();
-    expect(aiService.generateEvaluation).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  }
-);
+      expect(aiService.generateEvaluation)
+        .not.toHaveBeenCalled();
 
+      expect(next).not.toHaveBeenCalled();
+    }
+  );
 
+  it.each([
+    ["sessionId", 123],
+    ["jobRole", {}],
+    ["experienceLevel", []],
+  ])(
+    "rejects an invalid %s metadata field",
+    async (field, value) => {
+      const { req, res, next } = createTestContext({
+        questionId: privateQuestion.id,
+        candidateResponse: "My answer",
+        metadata: {
+          sessionId: "session-1",
+          jobRole: "Software Engineer",
+          experienceLevel: "Intermediate",
+          [field]: value,
+        },
+      });
 
+      await handler(req, res, next);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.payload.code).toBe(
+        "METADATA_FIELD_INVALID"
+      );
+
+      expect(questionRepository.findById)
+        .not.toHaveBeenCalled();
+
+      expect(aiService.generateEvaluation)
+        .not.toHaveBeenCalled();
+
+      expect(next).not.toHaveBeenCalled();
+    }
+  );
 });
