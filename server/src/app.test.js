@@ -1,5 +1,6 @@
 /* HTTP-level test of the Express health endpoint, without Firebase credentials. */
 jest.mock("./repositories", () => ({
+  apiRateLimitRepository: { consume: jest.fn().mockResolvedValue({ allowed: true }) },
   questionRepository: {},
   questionCatalogRepository: { getRevision: jest.fn().mockResolvedValue(0) },
   evaluationRepository: {},

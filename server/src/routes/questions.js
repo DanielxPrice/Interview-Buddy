@@ -11,6 +11,9 @@ const {
   selectQuestions,
 } = require("../services/questionSelection");
 
+const { getOptionsFromMetadata, countIndexedQuestions } = require("../services/questionMetadataBuilder");
+const { MAX_SETUP_FILTER_LENGTH, MAX_SELECTED_TAGS } = require("../config/questionCatalogLimits");
+
 const {
   MODES,
   SESSION_ID_PATTERN,
@@ -21,6 +24,30 @@ const {
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+// Reject large or malformed filters before any metadata or question read.
+// This does not modify stored session setup or authoritative assignments.
+function parsePreviewTags(raw) {
+  const values = Array.isArray(raw) ? raw : [raw];
+  // A comma-delimited tag list must be bounded before splitting it.
+  if (values.length > MAX_SELECTED_TAGS || values.some((value) =>
+    value !== undefined &&
+    (typeof value !== "string" || value.length >
+      (MAX_SETUP_FILTER_LENGTH + 1) * MAX_SELECTED_TAGS))) {
+    throw reject("Question preview filters exceed the permitted size.", 400, "QUESTION_PREVIEW_FILTER_INVALID");
+  }
+  return parseSelectedTags(raw);
+}
+
+function validatePreviewFilters({ jobRole, experienceLevel, tags = [] }) {
+  if ([jobRole, experienceLevel].some((value) =>
+    typeof value !== "string" || value.length > MAX_SETUP_FILTER_LENGTH) ||
+    !Array.isArray(tags) || tags.length > MAX_SELECTED_TAGS ||
+    tags.some((tag) => typeof tag !== "string" ||
+      tag.length > MAX_SETUP_FILTER_LENGTH)) {
+    throw reject("Question preview filters exceed the permitted size.", 400, "QUESTION_PREVIEW_FILTER_INVALID");
+  }
 }
 
 // Deliberately exclude correctAnswer,
@@ -204,10 +231,7 @@ function createQuestionRouter({
   const countCache = new Map();
   const COUNT_CACHE_MS = 30000;
 
-  async function questionsForCount(
-    mode,
-    fresh = false
-  ) {
+  async function questionsForCount(mode) {
     const version =
       questionMetadataService?.getVersion
         ? await questionMetadataService.getVersion()
@@ -216,7 +240,6 @@ function createQuestionRouter({
     const cached = countCache.get(mode);
 
     if (
-      !fresh &&
       cached &&
       cached.version === version &&
       cached.expiresAt > Date.now()
@@ -275,7 +298,7 @@ function createQuestionRouter({
         req.query.experienceLevel || ""
       ).trim();
 
-      const tags = parseSelectedTags(
+      const tags = parsePreviewTags(
         req.query.tags
       );
 
@@ -297,10 +320,21 @@ function createQuestionRouter({
         });
       }
 
-      const questions = await questionsForCount(
-        mode,
-        req.query.fresh === "1"
-      );
+      validatePreviewFilters({ jobRole, experienceLevel, tags });
+
+      // A client-supplied fresh=1 never bypasses the shared metadata cache.
+      // Revision checks already invalidate it when the catalog changes.
+      const metadata = questionMetadataService?.getMetadata
+        ? await questionMetadataService.getMetadata()
+        : null;
+      const indexedCount = metadata
+        ? countIndexedQuestions(metadata, mode, { jobRole, experienceLevel, tags })
+        : null;
+      const availableCount = indexedCount !== null
+        ? indexedCount
+        : countEligibleQuestions(await questionsForCount(mode), {
+          jobRole, experienceLevel, tags,
+        });
 
       res.set(
         "Cache-Control",
@@ -308,16 +342,12 @@ function createQuestionRouter({
       );
 
       return res.json({
-        availableCount: countEligibleQuestions(
-          questions,
-          {
-            jobRole,
-            experienceLevel,
-            tags,
-          }
-        ),
+        availableCount,
       });
     } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       return next(error);
     }
   });
@@ -380,6 +410,9 @@ function createQuestionRouter({
           await questionMetadataService.getMetadata()
         );
       } catch (error) {
+        if (error.statusCode) {
+          return res.status(error.statusCode).json({ error: error.message, code: error.code });
+        }
         return next(error);
       }
     }
@@ -407,8 +440,24 @@ function createQuestionRouter({
         req.query.experienceLevel || ""
       ).trim();
 
+      validatePreviewFilters({ jobRole, experienceLevel });
+
+      // Use the revision-aware public metadata index rather than scanning all
+      // private question documents on every dropdown/filter interaction.
+      const metadata = questionMetadataService?.getMetadata
+        ? await questionMetadataService.getMetadata()
+        : null;
+      if (metadata?.modes?.[mode]?.all) {
+        res.set("Cache-Control", "private, no-store");
+        return res.json(getOptionsFromMetadata(metadata, mode, {
+          jobRole, experienceLevel,
+        }));
+      }
+
+      // Compatibility path for tests and older metadata implementations.
+      // Even this path uses a server-side TTL cache: clients cannot bypass it.
       const all = (
-        await questionRepository.findByMode(mode)
+        await questionsForCount(mode)
       ).filter(
         (question) => question.active !== false
       );
@@ -452,6 +501,9 @@ function createQuestionRouter({
           ).tags,
       });
     } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       return next(error);
     }
   });
@@ -629,69 +681,12 @@ function createQuestionRouter({
     }
   });
 
-  // Legacy Quiz answer-checking endpoint.
-  // SEC-05 will remove or restrict this
-  // endpoint because it can act as an oracle.
-  router.post(
-    "/:questionId/check",
-    async (req, res, next) => {
-      try {
-        const answer = String(
-          req.body?.answer || ""
-        ).trim();
-
-        if (!answer) {
-          return res.status(400).json({
-            error: "An answer is required.",
-          });
-        }
-
-        const question =
-          await questionRepository.findById(
-            req.params.questionId
-          );
-
-        if (!question) {
-          return res.status(404).json({
-            error: "Question not found.",
-          });
-        }
-
-        if (question.mode !== "Quiz Style") {
-          return res.status(400).json({
-            error:
-              "Server-side answer checking is currently only used for Quiz Style.",
-          });
-        }
-
-        const correct = normalize(
-          question.correctAnswer
-        );
-
-        if (!correct) {
-          return res.status(500).json({
-            error:
-              "This quiz question is missing a correct answer in the data store.",
-          });
-        }
-
-        const isCorrect =
-          normalize(answer) === correct;
-
-        return res.json({
-          questionId: question.id,
-          isCorrect,
-          explanation:
-            question.explanation ||
-            (isCorrect
-              ? "Correct."
-              : "That answer is not correct. Review the topic and try another question."),
-        });
-      } catch (error) {
-        return next(error);
-      }
-    }
-  );
+  // SEC-05 (S09): The legacy POST /:questionId/check route is intentionally
+  // removed. It revealed correctness without a session or attempt record,
+  // allowing unlimited guesses (including inactive questions). Quiz grading
+  // is exclusively performed by POST /api/sessions/:sessionId/quiz-answers,
+  // which enforces ownership, assignment, and one persisted answer.
+  // The removed route now receives Express's normal HTTP 404 response.
 
   return router;
 }

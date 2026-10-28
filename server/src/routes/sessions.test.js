@@ -106,6 +106,20 @@ describe("Session API endpoints", () => {
     });
   });
 
+  test("SEC-05 propagates active session capacity errors without creating a session", async () => {
+    const error = new Error("Finish an active interview before starting another.");
+    error.statusCode = 429;
+    error.code = "ACTIVE_SESSION_LIMIT_EXCEEDED";
+    sessionRepository.createSession.mockRejectedValue(error);
+    const response = await request(app).post("/api/sessions").send({
+      mode: "Quiz Style", jobRole: "Software Engineer",
+      experienceLevel: "Beginner", tags: ["trees"], questionCount: 2,
+    });
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe("ACTIVE_SESSION_LIMIT_EXCEEDED");
+    expect(sessionRepository.createSession).toHaveBeenCalledTimes(1);
+  });
+
   test.each([
     ["missing", undefined],
     ["whitespace-only", "   "],

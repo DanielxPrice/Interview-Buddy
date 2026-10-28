@@ -77,4 +77,29 @@ function getOptionsFromMetadata(metadata, mode, { jobRole = "", experienceLevel 
   return { jobRoles: all.jobRoles, experienceLevels: levels, tags };
 }
 
-module.exports = { MODES, buildQuestionMetadata, getOptionsFromMetadata };
+
+/**
+ * Count question groups from the already cached public metadata index.
+ * Each group represents disjoint questions, so ANY selected tag counts a
+ * group at most once even when several selected tags match.
+ */
+function countIndexedQuestions(metadata, mode, { jobRole, experienceLevel, tags } = {}) {
+  const groups = metadata?.modes?.[mode]?.countIndex;
+  if (!Array.isArray(groups)) return null;
+  const role = key(jobRole);
+  const level = key(experienceLevel);
+  const selected = new Set((Array.isArray(tags) ? tags : [tags])
+    .flatMap((value) => String(value || "").split(","))
+    .map(key).filter(Boolean));
+  if (!role || !level || selected.size === 0) return 0;
+  return groups.reduce((sum, group) => {
+    if (!Array.isArray(group.jobRoles) || !group.jobRoles.includes(role) ||
+        !Array.isArray(group.experienceLevels) || !group.experienceLevels.includes(level) ||
+        !Array.isArray(group.tags) || !group.tags.some((tag) => selected.has(tag))) {
+      return sum;
+    }
+    return sum + group.count;
+  }, 0);
+}
+
+module.exports = { MODES, buildQuestionMetadata, getOptionsFromMetadata, countIndexedQuestions };

@@ -3,6 +3,7 @@ const request = require("supertest");
 const zlib = require("node:zlib");
 
 jest.mock("./repositories", () => ({
+  apiRateLimitRepository: { consume: jest.fn().mockResolvedValue({ allowed: true }) },
   questionRepository: {},
   questionCatalogRepository: {
     getRevision: jest.fn().mockResolvedValue(0),
@@ -30,7 +31,10 @@ jest.mock("./routes/accountDeletion", () => () =>
 );
 
 jest.mock("./middleware/requireAuth", () =>
-  (_req, _res, next) => next()
+  (req, _res, next) => {
+    req.user = { uid: "sec01-test-user" };
+    next();
+  }
 );
 
 // Parser security is tested independently from
