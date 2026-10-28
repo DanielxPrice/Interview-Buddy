@@ -5,17 +5,39 @@
   --ib-ranking-purple-soft: #eeedff;
   --ib-ranking-purple-text: #4840ca;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(255px, 300px);
-  gap: 28px;
-  align-items: start;
+  /* Let rankings and summary cards share the whole available page width. */
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr);
+  gap: clamp(16px, 2vw, 28px);
+  align-items: stretch;
   width: 100%;
-  max-width: 1360px;
+  max-width: none;
+  min-width: 0;
+  align-self: stretch;
+  /* Fill the available screen height without forcing short screens to squash cards. */
+  min-height: max(520px, calc(100dvh - 176px));
 }
 
 .ibRankingPage .ibRankingMain,
 .ibRankingPage .ibRankingAside { min-width: 0; }
-.ibRankingMain { display: flex; flex-direction: column; gap: 20px; }
-.ibRankingAside { display: flex; flex-direction: column; gap: 20px; }
+.ibRankingMain { display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+.ibRankingAside { display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+/* Global leaderboard occupies the remaining space after the tabs and footnote. */
+.ibRankingMain > .ibRankingPanel {
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+/* On the Friends tab, the search card stays natural-sized and the rankings grow. */
+.ibRankingFriendsContent { flex: 1 1 auto; min-height: 0; }
+.ibRankingFriendsContent > .ibRankingPanel {
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+/* Grow the friends overview rather than leaving blank space underneath it. */
+.ibRankingAside > .ibRankingSideCard { flex: 1 1 auto; }
 
 .ibRankingToolbar {
   min-height: 44px;
@@ -142,6 +164,15 @@
 .ibRankingEmpty { padding: 42px 20px; text-align: center; }
 .ibRankingEmpty h2 { color: var(--ib-text); font-size: 1rem; margin-bottom: 8px; }
 .ibRankingEmpty p { color: var(--ib-text-secondary); line-height: 1.6; font-size: 0.875rem; }
+/* Center no-data and unavailable messages in the available ranking card space. */
+.ibRankingPanel > .ibRankingEmpty {
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
 .ibRankingFootnote { font-size: 0.75rem; line-height: 1.6; color: var(--ib-text-muted); }
 
 /* Purple ranking highlight follows the reference without changing the global brand. */
@@ -286,11 +317,13 @@
 [data-theme="dark"] .ibRankingAddForm button:hover:not(:disabled) { background: #7770f1; }
 
 @media (max-width: 1120px) {
-  .ibRankingPage { grid-template-columns: minmax(0, 1fr) 250px; gap: 20px; }
+  .ibRankingPage { grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; }
 }
 @media (max-width: 900px) {
-  .ibRankingPage { grid-template-columns: minmax(0, 1fr); }
-  .ibRankingAside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  /* Stack the summary below the table and avoid viewport-height forcing. */
+  .ibRankingPage { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .ibRankingAside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .ibRankingAside > .ibRankingSideCard { flex: initial; }
 }
 @media (max-width: 600px) {
   .ibRankingAside { grid-template-columns: 1fr; }
