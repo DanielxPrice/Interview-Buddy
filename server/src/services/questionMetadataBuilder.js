@@ -7,6 +7,27 @@ const empty = () => ({ jobRoles: [], experienceLevels: [], tags: [] });
 const matches = (entries, selected) =>
   Array.isArray(entries) && entries.some((entry) => key(entry) === key(selected));
 
+// The same normalized fields are used by countEligibleQuestions. Grouping
+// identical combinations keeps the public index small and avoids exposing IDs.
+const normalizedValues = (entries) =>
+  [...new Set((Array.isArray(entries) ? entries : []).map(key).filter(Boolean))].sort();
+
+function buildCountIndex(questions) {
+  const groups = new Map();
+  for (const question of questions) {
+    const jobRoles = normalizedValues(question.jobRoles);
+    const experienceLevels = normalizedValues(question.experienceLevels);
+    const tags = normalizedValues(question.tags);
+    if (!jobRoles.length || !experienceLevels.length || !tags.length) continue;
+
+    const signature = JSON.stringify([jobRoles, experienceLevels, tags]);
+    const existing = groups.get(signature);
+    if (existing) existing.count += 1;
+    else groups.set(signature, { jobRoles, experienceLevels, tags, count: 1 });
+  }
+  return [...groups.values()];
+}
+
 function buildQuestionMetadata(questions) {
   const modes = {};
   for (const mode of MODES) {
@@ -37,9 +58,9 @@ function buildQuestionMetadata(questions) {
         byLevel: roleLevels,
       };
     }
-    modes[mode] = { all, byRole, byLevel };
+    modes[mode] = { all, byRole, byLevel, countIndex: buildCountIndex(byMode) };
   }
-  return { schemaVersion: 1, modes };
+  return { schemaVersion: 2, modes };
 }
 
 function getOptionsFromMetadata(metadata, mode, { jobRole = "", experienceLevel = "" } = {}) {

@@ -40,6 +40,9 @@ jest.mock(
       getAvailableQuestionCount:
         jest.fn(),
 
+      getCachedAvailableQuestionCount:
+        jest.fn(),
+
       startSession:
         jest.fn(),
     },
@@ -197,6 +200,8 @@ describe(
         );
 
       interviewService.getAvailableQuestionCount.mockResolvedValue(40);
+      // Existing mock tests intentionally exercise the legacy API fallback.
+      interviewService.getCachedAvailableQuestionCount.mockReturnValue(null);
 
       interviewService
         .startSession
@@ -833,6 +838,22 @@ describe(
       });
     });
 
+    test("updates counts immediately from metadata without network count requests", async () => {
+      interviewService.getCachedAvailableQuestionCount.mockImplementation(({ tags }) =>
+        tags.length === 1 ? 4 : 8
+      );
+      renderPage("Quiz Style");
+      await selectSoftwareEngineer();
+      await selectIntermediateExperience();
+      userEvent.click(screen.getByRole("button", { name: "Data Structures" }));
+      expect(await screen.findByText("4 matching questions")).toBeInTheDocument();
+      expect(interviewService.getAvailableQuestionCount).not.toHaveBeenCalled();
+
+      userEvent.click(screen.getByRole("button", { name: "Algorithms" }));
+      expect(await screen.findByText("8 matching questions")).toBeInTheDocument();
+      expect(interviewService.getAvailableQuestionCount).not.toHaveBeenCalled();
+    });
+
     test("updates the matching pool when a second tag is selected", async () => {
       interviewService.getAvailableQuestionCount.mockImplementation(async ({ tags }) =>
         tags.length === 1 ? 4 : 8
@@ -881,6 +902,26 @@ describe(
       userEvent.click(screen.getByRole("button", { name: "Data Structures" }));
       expect(await screen.findByText("Count unavailable")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Start Session" })).toBeDisabled();
+    });
+
+    test("still verifies against the backend when starting after a cached preview", async () => {
+      interviewService.getCachedAvailableQuestionCount.mockReturnValue(15);
+      interviewService.getAvailableQuestionCount.mockResolvedValue(3);
+      renderPage("Quiz Style");
+      await selectSoftwareEngineer();
+      await selectIntermediateExperience();
+      userEvent.click(screen.getByRole("button", { name: "Data Structures" }));
+      expect(await screen.findByText("15 matching questions")).toBeInTheDocument();
+      expect(interviewService.getAvailableQuestionCount).not.toHaveBeenCalled();
+
+      userEvent.click(screen.getByRole("button", { name: "Start Session" }));
+      expect(await screen.findByText(/Availability changed. Only 3 matching questions remain./))
+        .toBeInTheDocument();
+      expect(interviewService.getAvailableQuestionCount).toHaveBeenCalledWith({
+        mode: "Quiz Style", jobRole: "Software Engineer", experienceLevel: "Intermediate",
+        tags: ["data structures"], fresh: true,
+      });
+      expect(interviewService.startSession).not.toHaveBeenCalled();
     });
 
     test("rechecks availability immediately before creating a session", async () => {
