@@ -159,6 +159,7 @@ function InterviewSetupPage({
   const [availableQuestionCount, setAvailableQuestionCount] = useState(null);
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
   const [availabilityError, setAvailabilityError] = useState("");
+  const [metadataGeneration, setMetadataGeneration] = useState(0);
 
   const hasCompleteSetup = Boolean(
     selectedMode && jobRole && experienceLevel && selectedPracticeGoals.length > 0
@@ -473,12 +474,17 @@ function InterviewSetupPage({
       }
     }
     applyOptions();
-    const unsubscribe = interviewService.subscribeSetupMetadata?.(() => applyOptions(true));
+    const unsubscribe = interviewService.subscribeSetupMetadata?.(() => {
+      applyOptions(true);
+      // Metadata can refresh without a change in selected role/level/tags.
+      // Recalculate the displayed count from the updated cache as well.
+      if (current) setMetadataGeneration((generation) => generation + 1);
+    });
     return () => { current = false; unsubscribe?.(); };
   }, [selectedMode, jobRole, experienceLevel]);
 
-  // Debounce count lookups and discard results from superseded selections.
-  // Incomplete setups do not issue Firestore reads.
+  // Bundled metadata makes each tag click a synchronous local calculation.
+  // A legacy server response without a count index retains the old API fallback.
   useEffect(() => {
     let current = true;
     setAvailableQuestionCount(null);
@@ -486,6 +492,18 @@ function InterviewSetupPage({
     setIsLoadingAvailability(false);
 
     if (!hasCompleteSetup) return () => { current = false; };
+
+    try {
+      const cachedCount = interviewService.getCachedAvailableQuestionCount?.({
+        mode: selectedMode, jobRole, experienceLevel, tags: selectedPracticeGoals,
+      });
+      if (Number.isSafeInteger(cachedCount) && cachedCount >= 0) {
+        setAvailableQuestionCount(cachedCount);
+        return () => { current = false; };
+      }
+    } catch {
+      // Cache unavailable: use the existing server count request below.
+    }
 
     setIsLoadingAvailability(true);
     const timeout = setTimeout(async () => {
@@ -510,7 +528,8 @@ function InterviewSetupPage({
       current = false;
       clearTimeout(timeout);
     };
-  }, [selectedMode, jobRole, experienceLevel, selectedPracticeGoals, hasCompleteSetup]);
+  }, [selectedMode, jobRole, experienceLevel, selectedPracticeGoals, hasCompleteSetup,
+    metadataGeneration]);
 
   // Do not leave the requested session length above the eligible pool.
   useEffect(() => {

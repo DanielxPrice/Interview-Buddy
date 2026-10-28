@@ -3,6 +3,7 @@ import { auth } from "../config/firebase";
 
 import {
   getCachedSetupOptions,
+  getCachedAvailableQuestionCount,
   subscribeSetupMetadata,
   refreshSetupMetadata,
   resetMetadataVerification,
@@ -299,8 +300,9 @@ export const interviewService = {
     return payload.availableCount;
   },
 
-  // Cached metadata supports fast interview setup.
+  // Synchronous local lookups avoid a request on each tag selection.
   getCachedSetupOptions,
+  getCachedAvailableQuestionCount,
   subscribeSetupMetadata,
   refreshSetupMetadata,
   resetMetadataVerification,
