@@ -1,8 +1,7 @@
+
 /**
- * Data-access contract for persisted AI answer evaluations.
- *
- * The application layer only knows about this method. It does not know how
- * sessions or nested responses are represented in Firestore.
+ * Data-access contract for persisted AI
+ * answer evaluations.
  */
 class EvaluationRepository {
   constructor() {
@@ -14,6 +13,7 @@ class EvaluationRepository {
   }
 
   async saveEvaluation({
+    userId,
     sessionId,
     questionId,
     questionPrompt,
@@ -23,7 +23,9 @@ class EvaluationRepository {
     metadata,
     evaluatedAt,
   }) {
-    throw new Error("saveEvaluation() must be implemented.");
+    throw new Error(
+      "saveEvaluation() must be implemented."
+    );
   }
 }
 

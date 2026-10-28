@@ -1,32 +1,28 @@
-// src/utils/sessionResults.js
-//
-// Client side of the results pipeline.
-//
-// The server (sessionResultsService) calculates the official result when a
-// session is completed. This file does two things with what comes back:
-//
-//   1. getEndSessionErrorMessage: turns the server's error `code` into a
-//      message a user can act on, instead of showing raw error text.
-//   2. buildSessionResult: builds the object the results page displays,
-//      using the server's numbers (score, ELO, date) as the source of truth
-//      and the browser's answer details (your answer, rubric, etc.) for the
-//      extra information the server does not send back.
 
-// One message per server error code. Anything not listed here falls back to
-// a generic "try again" message.
+// Client-side adapter for server-calculated interview results.
+// The server remains authoritative for scoring and rank eligibility.
+
 const END_SESSION_ERROR_MESSAGES = Object.freeze({
   SESSION_ID_REQUIRED:
     "This session could not be identified. Start a new session to continue.",
+
   SESSION_NOT_FOUND:
     "This session no longer exists. Start a new session to continue.",
+
   SESSION_FORBIDDEN:
     "This session belongs to a different account. Sign in with the account that started it.",
+
   SESSION_NOT_ACTIVE:
     "This session can no longer be completed. Start a new session to continue.",
+
   INVALID_SCORING_DATA:
     "Some of your saved answers could not be scored, so results could not be calculated. Please try again.",
+
   RESULTS_CALCULATION_FAILED:
     "Your results could not be calculated right now. Please try again.",
+
+  SESSION_ASSIGNMENT_INVALID:
+    "This session has an incomplete or invalid question assignment. Please start a new session.",
 });
 
 const DEFAULT_END_SESSION_ERROR =
@@ -35,12 +31,12 @@ const DEFAULT_END_SESSION_ERROR =
 const NETWORK_ERROR =
   "Could not reach the server. Check your connection and try again.";
 
-// Codes where clicking "End Interview" again will not help.
 const NON_RETRYABLE_CODES = new Set([
   "SESSION_ID_REQUIRED",
   "SESSION_NOT_FOUND",
   "SESSION_FORBIDDEN",
   "SESSION_NOT_ACTIVE",
+  "SESSION_ASSIGNMENT_INVALID",
 ]);
 
 function getEndSessionErrorMessage(error) {
@@ -50,7 +46,6 @@ function getEndSessionErrorMessage(error) {
     return END_SESSION_ERROR_MESSAGES[code];
   }
 
-  // fetch() throws a TypeError with no HTTP status when the network fails.
   if (error instanceof TypeError && !error.status) {
     return NETWORK_ERROR;
   }
@@ -62,8 +57,8 @@ function isRetryableEndSessionError(error) {
   return !NON_RETRYABLE_CODES.has(error?.code);
 }
 
-// Same thresholds the server uses; only needed if the server response is
-// missing eloChange (for example an older server version).
+// Used only as a display estimate after
+// the server confirms ranking eligibility.
 function calculateEloChange(score) {
   if (score >= 70) {
     return "+2";
@@ -82,7 +77,8 @@ function averageScore(answers) {
   }
 
   const total = answers.reduce(
-    (sum, answer) => sum + Number(answer.score || 0),
+    (sum, answer) =>
+      sum + Number(answer.score || 0),
     0
   );
 
@@ -90,7 +86,9 @@ function averageScore(answers) {
 }
 
 function formatCompletedDate(isoString) {
-  const date = isoString ? new Date(isoString) : new Date();
+  const date = isoString
+    ? new Date(isoString)
+    : new Date();
 
   if (Number.isNaN(date.getTime())) {
     return "Unknown date";
@@ -103,35 +101,55 @@ function formatCompletedDate(isoString) {
   });
 }
 
-// Combine the server breakdown with the browser's answer details.
-// Server values win for score and correctness; browser values fill in the
-// details the server does not return (your answer, rubric, strengths...).
-function mergeBreakdown(serverBreakdown, localAnswers) {
+function mergeBreakdown(
+  serverBreakdown,
+  localAnswers
+) {
   const localById = new Map(
-    localAnswers.map((answer) => [answer.questionId, answer])
+    localAnswers.map((answer) => [
+      answer.questionId,
+      answer,
+    ])
   );
 
   if (!serverBreakdown.length) {
     return localAnswers.map((answer) => ({
       ...answer,
-      prompt: answer.prompt || answer.question || "",
+      prompt:
+        answer.prompt ||
+        answer.question ||
+        "",
     }));
   }
 
   return serverBreakdown.map((serverItem) => {
-    const local = localById.get(serverItem.questionId) || {};
+    const local =
+      localById.get(serverItem.questionId) || {};
 
     return {
       ...local,
+
       questionId: serverItem.questionId,
+
       prompt:
-        serverItem.questionPrompt || local.prompt || local.question || "",
-      score: Number.isFinite(serverItem.score) ? serverItem.score : local.score,
+        serverItem.questionPrompt ||
+        local.prompt ||
+        local.question ||
+        "",
+
+      score: Number.isFinite(serverItem.score)
+        ? serverItem.score
+        : local.score,
+
       isCorrect:
         typeof serverItem.isCorrect === "boolean"
           ? serverItem.isCorrect
           : local.isCorrect,
-      feedback: serverItem.feedback || local.feedback || "",
+
+      feedback:
+        serverItem.feedback ||
+        local.feedback ||
+        "",
     };
   });
 }
@@ -142,41 +160,103 @@ function buildSessionResult({
   mode,
   setupData = {},
 }) {
-  const serverScore = savedSession?.result?.score;
-  const hasServerScore = Number.isFinite(serverScore);
+  const serverScore =
+    savedSession?.result?.score;
 
-  const score = hasServerScore ? serverScore : averageScore(answeredQuestions);
+  const hasServerScore =
+    Number.isFinite(serverScore);
 
-  const serverBreakdown = Array.isArray(savedSession?.breakdown)
-    ? savedSession.breakdown
-    : [];
+  const score = hasServerScore
+    ? serverScore
+    : averageScore(answeredQuestions);
 
-  const perQuestion = mergeBreakdown(serverBreakdown, answeredQuestions);
+  const serverBreakdown =
+    Array.isArray(savedSession?.breakdown)
+      ? savedSession.breakdown
+      : [];
 
-  const questionsAnswered = Number.isFinite(
-    savedSession?.result?.questionsAnswered
-  )
-    ? savedSession.result.questionsAnswered
-    : answeredQuestions.length;
+  const perQuestion = mergeBreakdown(
+    serverBreakdown,
+    answeredQuestions
+  );
 
-  const lastAnswer = perQuestion[perQuestion.length - 1];
+  const questionsAnswered =
+    Number.isFinite(
+      savedSession?.result?.questionsAnswered
+    )
+      ? savedSession.result.questionsAnswered
+      : answeredQuestions.length;
+
+  const lastAnswer =
+    perQuestion[perQuestion.length - 1];
+
+  const completionStatus =
+    savedSession?.result?.completionStatus ||
+    savedSession?.completionStatus ||
+    null;
+
+  const rankEligible =
+    savedSession?.result?.rankEligible === true;
 
   return {
-    sessionId: savedSession?.id || setupData.id || null,
+    sessionId:
+      savedSession?.id ||
+      setupData.id ||
+      null,
+
     mode,
-    date: formatCompletedDate(savedSession?.completedAt),
+
+    date: formatCompletedDate(
+      savedSession?.completedAt
+    ),
+
     score: `${score}%`,
+
     questionsAnswered,
-    eloChange: savedSession?.eloChange || calculateEloChange(score),
+
+    completionStatus,
+
+    questionsAssigned:
+      savedSession?.result?.questionsAssigned ??
+      null,
+
+    questionsUnanswered:
+      savedSession?.result?.questionsUnanswered ??
+      null,
+
+    rankEligible,
+
+    eloChange:
+      rankEligible &&
+      completionStatus === "completed"
+        ? (
+            savedSession?.eloChange ??
+            calculateEloChange(score)
+          )
+        : null,
+
     isCorrect: Boolean(lastAnswer?.isCorrect),
-    answerSubmitted: questionsAnswered > 0,
+
+    answerSubmitted:
+      questionsAnswered > 0,
+
     perQuestion,
-    // false only when the server told us it could not load the breakdown.
-    breakdownAvailable: savedSession?.breakdownAvailable !== false,
-    scoreSource: hasServerScore ? "server" : "local",
-    jobRole: setupData.jobRole || "",
-    experienceLevel: setupData.experienceLevel || "",
-    tags: setupData.tags || [],
+
+    breakdownAvailable:
+      savedSession?.breakdownAvailable !== false,
+
+    scoreSource: hasServerScore
+      ? "server"
+      : "local",
+
+    jobRole:
+      setupData.jobRole || "",
+
+    experienceLevel:
+      setupData.experienceLevel || "",
+
+    tags:
+      setupData.tags || [],
   };
 }
 

@@ -4,7 +4,9 @@ const FirestoreSessionRepository = require(
 );
 
 function fixture(mode = "Quiz Style") {
-  const responseRef = { id: "quiz-1" };
+  const responseRef = {
+    id: "quiz-1",
+  };
 
   const responseCollection = {
     doc: jest.fn(() => responseRef),
@@ -12,11 +14,15 @@ function fixture(mode = "Quiz Style") {
 
   const sessionRef = {
     id: "session-1",
-    collection: jest.fn(() => responseCollection),
+    collection: jest.fn(
+      () => responseCollection
+    ),
   };
 
   const collection = {
-    doc: jest.fn(() => sessionRef),
+    doc: jest.fn(
+      () => sessionRef
+    ),
   };
 
   const tx = {
@@ -26,19 +32,29 @@ function fixture(mode = "Quiz Style") {
   };
 
   const db = {
-    collection: jest.fn(() => collection),
-    runTransaction: jest.fn(async (callback) => callback(tx)),
+    collection: jest.fn(
+      () => collection
+    ),
+
+    runTransaction: jest.fn(
+      async (callback) => callback(tx)
+    ),
   };
 
-  const repository = new FirestoreSessionRepository({
-    db,
-    admin: null,
-  });
+  const repository =
+    new FirestoreSessionRepository({
+      db,
+      admin: null,
+    });
 
   const session = {
     userId: "user-1",
     status: "active",
     mode,
+
+    assignmentStatus: "assigned",
+    assignedQuestionIds: ["quiz-1"],
+    questionCount: 1,
   };
 
   const sessionSnapshot = {
@@ -56,10 +72,21 @@ function fixture(mode = "Quiz Style") {
   };
 
   tx.get.mockImplementation(async (ref) => {
-    if (ref === sessionRef) return sessionSnapshot;
-    if (ref === responseRef) return existingAnswer;
-    if (ref === responseCollection) return responses;
-    throw new Error("Unexpected transaction read");
+    if (ref === sessionRef) {
+      return sessionSnapshot;
+    }
+
+    if (ref === responseRef) {
+      return existingAnswer;
+    }
+
+    if (ref === responseCollection) {
+      return responses;
+    }
+
+    throw new Error(
+      "Unexpected transaction read"
+    );
   });
 
   return {
@@ -89,12 +116,13 @@ describe("SCRUM-82 server-side results persistence", () => {
   test("saves a correct Quiz response and 100-point evaluation", async () => {
     const f = fixture();
 
-    const result = await f.repository.saveQuizAnswer({
-      sessionId: "session-1",
-      userId: "user-1",
-      question,
-      answer: "A",
-    });
+    const result =
+      await f.repository.saveQuizAnswer({
+        sessionId: "session-1",
+        userId: "user-1",
+        question,
+        answer: "A",
+      });
 
     expect(result).toEqual({
       questionId: "quiz-1",
@@ -102,10 +130,14 @@ describe("SCRUM-82 server-side results persistence", () => {
       explanation: "A is correct.",
     });
 
-    expect(f.tx.set).toHaveBeenCalledWith(
+    expect(
+      f.tx.set
+    ).toHaveBeenCalledWith(
       f.responseRef,
+
       expect.objectContaining({
         candidateResponse: "A",
+
         evaluation: {
           score: 100,
           isCorrect: true,
@@ -114,9 +146,13 @@ describe("SCRUM-82 server-side results persistence", () => {
       })
     );
 
-    expect(f.tx.update).toHaveBeenCalledWith(
+    expect(
+      f.tx.update
+    ).toHaveBeenCalledWith(
       f.sessionRef,
-      { updatedAt: expect.any(String) }
+      {
+        updatedAt: expect.any(String),
+      }
     );
   });
 
@@ -130,7 +166,9 @@ describe("SCRUM-82 server-side results persistence", () => {
       answer: "B",
     });
 
-    expect(f.tx.set.mock.calls[0][1].evaluation.score).toBe(0);
+    expect(
+      f.tx.set.mock.calls[0][1].evaluation.score
+    ).toBe(0);
   });
 
   test("rejects answers for another user's session", async () => {
@@ -147,11 +185,14 @@ describe("SCRUM-82 server-side results persistence", () => {
       statusCode: 403,
     });
 
-    expect(f.tx.set).not.toHaveBeenCalled();
+    expect(
+      f.tx.set
+    ).not.toHaveBeenCalled();
   });
 
   test("blocks duplicate answers and does not overwrite a score", async () => {
     const f = fixture();
+
     f.existingAnswer.exists = true;
 
     await expect(
@@ -165,11 +206,14 @@ describe("SCRUM-82 server-side results persistence", () => {
       statusCode: 409,
     });
 
-    expect(f.tx.set).not.toHaveBeenCalled();
+    expect(
+      f.tx.set
+    ).not.toHaveBeenCalled();
   });
 
   test("does not write an answer after completion", async () => {
     const f = fixture();
+
     f.session.status = "completed";
 
     await expect(
@@ -183,7 +227,9 @@ describe("SCRUM-82 server-side results persistence", () => {
       statusCode: 409,
     });
 
-    expect(f.tx.set).not.toHaveBeenCalled();
+    expect(
+      f.tx.set
+    ).not.toHaveBeenCalled();
   });
 
   test("rejects unlisted Quiz options", async () => {
@@ -200,7 +246,9 @@ describe("SCRUM-82 server-side results persistence", () => {
       statusCode: 400,
     });
 
-    expect(f.db.runTransaction).not.toHaveBeenCalled();
+    expect(
+      f.db.runTransaction
+    ).not.toHaveBeenCalled();
   });
 
   test.each([
@@ -212,38 +260,73 @@ describe("SCRUM-82 server-side results persistence", () => {
     async (mode) => {
       const f = fixture(mode);
 
+      // The original assignment contains
+      // exactly two questions.
+      f.session.questionCount = 2;
+
+      f.session.assignedQuestionIds = [
+        "quiz-1",
+        "quiz-2",
+      ];
+
       f.responses.docs = [
         {
+          id: "quiz-1",
+
           data: () => ({
+            questionId: "quiz-1",
             mode,
-            evaluation: { score: 100 },
+
+            evaluation: {
+              score: 100,
+            },
           }),
         },
         {
+          id: "quiz-2",
+
           data: () => ({
+            questionId: "quiz-2",
             mode,
-            evaluation: { score: 70 },
+
+            evaluation: {
+              score: 70,
+            },
           }),
         },
       ];
 
-      const completed = await f.repository.finalizeSessionWithResults(
-        "session-1",
-        "user-1"
-      );
+      const completed =
+        await f.repository.finalizeSessionWithResults(
+          "session-1",
+          "user-1"
+        );
 
       expect(completed.result).toEqual({
         score: 85,
         questionsAnswered: 2,
         totalScore: 170,
+
+        questionsAssigned: 2,
+        questionsUnanswered: 0,
+        answeredAverageScore: 85,
+
+        completionStatus: "completed",
+        rankEligible: true,
       });
 
-      expect(f.tx.update).toHaveBeenCalledWith(
+      expect(
+        f.tx.update
+      ).toHaveBeenCalledWith(
         f.sessionRef,
+
         expect.objectContaining({
           status: "completed",
+
           result: completed.result,
-          completedAt: expect.any(String),
+
+          completedAt:
+            expect.any(String),
         })
       );
     }
@@ -252,15 +335,23 @@ describe("SCRUM-82 server-side results persistence", () => {
   test("finalizing an empty session saves a zero-response summary", async () => {
     const f = fixture();
 
-    const completed = await f.repository.finalizeSessionWithResults(
-      "session-1",
-      "user-1"
-    );
+    const completed =
+      await f.repository.finalizeSessionWithResults(
+        "session-1",
+        "user-1"
+      );
 
     expect(completed.result).toEqual({
       score: 0,
       questionsAnswered: 0,
       totalScore: 0,
+
+      questionsAssigned: 1,
+      questionsUnanswered: 1,
+      answeredAverageScore: null,
+
+      completionStatus: "abandoned",
+      rankEligible: false,
     });
   });
 
@@ -269,51 +360,75 @@ describe("SCRUM-82 server-side results persistence", () => {
 
     f.responses.docs = [
       {
+        id: "quiz-1",
+
         data: () => ({
+          questionId: "quiz-1",
           mode: "Code Style",
-          evaluation: { score: 120 },
+
+          evaluation: {
+            score: 120,
+          },
         }),
       },
     ];
 
     await expect(
-      f.repository.finalizeSessionWithResults("session-1", "user-1")
+      f.repository.finalizeSessionWithResults(
+        "session-1",
+        "user-1"
+      )
     ).rejects.toMatchObject({
       statusCode: 409,
     });
 
-    expect(f.tx.update).not.toHaveBeenCalled();
+    expect(
+      f.tx.update
+    ).not.toHaveBeenCalled();
   });
 
   test("finalization checks ownership inside the transaction", async () => {
     const f = fixture();
 
     await expect(
-      f.repository.finalizeSessionWithResults("session-1", "user-2")
+      f.repository.finalizeSessionWithResults(
+        "session-1",
+        "user-2"
+      )
     ).rejects.toMatchObject({
       statusCode: 403,
     });
 
-    expect(f.tx.update).not.toHaveBeenCalled();
+    expect(
+      f.tx.update
+    ).not.toHaveBeenCalled();
   });
 
   test("repeated completion returns the original result without rewriting it", async () => {
     const f = fixture();
 
     f.session.status = "completed";
+
     f.session.result = {
       score: 75,
       questionsAnswered: 1,
       totalScore: 75,
     };
 
-    const completed = await f.repository.finalizeSessionWithResults(
-      "session-1",
-      "user-1"
-    );
+    const completed =
+      await f.repository.finalizeSessionWithResults(
+        "session-1",
+        "user-1"
+      );
 
     expect(completed.result.score).toBe(75);
-    expect(f.tx.update).not.toHaveBeenCalled();
-    expect(f.tx.get).toHaveBeenCalledTimes(1);
+
+    expect(
+      f.tx.update
+    ).not.toHaveBeenCalled();
+
+    expect(
+      f.tx.get
+    ).toHaveBeenCalledTimes(1);
   });
 });

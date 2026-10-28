@@ -1,11 +1,24 @@
-const EvaluationRepository = require("../contracts/EvaluationRepository");
 
-/**
- * Firestore implementation for storing answer evaluations.
- *
- * Firestore document layout and server timestamps stay isolated here so the
- * route/application layer remains database-independent.
- */
+"use strict";
+
+const EvaluationRepository = require(
+  "../contracts/EvaluationRepository"
+);
+
+const {
+  AI_GRADABLE_MODES,
+} = require(
+  "../../services/evaluationContract"
+);
+
+const {
+  assertOwnedActiveSession,
+  assertAssignedQuestion,
+  reject,
+} = require(
+  "../../services/sessionAssignmentPolicy"
+);
+
 class FirestoreEvaluationRepository extends EvaluationRepository {
   constructor({ db, admin }) {
     super();
@@ -23,22 +36,25 @@ class FirestoreEvaluationRepository extends EvaluationRepository {
   getTimestamp(fallbackValue) {
     return this.admin?.firestore?.FieldValue?.serverTimestamp
       ? this.admin.firestore.FieldValue.serverTimestamp()
-      : fallbackValue || new Date().toISOString();
+      : fallbackValue ||
+          new Date().toISOString();
   }
 
   async saveEvaluation({
+    userId,
     sessionId,
     questionId,
     questionPrompt,
     mode,
     candidateResponse,
     evaluation,
-    metadata = {},
     evaluatedAt,
   }) {
-    if (!sessionId || !questionId) {
-      throw new Error(
-        "sessionId and questionId are required to save an evaluation."
+    if (!userId || !sessionId || !questionId) {
+      throw reject(
+        "Authenticated user, session ID, and question ID are required.",
+        400,
+        "EVALUATION_IDENTIFIERS_REQUIRED"
       );
     }
 
@@ -50,55 +66,93 @@ class FirestoreEvaluationRepository extends EvaluationRepository {
       .collection("responses")
       .doc(questionId);
 
-    await this.db.runTransaction(async (transaction) => {
-      const sessionSnapshot = await transaction.get(
-        sessionReference
-      );
+    await this.db.runTransaction(
+      async (transaction) => {
+        // Read current session state inside
+        // the authoritative transaction.
+        const sessionSnapshot =
+          await transaction.get(
+            sessionReference
+          );
 
-      if (!sessionSnapshot.exists) {
-        const error = new Error("Session not found.");
-        error.statusCode = 404;
-        throw error;
-      }
+        const session =
+          sessionSnapshot.exists
+            ? sessionSnapshot.data()
+            : null;
 
-      const session = sessionSnapshot.data();
-
-      if (session.status !== "active") {
-        const error = new Error(
-          "This session is not active."
-        );
-        error.statusCode = 409;
-        throw error;
-      }
-
-      if (session.mode && session.mode !== mode) {
-        const error = new Error(
-          "Evaluation mode does not match the session."
+        assertOwnedActiveSession(
+          session,
+          userId
         );
 
-        error.statusCode = 409;
-        throw error;
+        if (
+          !AI_GRADABLE_MODES.has(mode) ||
+          session.mode !== mode
+        ) {
+          throw reject(
+            "Evaluation mode does not match the session.",
+            409,
+            "SESSION_MODE_MISMATCH"
+          );
+        }
+
+        if (
+          session.assignmentStatus !==
+          "assigned"
+        ) {
+          throw reject(
+            "This interview has no finalized question assignment.",
+            409,
+            "ASSIGNMENT_NOT_READY"
+          );
+        }
+
+        assertAssignedQuestion(
+          session,
+          questionId
+        );
+
+        // Read the existing response before
+        // any transaction writes.
+        const priorResponse =
+          await transaction.get(
+            responseReference
+          );
+
+        if (priorResponse.exists) {
+          throw reject(
+            "This question has already been answered.",
+            409,
+            "QUESTION_ALREADY_ANSWERED"
+          );
+        }
+
+        const timestamp =
+          this.getTimestamp(evaluatedAt);
+
+        transaction.update(
+          sessionReference,
+          {
+            updatedAt: timestamp,
+          }
+        );
+
+        // No merge: prevent overwriting
+        // an existing saved grade.
+        transaction.set(
+          responseReference,
+          {
+            questionId,
+            questionPrompt:
+              questionPrompt || null,
+            mode,
+            candidateResponse,
+            evaluation,
+            evaluatedAt: timestamp,
+          }
+        );
       }
-
-      const timestamp = this.getTimestamp(evaluatedAt);
-
-      transaction.update(sessionReference, {
-        updatedAt: timestamp,
-      });
-
-      transaction.set(
-        responseReference,
-        {
-          questionId,
-          questionPrompt: questionPrompt || null,
-          mode: mode || null,
-          candidateResponse,
-          evaluation,
-          evaluatedAt: timestamp,
-        },
-        { merge: true }
-      );
-    });
+    );
   }
 }
 

@@ -53,16 +53,29 @@ function createResponse() {
   };
 }
 
+
 function createTestContext(body = {}) {
+  const normalizedBody = {
+    ...body,
+    metadata:
+      Object.prototype.hasOwnProperty.call(
+        body,
+        "metadata"
+      )
+        ? body.metadata
+        : { sessionId: SESSION_ID },
+  };
+
   return {
     req: {
       user: { uid: USER_ID },
-      body,
+      body: normalizedBody,
     },
     res: createResponse(),
     next: jest.fn(),
   };
 }
+
 
 describe("POST /api/evaluate route", () => {
   let questionRepository;
@@ -80,12 +93,17 @@ describe("POST /api/evaluate route", () => {
     evaluationRepository = {
       saveEvaluation: jest.fn().mockResolvedValue(undefined),
     };
-
+    
     sessionRepository = {
       findById: jest.fn().mockResolvedValue({
         id: SESSION_ID,
         userId: USER_ID,
         status: "active",
+        mode: "Theoretical Style",
+        jobRole: "Software Engineer",
+        experienceLevel: "Intermediate",
+        assignmentStatus: "assigned",
+        assignedQuestionIds: [QUESTION_ID],
       }),
     };
 
@@ -233,7 +251,7 @@ describe("POST /api/evaluate route", () => {
     questionRepository.findById.mockResolvedValue(null);
 
     const { res, next } = await submit({
-      questionId: "missing-question",
+      questionId: QUESTION_ID,
       candidateResponse: "My answer",
     });
 

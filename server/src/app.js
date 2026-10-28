@@ -70,8 +70,8 @@ app.get("/api/health", (req, res) => {
   res.json(getHealthPayload());
 });
 
-// Authentication and account-readiness
-// checks run before protected question routes.
+// SEC-02 checks remain active for questions.
+// SEC-03 additionally injects sessionRepository.
 app.use(
   "/api/questions",
   requireAuth,
@@ -80,6 +80,7 @@ app.use(
     questionRepository,
     questionQuotaService,
     questionMetadataService,
+    sessionRepository,
   })
 );
 
@@ -106,7 +107,6 @@ app.use(
 );
 
 // Secure account deletion.
-// Incomplete accounts can still delete themselves.
 app.use(
   "/api/users",
   requireAuth,

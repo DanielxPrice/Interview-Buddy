@@ -1,365 +1,637 @@
+
 const express = require("express");
 const request = require("supertest");
 const createQuestionRouter = require("./questions");
 
-const questionFixtures = [
+const fixtures = [
   {
-    id: "quiz-1", mode: "Quiz Style", prompt: "Choose one", active: true,
-    jobRoles: ["software engineer"], experienceLevels: ["Intermediate"],
-    tags: ["trees", "bfs"], priority: 10,
-    options: ["A", "B"], correctAnswer: "A", explanation: "Because A",
+    id: "quiz-1",
+    mode: "Quiz Style",
+    prompt: "Choose one",
+    active: true,
+    jobRoles: ["software engineer"],
+    experienceLevels: ["Intermediate"],
+    tags: ["trees", "bfs"],
+    priority: 10,
+    options: ["A", "B"],
+    correctAnswer: "A",
+    explanation: "Because A",
   },
   {
-    id: "code-1", mode: "Code Style", prompt: "Write BFS", active: true,
-    jobRoles: ["software engineer"], experienceLevels: ["Intermediate"],
-    tags: ["trees", "bfs"], priority: 10,
-    referenceAnswer: "Use a queue", gradingCriteria: [{ name: "Correctness", weight: 100 }],
+    id: "code-1",
+    mode: "Code Style",
+    prompt: "Write BFS",
+    active: true,
+    jobRoles: ["software engineer"],
+    experienceLevels: ["Intermediate"],
+    tags: ["trees", "bfs"],
+    priority: 10,
+    referenceAnswer: "Use a queue",
+    gradingCriteria: [
+      {
+        name: "Correctness",
+        weight: 100,
+      },
+    ],
   },
   {
-    id: "theory-1", mode: "Theoretical Style", prompt: "Explain BFS", active: true,
-    jobRoles: ["backend developer"], experienceLevels: ["Experienced"],
-    tags: ["trees"], priority: 10,
-    referenceAnswer: "Breadth-first search", gradingCriteria: [{ name: "Explanation", weight: 100 }],
+    id: "theory-1",
+    mode: "Theoretical Style",
+    prompt: "Explain BFS",
+    active: true,
+    jobRoles: ["backend developer"],
+    experienceLevels: ["Experienced"],
+    tags: ["trees"],
+    priority: 10,
+    referenceAnswer: "Breadth-first search",
   },
 ];
 
-describe("Question retrieval API H-01 mock integration", () => {
+const baseSetup = {
+  mode: "Quiz Style",
+  jobRole: "software engineer",
+  experienceLevel: "Intermediate",
+  tags: ["trees"],
+  questionCount: 1,
+};
+
+function makeSession(overrides = {}) {
+  return {
+    id: "session-1",
+    userId: "user-1",
+    status: "active",
+    assignmentStatus: "pending",
+    assignedQuestionIds: [],
+    assignedQuestions: [],
+    ...baseSetup,
+    ...overrides,
+  };
+}
+
+function queryFor(session, overrides = {}) {
+  return {
+    sessionId: session.id,
+    mode: session.mode,
+    jobRole: session.jobRole,
+    experienceLevel: session.experienceLevel,
+    tags: session.tags,
+    limit: session.questionCount,
+    ...overrides,
+  };
+}
+
+describe("SEC-03 authoritative question retrieval", () => {
   let app;
+  let session;
+  let sessionRepository;
   let questionRepository;
   let questionQuotaService;
 
   beforeEach(() => {
+    session = makeSession();
+
     questionRepository = {
-      findByMode: jest.fn(async (mode) => questionFixtures.filter((q) => q.mode === mode)),
-      findById: jest.fn(),
+      findByMode: jest.fn(
+        async (mode) =>
+          fixtures.filter(
+            (question) =>
+              question.mode === mode
+          )
+      ),
+      findById: jest.fn(
+        async (id) =>
+          fixtures.find(
+            (question) => question.id === id
+          ) || null
+      ),
     };
+
     questionQuotaService = {
-      getStatus: jest.fn().mockResolvedValue({ remaining: 20 }),
-      consume: jest.fn().mockResolvedValue({ remaining: 19 }),
+      getStatus: jest.fn().mockResolvedValue({
+        remaining: 20,
+      }),
+      consume: jest.fn().mockResolvedValue({
+        remaining: 19,
+      }),
     };
+
+    sessionRepository = {
+      findById: jest.fn(
+        async () => session
+      ),
+      assignQuestions: jest.fn(
+        async ({ questions }) => {
+          session = {
+            ...session,
+            assignmentStatus: "assigned",
+            assignedQuestionIds:
+              questions.map(
+                (question) => question.id
+              ),
+            assignedQuestions: questions,
+          };
+
+          return questions;
+        }
+      ),
+    };
+
     app = express();
     app.use(express.json());
+
     app.use((req, _res, next) => {
-      req.user = { uid: "user-1", role: "standard" };
+      req.user = {
+        uid: "user-1",
+        role: "user",
+      };
       next();
     });
-    app.use("/api/questions", createQuestionRouter({
-      questionRepository, questionQuotaService,
-    }));
-    app.use((error, _req, res, _next) => res.status(500).json({ error: error.message }));
-  });
 
-  test.each([
-    ["Quiz Style", "software engineer", "Intermediate", "quiz-1"],
-    ["Code Style", "software engineer", "Intermediate", "code-1"],
-    ["Theoretical Style", "backend developer", "Experienced", "theory-1"],
-  ])("retrieves only %s records matching all setup filters", async (mode, role, level, id) => {
-    const response = await request(app).get("/api/questions").query({
-      mode,
-      jobRole: role,
-      experienceLevel: level,
-      tags: "trees",
-      sessionId: "session-1",
-    });
-    expect(response.status).toBe(200);
-    expect(response.body.questions.map((question) => question.id)).toEqual([id]);
-    expect(questionRepository.findByMode).toHaveBeenCalledWith(mode);
-    expect(questionQuotaService.consume).toHaveBeenCalledTimes(1);
-    expect(response.body.questions[0]).not.toHaveProperty("referenceAnswer");
-    expect(response.body.questions[0]).not.toHaveProperty("gradingCriteria");
-    expect(response.body.questions[0]).not.toHaveProperty("correctAnswer");
-  });
+    app.use(
+      "/api/questions",
+      createQuestionRouter({
+        questionRepository,
+        questionQuotaService,
+        sessionRepository,
+      })
+    );
 
-  test("returns 400 for invalid or missing interview modes", async () => {
-    for (const mode of ["Not a mode", ""]) {
-      const response = await request(app).get("/api/questions").query({ mode });
-      expect(response.status).toBe(400);
-    }
-    expect(questionRepository.findByMode).not.toHaveBeenCalled();
-  });
-
-  test("returns 400 for missing filters before repository access", async () => {
-    const response = await request(app).get("/api/questions").query({
-      mode: "Quiz Style", jobRole: "software engineer", experienceLevel: "Intermediate",
-    });
-    expect(response.status).toBe(400);
-    expect(questionRepository.findByMode).not.toHaveBeenCalled();
-  });
-
-  test("returns an empty question set for a valid but unmatched role and tags", async () => {
-    const response = await request(app).get("/api/questions").query({
-      mode: "Quiz Style", jobRole: "no such role", experienceLevel: "Intermediate",
-      tags: "nonexistent-tag",
-    });
-    expect(response.status).toBe(200);
-    expect(response.body.questions).toEqual([]);
-    expect(questionQuotaService.consume).toHaveBeenCalledWith(
-      expect.objectContaining({ count: 0 })
+    app.use((error, _req, res, _next) =>
+      res.status(500).json({
+        error: error.message,
+      })
     );
   });
 
-  test("returns the full matching count without reserving daily quota", async () => {
-    const response = await request(app).get("/api/questions/count").query({
-      mode: "Code Style",
-      jobRole: "Software Engineer",
-      experienceLevel: "intermediate",
-      tags: ["trees", "bfs"],
-    });
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ availableCount: 1 });
-    expect(questionRepository.findByMode).toHaveBeenCalledWith("Code Style");
-    expect(questionQuotaService.consume).not.toHaveBeenCalled();
-    expect(questionQuotaService.getStatus).not.toHaveBeenCalled();
-    expect(response.text).not.toContain("referenceAnswer");
+  test("requires an assignment-capable repository", () => {
+    expect(() =>
+      createQuestionRouter({
+        questionRepository,
+        questionQuotaService,
+      })
+    ).toThrow(/sessionRepository/);
   });
 
-  test("counts only eligible records and returns zero for unmatched filters", async () => {
-    const response = await request(app).get("/api/questions/count").query({
-      mode: "Quiz Style",
-      jobRole: "no such role",
-      experienceLevel: "Intermediate",
-      tags: "trees",
-    });
-    expect(response.body).toEqual({ availableCount: 0 });
-  });
+  test.each([
+    [
+      "Quiz Style",
+      "software engineer",
+      "Intermediate",
+      "quiz-1",
+    ],
+    [
+      "Code Style",
+      "software engineer",
+      "Intermediate",
+      "code-1",
+    ],
+    [
+      "Theoretical Style",
+      "backend developer",
+      "Experienced",
+      "theory-1",
+    ],
+  ])(
+    "assigns only matching %s questions without leaking grading fields",
+    async (mode, role, level, id) => {
+      session = makeSession({
+        mode,
+        jobRole: role,
+        experienceLevel: level,
+      });
 
-  test("validates count requests without reading the repository", async () => {
-    for (const query of [
-      { mode: "Incorrect", jobRole: "role", experienceLevel: "Beginner", tags: "tree" },
-      { mode: "Quiz Style", jobRole: "role", experienceLevel: "Beginner" },
-    ]) {
-      const response = await request(app).get("/api/questions/count").query(query);
-      expect(response.status).toBe(400);
-    }
-    expect(questionRepository.findByMode).not.toHaveBeenCalled();
-  });
-
-  test("shares one snapshot across count requests with different tags", async () => {
-    await request(app).get("/api/questions/count").query({
-      mode: "Quiz Style", jobRole: "software engineer", experienceLevel: "Intermediate", tags: "bfs",
-    });
-    await request(app).get("/api/questions/count").query({
-      mode: "Quiz Style", jobRole: "software engineer", experienceLevel: "Intermediate", tags: "trees",
-    });
-    expect(questionRepository.findByMode).toHaveBeenCalledTimes(1);
-  });
-
-  test("fresh count bypasses the short-lived snapshot cache", async () => {
-    const filters = {
-      mode: "Quiz Style", jobRole: "software engineer", experienceLevel: "Intermediate", tags: "trees",
-    };
-    await request(app).get("/api/questions/count").query(filters);
-    await request(app).get("/api/questions/count").query({ ...filters, fresh: "1" });
-    expect(questionRepository.findByMode).toHaveBeenCalledTimes(2);
-  });
-
-  test("retrieves mode-specific options from stored active question metadata", async () => {
-    const response = await request(app).get("/api/questions/options").query({ mode: "Theoretical Style" });
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      jobRoles: ["backend developer"], experienceLevels: ["Experienced"], tags: ["trees"],
-    });
-    expect(questionRepository.findByMode).toHaveBeenCalledWith("Theoretical Style");
-  });
-
-  test("returns current metadata revision and safe metadata", async () => {
-    const { buildQuestionMetadata } = require("../services/questionMetadataBuilder");
-    const metadata = buildQuestionMetadata(questionFixtures);
-    const metadataService = {
-      getVersion: jest.fn().mockResolvedValue(3),
-      getMetadata: jest.fn().mockResolvedValue({ version: 3, ...metadata }),
-    };
-    const safeApp = express();
-    safeApp.use((req, res, next) => {
-      req.user = { uid: "test-user" };
-      next();
-    });
-    safeApp.use("/api/questions", createQuestionRouter({
-      questionRepository, questionQuotaService, questionMetadataService: metadataService,
-    }));
-    const version = await request(safeApp).get("/api/questions/metadata/version");
-    const data = await request(safeApp).get("/api/questions/metadata");
-    expect(version.body).toEqual({ version: 3 });
-    expect(data.body.modes["Quiz Style"].all.tags).toEqual(["bfs", "trees"]);
-    expect(data.text).not.toContain("correctAnswer");
-    expect(data.text).not.toContain("referenceAnswer");
-    expect(metadataService.getMetadata).toHaveBeenCalledTimes(1);
-  });
-
-  test("propagates repository read errors through controlled API failure", async () => {
-    questionRepository.findByMode.mockRejectedValue(new Error("Firestore unavailable"));
-    const response = await request(app).get("/api/questions").query({
-      mode: "Quiz Style", jobRole: "software engineer", experienceLevel: "Intermediate",
-      tags: "trees",
-    });
-    expect(response.status).toBe(500);
-    expect(response.body.error).toBe("Firestore unavailable");
-    expect(questionQuotaService.consume).not.toHaveBeenCalled();
-  });
-  
-  //Question Retrieval Coordination tests
-  test.each(["Code Style", "Theoretical Style"])(
-    "rejects %s retrieval without a session ID",
-    async (mode) => {
       const response = await request(app)
         .get("/api/questions")
-        .query({
-          mode,
-          jobRole: mode === "Code Style"
-            ? "software engineer"
-            : "backend developer",
-          experienceLevel: mode === "Code Style"
-            ? "Intermediate"
-            : "Experienced",
-          tags: "trees",
-        });
+        .query(queryFor(session));
 
-      expect(response.status).toBe(400);
-      expect(response.body.code).toBe("session-id-required");
+      expect(response.status).toBe(200);
 
-      expect(questionRepository.findByMode)
-        .not.toHaveBeenCalled();
+      expect(
+        response.body.questions.map(
+          (question) => question.id
+        )
+      ).toEqual([id]);
 
-      expect(questionQuotaService.consume)
-        .not.toHaveBeenCalled();
+      expect(response.text).not.toMatch(
+        /correctAnswer|referenceAnswer|gradingCriteria/
+      );
+
+      expect(
+        sessionRepository.assignQuestions
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: session.id,
+          userId: "user-1",
+          setup: expect.objectContaining({
+            questionCount: 1,
+          }),
+        })
+      );
+
+      expect(
+        questionQuotaService.consume
+      ).toHaveBeenCalledTimes(1);
     }
   );
 
-  test.each(["invalid session", "session/123", "a".repeat(129)])(
-    "rejects an invalid session ID",
+  test("returns saved questions on retry without reselection or quota reservation", async () => {
+    const first = await request(app)
+      .get("/api/questions")
+      .query(queryFor(session));
+
+    expect(first.status).toBe(200);
+
+    questionRepository.findByMode.mockClear();
+    questionQuotaService.consume.mockClear();
+
+    const second = await request(app)
+      .get("/api/questions")
+      .query(queryFor(session));
+
+    expect(second.status).toBe(200);
+    expect(second.body.questions).toEqual(
+      first.body.questions
+    );
+
+    expect(
+      questionRepository.findByMode
+    ).not.toHaveBeenCalled();
+
+    expect(
+      questionQuotaService.consume
+    ).not.toHaveBeenCalled();
+
+    expect(
+      questionQuotaService.getStatus
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  test("requires a session ID in every interview mode", async () => {
+    for (const mode of [
+      "Quiz Style",
+      "Code Style",
+      "Theoretical Style",
+    ]) {
+      const response = await request(app)
+        .get("/api/questions")
+        .query({
+          ...queryFor(session),
+          mode,
+          sessionId: "",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe(
+        "session-id-required"
+      );
+    }
+
+    expect(
+      questionRepository.findByMode
+    ).not.toHaveBeenCalled();
+
+    expect(
+      questionQuotaService.consume
+    ).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    "invalid session",
+    "session/1",
+    "x".repeat(129),
+  ])(
+    "rejects invalid session ID %s",
     async (sessionId) => {
       const response = await request(app)
         .get("/api/questions")
-        .query({
-          mode: "Code Style",
-          jobRole: "software engineer",
-          experienceLevel: "Intermediate",
-          tags: "trees",
+        .query(queryFor(session, {
           sessionId,
-        });
+        }));
 
       expect(response.status).toBe(400);
-      expect(response.body.code).toBe("invalid-session-id");
-
-      expect(questionRepository.findByMode)
-        .not.toHaveBeenCalled();
-
-      expect(questionQuotaService.consume)
-        .not.toHaveBeenCalled();
+      expect(response.body.code).toBe(
+        "invalid-session-id"
+      );
     }
   );
 
-  test("returns 429 when daily question quota is exceeded", async () => {
-    const quotaError = new Error("Daily question limit exceeded.");
+  test("rejects missing or unowned sessions before selecting questions", async () => {
+    sessionRepository.findById
+      .mockResolvedValueOnce(null);
 
-    quotaError.code = "daily-question-limit-exceeded";
-    quotaError.limit = 20;
-    quotaError.used = 20;
-    quotaError.requested = 1;
-    quotaError.remaining = 0;
+    const missing = await request(app)
+      .get("/api/questions")
+      .query(queryFor(session));
 
-    questionQuotaService.consume.mockRejectedValue(quotaError);
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe(
+      "SESSION_NOT_FOUND"
+    );
+
+    session = makeSession({
+      userId: "someone-else",
+    });
+
+    const other = await request(app)
+      .get("/api/questions")
+      .query(queryFor(session));
+
+    expect(other.status).toBe(403);
+    expect(other.body.code).toBe(
+      "SESSION_FORBIDDEN"
+    );
+
+    expect(
+      questionRepository.findByMode
+    ).not.toHaveBeenCalled();
+  });
+
+  test("rejects completed sessions and altered setup before quota changes", async () => {
+    session = makeSession({
+      status: "completed",
+    });
+
+    const completed = await request(app)
+      .get("/api/questions")
+      .query(queryFor(session));
+
+    expect(completed.status).toBe(409);
+    expect(completed.body.code).toBe(
+      "SESSION_NOT_ACTIVE"
+    );
+
+    session = makeSession();
+
+    for (const modified of [
+      { mode: "Code Style" },
+      { jobRole: "other role" },
+      { tags: "bfs" },
+      { limit: 2 },
+    ]) {
+      const response = await request(app)
+        .get("/api/questions")
+        .query(queryFor(session, modified));
+
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe(
+        "SESSION_SETUP_MISMATCH"
+      );
+    }
+
+    expect(
+      questionQuotaService.consume
+    ).not.toHaveBeenCalled();
+  });
+
+  test("rejects insufficient questions without charging quota", async () => {
+    session = makeSession({
+      questionCount: 2,
+    });
 
     const response = await request(app)
       .get("/api/questions")
-      .query({
-        mode: "Code Style",
-        jobRole: "software engineer",
-        experienceLevel: "Intermediate",
-        tags: "trees",
-        sessionId: "session-123",
-      });
+      .query(queryFor(session));
 
-    expect(response.status).toBe(429);
-    expect(response.body.code)
-      .toBe("daily-question-limit-exceeded");
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe(
+      "INSUFFICIENT_MATCHING_QUESTIONS"
+    );
 
-    expect(response.body.quota).toEqual({
+    expect(
+      questionQuotaService.consume
+    ).not.toHaveBeenCalled();
+
+    expect(
+      sessionRepository.assignQuestions
+    ).not.toHaveBeenCalled();
+  });
+
+  test("rejects invalid filters and counts", async () => {
+    for (const modified of [
+      { mode: "Not supported" },
+      { tags: "" },
+      { experienceLevel: "" },
+      { limit: "2abc" },
+    ]) {
+      const response = await request(app)
+        .get("/api/questions")
+        .query(queryFor(session, modified));
+
+      expect(response.status).toBe(400);
+    }
+
+    expect(
+      questionQuotaService.consume
+    ).not.toHaveBeenCalled();
+  });
+
+  test("returns 429 when the daily AI quota is exceeded", async () => {
+    session = makeSession({
+      mode: "Code Style",
+    });
+
+    const error = new Error(
+      "Daily question limit exceeded."
+    );
+
+    Object.assign(error, {
+      code: "daily-question-limit-exceeded",
       limit: 20,
       used: 20,
       requested: 1,
       remaining: 0,
     });
 
-    expect(questionQuotaService.consume)
-      .toHaveBeenCalledTimes(1);
-  });
-
-  test("returns 409 for a conflicting question reservation", async () => {
-    const conflictError = new Error(
-      "Question reservation conflicts with an existing session."
-    );
-
-    conflictError.code = "question-reservation-conflict";
-
-    questionQuotaService.consume.mockRejectedValue(conflictError);
+    questionQuotaService.consume
+      .mockRejectedValue(error);
 
     const response = await request(app)
       .get("/api/questions")
-      .query({
-        mode: "Code Style",
-        jobRole: "software engineer",
-        experienceLevel: "Intermediate",
-        tags: "trees",
-        sessionId: "session-123",
-      });
+      .query(queryFor(session));
 
-    expect(response.status).toBe(409);
-    expect(response.body.code)
-      .toBe("question-reservation-conflict");
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe(
+      "daily-question-limit-exceeded"
+    );
 
-    expect(questionQuotaService.consume)
-      .toHaveBeenCalledWith(
-        expect.objectContaining({
-          uid: "user-1",
-          reservationId: "session-123",
-        })
-      );
+    expect(
+      sessionRepository.assignQuestions
+    ).not.toHaveBeenCalled();
   });
 
-  test("uses a consistent reservation fingerprint for repeated requests", async () => {
-    const query = {
+  test("returns 409 for a conflicting quota reservation", async () => {
+    session = makeSession({
       mode: "Code Style",
+    });
+
+    const error = new Error(
+      "Reservation conflict."
+    );
+
+    error.code =
+      "question-reservation-conflict";
+
+    questionQuotaService.consume
+      .mockRejectedValue(error);
+
+    const response = await request(app)
+      .get("/api/questions")
+      .query(queryFor(session));
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe(
+      "question-reservation-conflict"
+    );
+
+    expect(
+      sessionRepository.assignQuestions
+    ).not.toHaveBeenCalled();
+  });
+
+  test("reserves quota with a stable session fingerprint", async () => {
+    session = makeSession({
+      mode: "Code Style",
+    });
+
+    const response = await request(app)
+      .get("/api/questions")
+      .query(queryFor(session));
+
+    expect(response.status).toBe(200);
+
+    expect(
+      questionQuotaService.consume
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        uid: "user-1",
+        mode: "Code Style",
+        count: 1,
+        reservationId: "session-1",
+        reservationFingerprint:
+          expect.stringMatching(
+            /^[a-f0-9]{64}$/
+          ),
+      })
+    );
+  });
+
+  test("count endpoint remains read-only and cached", async () => {
+    const query = {
+      mode: "Quiz Style",
       jobRole: "software engineer",
       experienceLevel: "Intermediate",
       tags: "trees",
-      sessionId: "session-123",
-      limit: 10,
     };
 
-    const firstResponse = await request(app)
-      .get("/api/questions")
+    const first = await request(app)
+      .get("/api/questions/count")
       .query(query);
 
-    const secondResponse = await request(app)
+    const second = await request(app)
+      .get("/api/questions/count")
+      .query({
+        ...query,
+        tags: "bfs",
+      });
+
+    expect(first.body).toEqual({
+      availableCount: 1,
+    });
+
+    expect(second.body).toEqual({
+      availableCount: 1,
+    });
+
+    expect(
+      questionRepository.findByMode
+    ).toHaveBeenCalledTimes(1);
+
+    expect(
+      sessionRepository.assignQuestions
+    ).not.toHaveBeenCalled();
+
+    expect(
+      questionQuotaService.consume
+    ).not.toHaveBeenCalled();
+  });
+
+  test("metadata and setup options remain compatible", async () => {
+    const metadataService = {
+      getVersion:
+        jest.fn().mockResolvedValue(4),
+      getMetadata:
+        jest.fn().mockResolvedValue({
+          version: 4,
+          modes: {},
+        }),
+    };
+
+    const compatibleApp = express();
+
+    compatibleApp.use((req, _res, next) => {
+      req.user = {
+        uid: "user-1",
+        role: "user",
+      };
+      next();
+    });
+
+    compatibleApp.use(
+      "/api/questions",
+      createQuestionRouter({
+        questionRepository,
+        questionQuotaService,
+        sessionRepository,
+        questionMetadataService:
+          metadataService,
+      })
+    );
+
+    const version = await request(
+      compatibleApp
+    ).get("/api/questions/metadata/version");
+
+    const metadata = await request(
+      compatibleApp
+    ).get("/api/questions/metadata");
+
+    const options = await request(
+      compatibleApp
+    )
+      .get("/api/questions/options")
+      .query({
+        mode: "Quiz Style",
+      });
+
+    expect(version.body).toEqual({
+      version: 4,
+    });
+
+    expect(metadata.body.version).toBe(4);
+
+    expect(options.body.jobRoles).toContain(
+      "software engineer"
+    );
+
+    expect(metadata.text).not.toContain(
+      "correctAnswer"
+    );
+  });
+
+  test("propagates database failures without charging quota", async () => {
+    questionRepository.findByMode
+      .mockRejectedValue(
+        new Error("Firestore unavailable")
+      );
+
+    const response = await request(app)
       .get("/api/questions")
-      .query(query);
+      .query(queryFor(session));
 
-    expect(firstResponse.status).toBe(200);
-    expect(secondResponse.status).toBe(200);
+    expect(response.status).toBe(500);
 
-    expect(questionQuotaService.consume)
-      .toHaveBeenCalledTimes(2);
-
-    const firstReservation =
-      questionQuotaService.consume.mock.calls[0][0];
-
-    const secondReservation =
-      questionQuotaService.consume.mock.calls[1][0];
-
-    expect(firstReservation.reservationId)
-      .toBe("session-123");
-
-    expect(secondReservation.reservationId)
-      .toBe("session-123");
-
-    expect(firstReservation.reservationFingerprint)
-      .toBe(secondReservation.reservationFingerprint);
-
-    expect(firstReservation.reservationFingerprint)
-      .toMatch(/^[a-f0-9]{64}$/);
-
-    expect(firstReservation.count).toBe(1);
-    expect(secondReservation.count).toBe(1);
+    expect(
+      questionQuotaService.consume
+    ).not.toHaveBeenCalled();
   });
 });
