@@ -1,3 +1,4 @@
+
 import {
   END_SESSION_ERROR_MESSAGES,
   buildSessionResult,
@@ -15,31 +16,42 @@ function serviceError(code, status) {
 }
 
 describe("getEndSessionErrorMessage", () => {
-  test.each(Object.keys(END_SESSION_ERROR_MESSAGES))(
-    "maps %s to its friendly message",
-    (code) => {
-      expect(getEndSessionErrorMessage(serviceError(code, 400))).toBe(
-        END_SESSION_ERROR_MESSAGES[code]
-      );
-    }
-  );
+  test.each(
+    Object.keys(END_SESSION_ERROR_MESSAGES)
+  )("maps %s to its friendly message", (code) => {
+    expect(
+      getEndSessionErrorMessage(
+        serviceError(code, 400)
+      )
+    ).toBe(END_SESSION_ERROR_MESSAGES[code]);
+  });
 
   test("never shows the raw server message", () => {
     expect(
-      getEndSessionErrorMessage(serviceError("SESSION_NOT_FOUND", 404))
+      getEndSessionErrorMessage(
+        serviceError("SESSION_NOT_FOUND", 404)
+      )
     ).not.toContain("raw server message");
   });
 
   test("explains network failures", () => {
-    expect(getEndSessionErrorMessage(new TypeError("Failed to fetch"))).toBe(
+    expect(
+      getEndSessionErrorMessage(
+        new TypeError("Failed to fetch")
+      )
+    ).toBe(
       "Could not reach the server. Check your connection and try again."
     );
   });
 
   test("falls back to a generic message for unknown errors", () => {
     expect(
-      getEndSessionErrorMessage(serviceError("SOMETHING_NEW", 500))
-    ).toBe("Unable to complete the interview session. Please try again.");
+      getEndSessionErrorMessage(
+        serviceError("SOMETHING_NEW", 500)
+      )
+    ).toBe(
+      "Unable to complete the interview session. Please try again."
+    );
   });
 });
 
@@ -49,11 +61,14 @@ describe("isRetryableEndSessionError", () => {
     ["SESSION_FORBIDDEN", false],
     ["SESSION_NOT_ACTIVE", false],
     ["SESSION_ID_REQUIRED", false],
+    ["SESSION_ASSIGNMENT_INVALID", false],
     ["INVALID_SCORING_DATA", true],
     ["RESULTS_CALCULATION_FAILED", true],
     [undefined, true],
   ])("%s retryable: %s", (code, expected) => {
-    expect(isRetryableEndSessionError({ code })).toBe(expected);
+    expect(
+      isRetryableEndSessionError({ code })
+    ).toBe(expected);
   });
 });
 
@@ -89,12 +104,28 @@ describe("buildSessionResult", () => {
       mode: "Quiz Style",
       setupData,
       answeredQuestions,
+
       savedSession: {
         id: "session-1",
-        completedAt: "2026-10-25T20:00:00.000Z",
-        result: { score: 85, questionsAnswered: 2, totalScore: 170 },
+
+        completedAt:
+          "2026-10-25T20:00:00.000Z",
+
+        result: {
+          score: 85,
+          questionsAnswered: 2,
+          totalScore: 170,
+
+          questionsAssigned: 2,
+          questionsUnanswered: 0,
+
+          completionStatus: "completed",
+          rankEligible: true,
+        },
+
         eloChange: "+2",
         breakdownAvailable: true,
+
         breakdown: [
           {
             questionId: "q1",
@@ -127,12 +158,12 @@ describe("buildSessionResult", () => {
       jobRole: "Software Engineer",
     });
 
-    // Server values win; browser-only details are kept.
     expect(result.perQuestion[0]).toMatchObject({
       prompt: "Server prompt 1",
       feedback: "Server feedback",
       userAnswer: "Queue",
     });
+
     expect(result.perQuestion[1]).toMatchObject({
       score: 70,
       isCorrect: false,
@@ -146,13 +177,22 @@ describe("buildSessionResult", () => {
       mode: "Quiz Style",
       setupData,
       answeredQuestions,
-      savedSession: { id: "session-1" },
+
+      savedSession: {
+        id: "session-1",
+      },
     });
 
     expect(result.score).toBe("70%");
-    expect(result.eloChange).toBe("+2");
+    expect(result.eloChange).toBeNull();
+    expect(result.rankEligible).toBe(false);
     expect(result.scoreSource).toBe("local");
-    expect(result.perQuestion.map((item) => item.prompt)).toEqual([
+
+    expect(
+      result.perQuestion.map(
+        (item) => item.prompt
+      )
+    ).toEqual([
       "Local prompt 1",
       "Local prompt 2",
     ]);
@@ -163,8 +203,14 @@ describe("buildSessionResult", () => {
       mode: "Quiz Style",
       setupData,
       answeredQuestions: [],
+
       savedSession: {
-        result: { score: 60, questionsAnswered: 3, totalScore: 180 },
+        result: {
+          score: 60,
+          questionsAnswered: 3,
+          totalScore: 180,
+        },
+
         eloChange: "+1",
         breakdown: [],
         breakdownAvailable: false,
@@ -173,6 +219,7 @@ describe("buildSessionResult", () => {
 
     expect(result.score).toBe("60%");
     expect(result.questionsAnswered).toBe(3);
+
     expect(result.breakdownAvailable).toBe(false);
   });
 
@@ -181,8 +228,14 @@ describe("buildSessionResult", () => {
       mode: "Quiz Style",
       setupData,
       answeredQuestions: [],
+
       savedSession: {
-        result: { score: 0, questionsAnswered: 0, totalScore: 0 },
+        result: {
+          score: 0,
+          questionsAnswered: 0,
+          totalScore: 0,
+        },
+
         eloChange: "-2",
         breakdown: [],
       },
@@ -199,13 +252,17 @@ describe("buildSessionResult", () => {
 
 describe("formatCompletedDate", () => {
   test("formats an ISO date", () => {
-    expect(formatCompletedDate("2026-10-25T20:00:00.000Z")).toBe(
-      "October 25, 2026"
-    );
+    expect(
+      formatCompletedDate(
+        "2026-10-25T20:00:00.000Z"
+      )
+    ).toBe("October 25, 2026");
   });
 
   test("returns Unknown date for garbage input", () => {
-    expect(formatCompletedDate("not a date")).toBe("Unknown date");
+    expect(
+      formatCompletedDate("not a date")
+    ).toBe("Unknown date");
   });
 });
 
@@ -214,7 +271,12 @@ describe("calculateEloChange", () => {
     [70, "+2"],
     [50, "+1"],
     [49, "-2"],
-  ])("score %i gives %s", (score, expected) => {
-    expect(calculateEloChange(score)).toBe(expected);
-  });
+  ])(
+    "score %i gives %s",
+    (score, expected) => {
+      expect(
+        calculateEloChange(score)
+      ).toBe(expected);
+    }
+  );
 });
