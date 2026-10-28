@@ -263,6 +263,64 @@ describe("SCRUM-82 server-side results persistence", () => {
       totalScore: 0,
     });
   });
+  
+    test("finalization derives a missing question score from its step results", async () => {
+    const f = fixture("Code Style");
+
+    f.responses.docs = [
+      {
+        data: () => ({
+          mode: "Code Style",
+          evaluation: {
+            criterionResults: [
+              { awardedPoints: 30, maxPoints: 40 },
+              { awardedPoints: 20, maxPoints: 60 },
+            ],
+          },
+        }),
+      },
+      {
+        data: () => ({
+          mode: "Code Style",
+          evaluation: { score: 90 },
+        }),
+      },
+    ];
+
+    const completed = await f.repository.finalizeSessionWithResults(
+      "session-1",
+      "user-1"
+    );
+
+    expect(completed.result).toEqual({
+      score: 70,
+      questionsAnswered: 2,
+      totalScore: 140,
+    });
+  });
+
+  test("finalization refuses responses from a different mode", async () => {
+    const f = fixture("Code Style");
+
+    f.responses.docs = [
+      {
+        data: () => ({
+          mode: "Quiz Style",
+          evaluation: { score: 100 },
+        }),
+      },
+    ];
+
+    await expect(
+      f.repository.finalizeSessionWithResults("session-1", "user-1")
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringMatching(/scoring data/i),
+    });
+
+    expect(f.tx.update).not.toHaveBeenCalled();
+  });
+
 
   test("finalization refuses invalid saved scores without changing status", async () => {
     const f = fixture("Code Style");

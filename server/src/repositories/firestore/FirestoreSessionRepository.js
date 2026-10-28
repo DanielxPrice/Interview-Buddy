@@ -1,5 +1,10 @@
 const SessionRepository = require("../contracts/SessionRepository");
 
+const {
+  aggregateSessionScore,
+  InvalidScoringDataError,
+} = require("../../services/sessionScoreAggregator");
+
 function sessionError(message, statusCode) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -299,32 +304,27 @@ class FirestoreSessionRepository extends SessionRepository {
 
       const responses = responseSnapshot.docs.map((doc) => doc.data());
 
-      let totalScore = 0;
+      // Every response must belong to this session's mode.
+      if (responses.some((response) => response?.mode !== session.mode)) {
+        throw sessionError(
+          "Saved responses contain invalid scoring data.",
+          409,
+        );
+      }
 
-      for (const response of responses) {
-        const score = response?.evaluation?.score;
-
-        if (
-          response?.mode !== session.mode ||
-          typeof score !== "number" ||
-          !Number.isFinite(score) ||
-          score < 0 ||
-          score > 100
-        ) {
+      // Aggregation rules live in sessionScoreAggregator (see SESSION_SCORING.md).
+      let result;
+      try {
+        result = aggregateSessionScore(responses);
+      } catch (error) {
+        if (error instanceof InvalidScoringDataError) {
           throw sessionError(
             "Saved responses contain invalid scoring data.",
             409,
           );
         }
-
-        totalScore += score;
+        throw error;
       }
-
-      const result = {
-        score: responses.length ? Math.round(totalScore / responses.length) : 0,
-        questionsAnswered: responses.length,
-        totalScore,
-      };
 
       const timestamp = this.getTimestamp();
 
