@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildQuestionMetadata, getOptionsFromMetadata, MODES } =
   require('../server/src/services/questionMetadataBuilder');
-const { buildQuestionSetupOptions } = require('../server/src/services/questionSelection');
+const { buildQuestionSetupOptions, countEligibleQuestions } = require('../server/src/services/questionSelection');
 const { createQuestionMetadataService } = require('../server/src/services/questionMetadataService');
 const { relevantMetadata } = require('../functions/relevantMetadata');
 
@@ -43,6 +43,74 @@ test('generated metadata is equivalent to existing questionSelection output for 
       }).tags, expectedTags);
     }
   }
+});
+
+
+// Independent implementation of the same simple browser index lookup.
+// Compare it against the canonical backend count over real seed configurations.
+const previewCount = (metadata, mode, jobRole, experienceLevel, tags) => {
+  const wanted = new Set(tags.map(key));
+  return metadata.modes[mode].countIndex.reduce((sum, row) =>
+    row.jobRoles.includes(key(jobRole)) &&
+    row.experienceLevels.includes(key(experienceLevel)) &&
+    row.tags.some((tag) => wanted.has(tag)) ? sum + row.count : sum, 0);
+};
+
+test('cached count index exactly matches backend ANY-tag count without double-counting', () => {
+  const metadata = buildQuestionMetadata(questions);
+  assert.equal(metadata.schemaVersion, 2);
+
+  for (const mode of MODES) {
+    const modeQuestions = questions.filter((question) => question.mode === mode);
+    const roles = metadata.modes[mode].all.jobRoles;
+    const levels = metadata.modes[mode].all.experienceLevels;
+    const tags = metadata.modes[mode].all.tags;
+    for (const role of roles) {
+      for (const level of levels) {
+        const tagSets = [
+          [tags[0]],
+          [tags[1]],
+          [tags[0], tags[1]],
+          [tags[0], tags[1], tags[2]],
+          ['not-a-real-tag'],
+        ];
+        for (const selectedTags of tagSets) {
+          assert.equal(
+            previewCount(metadata, mode, role, level, selectedTags),
+            countEligibleQuestions(modeQuestions, {
+              jobRole: role, experienceLevel: level, tags: selectedTags,
+            }),
+            `${mode}, ${role}, ${level}, ${selectedTags.join(', ')}`
+          );
+        }
+      }
+    }
+  }
+});
+
+test('overlapping tags, duplicate metadata, inactive questions, and grouped rows count correctly', () => {
+  const fixture = [
+    { mode: 'Code Style', active: true, jobRoles: ['Developer', 'Developer'],
+      experienceLevels: ['Beginner'], tags: ['Trees', 'BFS', 'BFS'] },
+    { mode: 'Code Style', active: true, jobRoles: ['Developer'],
+      experienceLevels: ['Beginner'], tags: ['trees', 'bfs'] },
+    { mode: 'Code Style', active: true, jobRoles: ['Developer'],
+      experienceLevels: ['Beginner'], tags: ['bfs'] },
+    { mode: 'Code Style', active: false, jobRoles: ['Developer'],
+      experienceLevels: ['Beginner'], tags: ['trees'] },
+  ];
+  const metadata = buildQuestionMetadata(fixture);
+  assert.equal(metadata.modes['Code Style'].countIndex.length, 2);
+  assert.equal(previewCount(metadata, 'Code Style', 'DEVELOPER', 'beginner', ['trees', 'bfs']), 3);
+  assert.equal(previewCount(metadata, 'Code Style', 'developer', 'Beginner', ['trees']), 2);
+  assert.equal(previewCount(metadata, 'Code Style', 'developer', 'Beginner', ['invalid']), 0);
+});
+
+test('bundled count metadata stays synchronized with the seed and has no question IDs', () => {
+  const bundled = require('../src/data/questionMetadata.json');
+  assert.deepEqual(bundled, buildQuestionMetadata(questions));
+  const serialized = JSON.stringify(bundled);
+  assert.equal(serialized.includes('"id":'), false);
 });
 
 test('metadata never contains sensitive question payload fields', () => {

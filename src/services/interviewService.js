@@ -1,6 +1,7 @@
 import { auth } from "../config/firebase";
 import {
   getCachedSetupOptions,
+  getCachedAvailableQuestionCount,
   subscribeSetupMetadata,
   refreshSetupMetadata,
   resetMetadataVerification,
@@ -314,8 +315,9 @@ export const interviewService = {
     return payload.availableCount;
   },
 
-  // Synchronous local lookups remove the format-switching loading delay.
+  // Synchronous local lookups avoid a request on each tag selection.
   getCachedSetupOptions,
+  getCachedAvailableQuestionCount,
   subscribeSetupMetadata,
   refreshSetupMetadata,
   resetMetadataVerification,
