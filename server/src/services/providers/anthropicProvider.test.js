@@ -88,6 +88,8 @@ describe("anthropicProvider.generateEvaluation", () => {
 
     expect(Anthropic).toHaveBeenCalledWith({
       apiKey: "test-key",
+      maxRetries: 0,
+      timeout: 20000,
     });
   });
 

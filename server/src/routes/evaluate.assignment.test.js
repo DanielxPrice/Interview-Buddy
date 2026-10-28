@@ -5,11 +5,8 @@ jest.mock("../services/aiService", () => ({
   generateEvaluation: jest.fn(),
 }));
 
-const aiService =
-  require("../services/aiService");
-
-const createEvaluateRouter =
-  require("./evaluate");
+const aiService = require("../services/aiService");
+const createEvaluateRouter = require("./evaluate");
 
 const QUESTION_ID = "theory-1";
 const SESSION_ID = "session-1";
@@ -36,8 +33,7 @@ function makeFixture(overrides = {}) {
       mode: "Theoretical Style",
       prompt: "Explain dependency injection.",
       active: true,
-      referenceAnswer:
-        "Private reference answer",
+      referenceAnswer: "Private reference answer",
     }),
   };
 
@@ -48,8 +44,22 @@ function makeFixture(overrides = {}) {
   };
 
   const evaluationRepository = {
-    saveEvaluation:
+    reserveEvaluation: jest.fn().mockResolvedValue({
+      kind: "reserved",
+      attemptId: "test-attempt-id",
+    }),
+
+    completeReservedEvaluation:
       jest.fn().mockResolvedValue(undefined),
+
+    failReservedEvaluation:
+      jest.fn().mockResolvedValue(true),
+
+    markProviderStarted:
+      jest.fn().mockResolvedValue(true),
+
+    markUncertainEvaluation:
+      jest.fn().mockResolvedValue(true),
   };
 
   aiService.generateEvaluation.mockResolvedValue({
@@ -69,7 +79,9 @@ function makeFixture(overrides = {}) {
 
   async function submit(changes = {}) {
     const req = {
-      user: { uid: USER_ID },
+      user: {
+        uid: USER_ID,
+      },
       body: {
         questionId: QUESTION_ID,
         candidateResponse:
@@ -100,7 +112,11 @@ function makeFixture(overrides = {}) {
 
     await handler(req, res, next);
 
-    return { req, res, next };
+    return {
+      req,
+      res,
+      next,
+    };
   }
 
   return {
@@ -112,13 +128,14 @@ function makeFixture(overrides = {}) {
 }
 
 describe("SEC-03 AI evaluation admission", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
   test("saves an assigned theoretical answer under the authenticated UID", async () => {
     const f = makeFixture();
 
-    const { res, next } =
-      await f.submit();
+    const { res, next } = await f.submit();
 
     expect(res.statusCode).toBe(200);
 
@@ -127,7 +144,7 @@ describe("SEC-03 AI evaluation admission", () => {
     ).toBe(80);
 
     expect(
-      f.evaluationRepository.saveEvaluation
+      f.evaluationRepository.completeReservedEvaluation
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: USER_ID,
@@ -145,13 +162,12 @@ describe("SEC-03 AI evaluation admission", () => {
       mode: "Code Style",
     });
 
-    f.questionRepository.findById
-      .mockResolvedValue({
-        id: QUESTION_ID,
-        mode: "Code Style",
-        prompt: "Implement a queue",
-        active: true,
-      });
+    f.questionRepository.findById.mockResolvedValue({
+      id: QUESTION_ID,
+      mode: "Code Style",
+      prompt: "Implement a queue",
+      active: true,
+    });
 
     const { res } = await f.submit();
 
@@ -171,19 +187,27 @@ describe("SEC-03 AI evaluation admission", () => {
     ],
     [
       "blank session",
-      { metadata: { sessionId: "" } },
+      {
+        metadata: {
+          sessionId: "",
+        },
+      },
       400,
       "SESSION_ID_REQUIRED",
     ],
     [
       "unassigned question",
-      { questionId: "theory-2" },
+      {
+        questionId: "theory-2",
+      },
       409,
       "QUESTION_NOT_ASSIGNED",
     ],
     [
       "invalid question ID",
-      { questionId: "bad/id" },
+      {
+        questionId: "bad/id",
+      },
       400,
       "INVALID_IDENTIFIER",
     ],
@@ -192,8 +216,7 @@ describe("SEC-03 AI evaluation admission", () => {
     async (_, change, status, code) => {
       const f = makeFixture();
 
-      const { res } =
-        await f.submit(change);
+      const { res } = await f.submit(change);
 
       expect(res.statusCode).toBe(status);
       expect(res.payload.code).toBe(code);
@@ -203,29 +226,37 @@ describe("SEC-03 AI evaluation admission", () => {
       ).not.toHaveBeenCalled();
 
       expect(
-        f.evaluationRepository.saveEvaluation
+        f.evaluationRepository.completeReservedEvaluation
       ).not.toHaveBeenCalled();
     }
   );
 
   test.each([
     [
-      { userId: "another-user" },
+      {
+        userId: "another-user",
+      },
       403,
       "SESSION_FORBIDDEN",
     ],
     [
-      { status: "completed" },
+      {
+        status: "completed",
+      },
       409,
       "SESSION_NOT_ACTIVE",
     ],
     [
-      { assignmentStatus: "pending" },
+      {
+        assignmentStatus: "pending",
+      },
       409,
       "ASSIGNMENT_NOT_READY",
     ],
     [
-      { mode: "Quiz Style" },
+      {
+        mode: "Quiz Style",
+      },
       400,
       "UNSUPPORTED_EVALUATION_MODE",
     ],
@@ -252,12 +283,11 @@ describe("SEC-03 AI evaluation admission", () => {
   test("rejects a question whose mode differs from the session", async () => {
     const f = makeFixture();
 
-    f.questionRepository.findById
-      .mockResolvedValue({
-        id: QUESTION_ID,
-        mode: "Code Style",
-        active: true,
-      });
+    f.questionRepository.findById.mockResolvedValue({
+      id: QUESTION_ID,
+      mode: "Code Style",
+      active: true,
+    });
 
     const { res } = await f.submit();
 
