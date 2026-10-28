@@ -9,11 +9,13 @@ describe("FirestoreSessionRepository completed-session queries", () => {
     collection = {
       where: jest.fn(),
       orderBy: jest.fn(),
+      limit: jest.fn(),
       get: jest.fn(),
     };
 
     collection.where.mockReturnValue(collection);
     collection.orderBy.mockReturnValue(collection);
+    collection.limit.mockReturnValue(collection);
 
     const db = {
       collection: jest.fn(() => collection),

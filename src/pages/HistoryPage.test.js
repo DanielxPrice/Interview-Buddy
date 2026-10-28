@@ -4,7 +4,7 @@ import HistoryPage from "./HistoryPage";
 import { historyService } from "../services/historyService";
 
 jest.mock("../components/layout/PageLayout", () => ({ children, title }) => <main><h1>{title}</h1>{children}</main>);
-jest.mock("../services/historyService", () => ({ historyService: { getSessions: jest.fn() } }));
+jest.mock("../services/historyService", () => ({ historyService: { getSessionPage: jest.fn() } }));
 
 const sessions = [
   { id: "s1", status: "completed", mode: "Code Style", jobRole: "Backend Developer", completedAt: "2026-10-20T12:00:00Z", result: { score: 91, questionsAnswered: 4 } },
@@ -13,7 +13,7 @@ const sessions = [
 
 beforeEach(() => {
   jest.clearAllMocks();
-  historyService.getSessions.mockResolvedValue(sessions);
+  historyService.getSessionPage.mockResolvedValue({ sessions, nextCursor: null });
 });
 
 test("loads completed sessions and opens a result by session ID", async () => {
@@ -36,11 +36,27 @@ test("filters by mode and clears filters", async () => {
 });
 
 test("shows empty and failed-request states without placeholder sessions", async () => {
-  historyService.getSessions.mockResolvedValueOnce([]);
+  historyService.getSessionPage.mockResolvedValueOnce({ sessions: [], nextCursor: null });
   const { unmount } = render(<HistoryPage currentPage="/history" onNavigate={jest.fn()} />);
   expect(await screen.findByText("No completed interviews yet")).toBeInTheDocument();
   unmount();
-  historyService.getSessions.mockRejectedValueOnce(new Error("Offline"));
+  historyService.getSessionPage.mockRejectedValueOnce(new Error("Offline"));
   render(<HistoryPage currentPage="/history" onNavigate={jest.fn()} />);
   expect(await screen.findByText("Offline")).toBeInTheDocument();
+});
+
+
+test("loads older interviews only after the user requests another page", async () => {
+  historyService.getSessionPage
+    .mockResolvedValueOnce({ sessions, nextCursor: "s1" })
+    .mockResolvedValueOnce({ sessions: [{
+      id: "s0", status: "completed", mode: "Quiz Style", jobRole: "Older Engineer",
+      completedAt: "2026-10-01T12:00:00Z", result: { score: 70 },
+    }], nextCursor: null });
+  render(<HistoryPage currentPage="/history" onNavigate={jest.fn()} />);
+  expect(await screen.findByText("Backend Developer Interview")).toBeInTheDocument();
+  expect(screen.queryByText("Older Engineer Interview")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Load Older Sessions/i }));
+  expect(await screen.findByText("Older Engineer Interview")).toBeInTheDocument();
+  expect(historyService.getSessionPage).toHaveBeenLastCalledWith({ cursor: "s1", pageSize: 25 });
 });

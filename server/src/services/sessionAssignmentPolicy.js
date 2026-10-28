@@ -122,11 +122,14 @@ function assertOwnedActiveSession(session, userId) {
   }
 
   if (session.status !== "active") {
-    throw reject(
-      "This session is not active.",
-      409,
-      "SESSION_NOT_ACTIVE"
-    );
+    throw reject("This session is not active.", 409, "SESSION_NOT_ACTIVE");
+  }
+
+  // Legacy sessions without an expiry remain accessible until migrated.
+  // New SEC-05 sessions cannot receive answers after their bounded lifetime.
+  if (Number.isSafeInteger(session.activeExpiresAtMs) &&
+      session.activeExpiresAtMs <= Date.now()) {
+    throw reject("This interview has expired. Start a new interview.", 409, "SESSION_EXPIRED");
   }
 }
 

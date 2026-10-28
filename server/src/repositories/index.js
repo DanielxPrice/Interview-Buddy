@@ -33,6 +33,13 @@ const FirestoreQuestionCatalogRepository = require(
   "./firestore/FirestoreQuestionCatalogRepository"
 );
 
+const FirestoreApiRateLimitRepository = require(
+  "./firestore/FirestoreApiRateLimitRepository"
+);
+
+// Shared Firestore-backed API rate limit counters.
+const apiRateLimitRepository = new FirestoreApiRateLimitRepository({ db });
+
 // Question metadata/catalog repository.
 const questionCatalogRepository =
   new FirestoreQuestionCatalogRepository({
@@ -80,6 +87,7 @@ const accountDeletionService = createAccountDeletionService({ db, authClient });
 
 // Export repository instances for application services and routes.
 module.exports = {
+  apiRateLimitRepository,
   questionRepository,
   questionCatalogRepository,
   evaluationRepository,

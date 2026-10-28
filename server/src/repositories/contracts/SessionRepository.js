@@ -52,6 +52,10 @@ class SessionRepository {
     );
   }
 
+  async getSessionPage({ userId, status, pageSize, cursor }) {
+    throw new Error("getSessionPage() must be implemented.");
+  }
+
   // Legacy status-only method.
   async completeSession(sessionId) {
     throw new Error(

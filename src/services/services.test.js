@@ -542,6 +542,16 @@ describe("historyService", () => {
     );
   });
 
+  test("getSessionPage retrieves bounded completed history with an opaque cursor", async () => {
+    const page = { sessions: [completedSession], nextCursor: "saved-1" };
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => page });
+    await expect(historyService.getSessionPage({ cursor: "prior-id", pageSize: 25 })).resolves.toEqual(page);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/sessions?status=completed&pageSize=25&cursor=prior-id",
+      { headers: { Authorization: "Bearer test-id-token" } }
+    );
+  });
+
   test("getSessionById retrieves an authorized saved session", async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => completedSession });
     expect(await historyService.getSessionById("saved-1")).toEqual(completedSession);

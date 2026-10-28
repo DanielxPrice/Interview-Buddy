@@ -101,6 +101,17 @@ describe("SEC-03 authoritative session setup policy", () => {
     ).toThrow(/not active/);
   });
 
+  test("SEC-05 blocks answers to expired leased sessions but preserves legacy sessions", () => {
+    const session = { userId: "owner", status: "active" };
+    expect(() => assertOwnedActiveSession({
+      ...session, activeExpiresAtMs: Date.now() - 1000,
+    }, "owner")).toThrow(/expired/i);
+    expect(() => assertOwnedActiveSession({
+      ...session, activeExpiresAtMs: Date.now() + 60000,
+    }, "owner")).not.toThrow();
+    expect(() => assertOwnedActiveSession(session, "owner")).not.toThrow();
+  });
+
   test("accepts only assigned question IDs", () => {
     const session = {
       assignedQuestionIds: ["quiz-1"],

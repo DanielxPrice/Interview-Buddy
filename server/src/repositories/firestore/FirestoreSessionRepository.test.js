@@ -33,6 +33,7 @@ describe("FirestoreSessionRepository", () => {
 
     collection = {
       add: jest.fn(),
+      limit: jest.fn(),
       doc: jest.fn(() => docRef),
       where: jest.fn(),
       orderBy: jest.fn(),
@@ -41,14 +42,19 @@ describe("FirestoreSessionRepository", () => {
 
     collection.where.mockReturnValue(collection);
     collection.orderBy.mockReturnValue(collection);
+    collection.limit.mockReturnValue(collection);
 
     transaction = {
-      get: jest.fn(),
+      get: jest.fn().mockResolvedValue({ exists: false }),
+      set: jest.fn(),
+      create: jest.fn(),
       update: jest.fn(),
     };
 
     db = {
-      collection: jest.fn(() => collection),
+      collection: jest.fn((name) => name === "users" ? {
+        doc: () => ({ collection: () => ({ doc: () => ({ id: "quota-day" }) }) }),
+      } : collection),
       runTransaction: jest.fn(async (callback) =>
         callback(transaction)
       ),
@@ -71,10 +77,6 @@ describe("FirestoreSessionRepository", () => {
   });
 
   test("creates an active session with the expected fields", async () => {
-    collection.add.mockResolvedValue({
-      id: TEST_SESSION_ID,
-    });
-
     const result = await repository.createSession({
       userId: TEST_USER_ID,
       mode: "technical",
@@ -86,7 +88,7 @@ describe("FirestoreSessionRepository", () => {
       "sessions"
     );
 
-    expect(collection.add).toHaveBeenCalledWith({
+    expect(transaction.create).toHaveBeenCalledWith(docRef, expect.objectContaining({
       userId: TEST_USER_ID,
       mode: "technical",
       jobRole: "Software Engineer",
@@ -100,11 +102,13 @@ describe("FirestoreSessionRepository", () => {
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
       completedAt: null,
-    });
+      activeSlotId: "slot-0",
+      activeExpiresAtMs: expect.any(Number),
+    }));
 
     expect(result).toEqual({
       id: TEST_SESSION_ID,
-      ...collection.add.mock.calls[0][0],
+      ...transaction.create.mock.calls[0][1],
     });
   });
 
@@ -126,16 +130,13 @@ describe("FirestoreSessionRepository", () => {
       admin: firebaseAdmin,
     });
 
-    collection.add.mockResolvedValue({
-      id: TEST_SESSION_ID,
-    });
-
     const result = await repository.createSession({
       userId: TEST_USER_ID,
       mode: "technical",
     });
 
-    expect(collection.add).toHaveBeenCalledWith(
+    expect(transaction.create).toHaveBeenCalledWith(
+      docRef,
       expect.objectContaining({
         jobRole: null,
         experienceLevel: null,
@@ -149,7 +150,7 @@ describe("FirestoreSessionRepository", () => {
     );
 
     expect(serverTimestamp).toHaveBeenCalledTimes(
-      2
+      4
     );
   });
 
@@ -172,7 +173,7 @@ describe("FirestoreSessionRepository", () => {
       "userId and mode are required."
     );
 
-    expect(collection.add).not.toHaveBeenCalled();
+    expect(transaction.create).not.toHaveBeenCalled();
   });
 
   test("finds an existing session by ID", async () => {

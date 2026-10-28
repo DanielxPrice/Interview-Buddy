@@ -1,5 +1,6 @@
 
 const express = require("express");
+const { SESSION_HISTORY_PAGE_MAX } = require("../config/sessionStorageLimits");
 
 const {
   validateSessionSetup,
@@ -64,6 +65,9 @@ function createSessionRouter({
 
       return res.status(201).json(session);
     } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       return next(error);
     }
   });
@@ -82,17 +86,36 @@ function createSessionRouter({
         });
       }
 
-      const sessions =
-        status === "completed"
-          ? await sessionRepository.listCompletedByUser(
-              req.user.uid
-            )
-          : await sessionRepository.listByUser(
-              req.user.uid
-            );
+      const wantsPage = req.query.pageSize !== undefined || req.query.cursor !== undefined;
+      if (wantsPage) {
+        const rawPageSize = req.query.pageSize;
+        const pageSize = Number(rawPageSize);
+        if (typeof rawPageSize !== "string" || !/^[0-9]+$/.test(rawPageSize) ||
+            !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > SESSION_HISTORY_PAGE_MAX) {
+          return res.status(400).json({ error: "Invalid history page size.", code: "SESSION_PAGE_SIZE_INVALID" });
+        }
+        const cursor = req.query.cursor;
+        if (cursor !== undefined &&
+            (typeof cursor !== "string" || !SESSION_ID_PATTERN.test(cursor))) {
+          return res.status(400).json({ error: "Invalid history cursor.", code: "SESSION_CURSOR_INVALID" });
+        }
+        const page = await sessionRepository.getSessionPage({
+          userId: req.user.uid, status: status || null, pageSize,
+          cursor: cursor || null,
+        });
+        return res.json(page);
+      }
 
+      // Retain the original array shape for existing callers, but the repository
+      // limits this query to the newest 50 sessions.
+      const sessions = status === "completed"
+        ? await sessionRepository.listCompletedByUser(req.user.uid)
+        : await sessionRepository.listByUser(req.user.uid);
       return res.json(sessions);
     } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       return next(error);
     }
   });

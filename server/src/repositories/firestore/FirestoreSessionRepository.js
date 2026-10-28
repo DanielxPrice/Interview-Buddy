@@ -1,4 +1,12 @@
 const SessionRepository = require("../contracts/SessionRepository");
+const { getDateKey } = require("../../services/questionQuotaService");
+const {
+  SESSION_DAILY_CREATE_LIMIT,
+  SESSION_HISTORY_PAGE_MAX,
+  SESSION_STORAGE_TIME_ZONE,
+  SESSION_ACTIVE_LIMIT,
+  SESSION_ACTIVE_LIFETIME_HOURS,
+} = require("../../config/sessionStorageLimits");
 
 const {
   calculateSessionCompletion,
@@ -24,7 +32,14 @@ function normalizeAnswer(value) {
 }
 
 class FirestoreSessionRepository extends SessionRepository {
-  constructor({ db, admin }) {
+  constructor({
+    db, admin,
+    dailySessionLimit = SESSION_DAILY_CREATE_LIMIT,
+    timeZone = SESSION_STORAGE_TIME_ZONE,
+    now = () => new Date(),
+    activeSessionLimit = SESSION_ACTIVE_LIMIT,
+    activeLifetimeHours = SESSION_ACTIVE_LIFETIME_HOURS,
+  }) {
     super();
 
     if (!db) {
@@ -33,8 +48,23 @@ class FirestoreSessionRepository extends SessionRepository {
       );
     }
 
+    if (!Number.isSafeInteger(dailySessionLimit) || dailySessionLimit < 1) {
+      throw new Error("Daily session limit must be a positive integer.");
+    }
+    if (!Number.isSafeInteger(activeSessionLimit) || activeSessionLimit < 1 || activeSessionLimit > 10) {
+      throw new Error("Active session limit must be an integer between 1 and 10.");
+    }
+    if (!Number.isSafeInteger(activeLifetimeHours) || activeLifetimeHours < 1 || activeLifetimeHours > 720) {
+      throw new Error("Active session lifetime must be an integer between 1 and 720 hours.");
+    }
+    new Intl.DateTimeFormat("en-US", { timeZone });
     this.db = db;
     this.admin = admin;
+    this.dailySessionLimit = dailySessionLimit;
+    this.timeZone = timeZone;
+    this.now = now;
+    this.activeSessionLimit = activeSessionLimit;
+    this.activeLifetimeMs = activeLifetimeHours * 60 * 60 * 1000;
     this.sessions = db.collection("sessions");
   }
 
@@ -42,6 +72,11 @@ class FirestoreSessionRepository extends SessionRepository {
     return this.admin?.firestore?.FieldValue?.serverTimestamp
       ? this.admin.firestore.FieldValue.serverTimestamp()
       : new Date().toISOString();
+  }
+
+  getActiveSlotRef(userId, slotIndex) {
+    return this.db.collection("users").doc(userId)
+      .collection("activeSessionSlots").doc(`slot-${slotIndex}`);
   }
 
   async createSession({
@@ -56,28 +91,105 @@ class FirestoreSessionRepository extends SessionRepository {
       throw new Error("userId and mode are required.");
     }
 
-    const sessionData = {
-      userId,
-      mode,
-      jobRole: jobRole || null,
-      experienceLevel: experienceLevel || null,
-      tags,
-      questionCount,
-      assignedQuestionIds: [],
-      assignedQuestions: [],
-      assignmentStatus: "pending",
-      status: "active",
-      createdAt: this.getTimestamp(),
-      updatedAt: this.getTimestamp(),
-      completedAt: null,
-    };
+    const sessionRef = this.sessions.doc();
+    const nowMs = this.now().getTime();
+    const expiresAtMs = nowMs + this.activeLifetimeMs;
+    const dateKey = getDateKey(new Date(nowMs), this.timeZone);
+    const usageRef = this.db.collection("users").doc(userId)
+      .collection("sessionCreationUsage").doc(dateKey);
+    const slots = Array.from({ length: this.activeSessionLimit }, (_, i) =>
+      this.getActiveSlotRef(userId, i));
 
-    const sessionRef = await this.sessions.add(sessionData);
+    let sessionData;
+    await this.db.runTransaction(async (transaction) => {
+      // Every read must complete before the first transaction write.
+      const usageSnap = await transaction.get(usageRef);
+      const slotSnaps = [];
+      for (const slotRef of slots) {
+        slotSnaps.push(await transaction.get(slotRef));
+      }
 
-    return {
-      id: sessionRef.id,
-      ...sessionData,
-    };
+      const prior = usageSnap.exists ? usageSnap.data() : null;
+      const used = prior ? prior.created : 0;
+      if (!Number.isSafeInteger(used) || used < 0) {
+        throw sessionError("Session quota state is invalid.", 503);
+      }
+      if (used >= this.dailySessionLimit) {
+        const error = sessionError("Daily interview session creation limit reached.", 429);
+        error.code = "DAILY_SESSION_LIMIT_EXCEEDED";
+        throw error;
+      }
+
+      let slotIndex = slotSnaps.findIndex((snap) => !snap.exists);
+      let oldSessionRef = null;
+      let oldSession = null;
+      if (slotIndex < 0) {
+        slotIndex = slotSnaps.findIndex((snap) => {
+          const item = snap.data();
+          return Number.isSafeInteger(item?.expiresAtMs) && item.expiresAtMs <= nowMs;
+        });
+        if (slotIndex >= 0) {
+          const old = slotSnaps[slotIndex].data();
+          if (typeof old.sessionId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(old.sessionId)) {
+            throw sessionError("Active slot state is invalid.", 503);
+          }
+          oldSessionRef = this.sessions.doc(old.sessionId);
+          const oldSnap = await transaction.get(oldSessionRef);
+          oldSession = oldSnap.exists ? oldSnap.data() : null;
+          if (oldSession && (oldSession.userId !== userId || oldSession.activeSlotId !== `slot-${slotIndex}`)) {
+            throw sessionError("Active slot ownership is inconsistent.", 503);
+          }
+          if (oldSession?.status === "active") {
+            // Fetch saved answers before performing any writes. There are at most
+            // 20 answers per interview according to SEC-03 questionCount rules.
+            const responseSnapshot = await transaction.get(oldSessionRef.collection("responses"));
+            const result = { ...calculateSessionCompletion(oldSession, responseSnapshot.docs), rankEligible: false };
+            oldSession = { ...oldSession, expiredResult: result };
+          }
+        }
+      }
+      if (slotIndex < 0) {
+        const error = sessionError("Finish an active interview before starting another.", 429);
+        error.code = "ACTIVE_SESSION_LIMIT_EXCEEDED";
+        throw error;
+      }
+
+      sessionData = {
+        userId, mode, jobRole: jobRole || null,
+        experienceLevel: experienceLevel || null,
+        tags, questionCount,
+        assignedQuestionIds: [], assignedQuestions: [],
+        assignmentStatus: "pending", status: "active",
+        createdAt: this.getTimestamp(), updatedAt: this.getTimestamp(),
+        completedAt: null,
+        activeSlotId: `slot-${slotIndex}`,
+        activeExpiresAtMs: expiresAtMs,
+      };
+
+      if (oldSession?.status === "active") {
+        transaction.update(oldSessionRef, {
+          status: "completed",
+          completedAt: this.getTimestamp(), updatedAt: this.getTimestamp(),
+          completionStatus: oldSession.expiredResult.completionStatus,
+          completionReason: "lease_expired",
+          rankEligible: false,
+          result: oldSession.expiredResult,
+        });
+      }
+      transaction.set(usageRef, {
+        dateKey, timeZone: this.timeZone, created: used + 1,
+        expiresAt: new Date(nowMs + 45 * 24 * 60 * 60 * 1000),
+        updatedAt: this.getTimestamp(),
+      });
+      transaction.set(slots[slotIndex], {
+        sessionId: sessionRef.id,
+        expiresAtMs,
+        updatedAt: this.getTimestamp(),
+      });
+      transaction.create(sessionRef, sessionData);
+    });
+
+    return { id: sessionRef.id, ...sessionData };
   }
 
   /**
@@ -226,38 +338,60 @@ class FirestoreSessionRepository extends SessionRepository {
       : null;
   }
 
+  // Legacy array endpoints remain supported, but never load all user sessions.
+  // Clients requiring older records should use the explicit paginated API.
   async listByUser(userId) {
-    if (!userId) {
-      throw new Error("userId is required.");
-    }
-
-    const snapshot = await this.sessions
-      .where("userId", "==", userId)
-      .orderBy("createdAt", "desc")
-      .get();
-
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    if (!userId) throw new Error("userId is required.");
+    const snapshot = await this.sessions.where("userId", "==", userId)
+      .orderBy("createdAt", "desc").limit(SESSION_HISTORY_PAGE_MAX).get();
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   }
 
-  // SCRUM-81: Completed-session queries.
   async listCompletedByUser(userId) {
-    if (!userId) {
-      throw new Error("userId is required.");
+    if (!userId) throw new Error("userId is required.");
+    const snapshot = await this.sessions.where("userId", "==", userId)
+      .where("status", "==", "completed")
+      .orderBy("completedAt", "desc").limit(SESSION_HISTORY_PAGE_MAX).get();
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async getSessionPage({ userId, status = null, pageSize = 25, cursor = null }) {
+    if (!userId) throw new Error("userId is required.");
+    if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > SESSION_HISTORY_PAGE_MAX) {
+      const error = sessionError("Invalid history page size.", 400);
+      error.code = "SESSION_PAGE_SIZE_INVALID";
+      throw error;
+    }
+    if (status !== null && status !== "completed") {
+      const error = sessionError("Unsupported session status filter.", 400);
+      error.code = "SESSION_STATUS_INVALID";
+      throw error;
     }
 
-    const snapshot = await this.sessions
-      .where("userId", "==", userId)
-      .where("status", "==", "completed")
-      .orderBy("completedAt", "desc")
-      .get();
+    let query = this.sessions.where("userId", "==", userId);
+    if (status === "completed") query = query.where("status", "==", "completed");
+    query = query.orderBy(status === "completed" ? "completedAt" : "createdAt", "desc");
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    if (cursor) {
+      // A cursor is a session document ID, never a client-supplied offset or query.
+      const cursorSnap = await this.sessions.doc(cursor).get();
+      const cursorData = cursorSnap.exists ? cursorSnap.data() : null;
+      if (!cursorData || cursorData.userId !== userId ||
+          (status === "completed" && cursorData.status !== "completed")) {
+        const error = sessionError("Invalid history cursor.", 400);
+        error.code = "SESSION_CURSOR_INVALID";
+        throw error;
+      }
+      query = query.startAfter(cursorSnap);
+    }
+
+    // Fetch one extra snapshot solely to determine whether another page exists.
+    const snapshot = await query.limit(pageSize + 1).get();
+    const docs = snapshot.docs.slice(0, pageSize);
+    return {
+      sessions: docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+      nextCursor: snapshot.docs.length > pageSize ? docs[docs.length - 1].id : null,
+    };
   }
 
   // Legacy compatibility method.
@@ -285,6 +419,14 @@ class FirestoreSessionRepository extends SessionRepository {
         };
       }
 
+      const slotRef = typeof session.activeSlotId === "string" && /^slot-[0-9]+$/.test(session.activeSlotId)
+        ? this.db.collection("users").doc(session.userId)
+            .collection("activeSessionSlots").doc(session.activeSlotId)
+        : null;
+      const slotSnap = slotRef ? await transaction.get(slotRef) : null;
+      if (slotSnap?.exists && slotSnap.data().sessionId === sessionId) {
+        transaction.delete(slotRef);
+      }
       transaction.update(sessionRef, {
         status: "completed",
         completedAt: this.getTimestamp(),
@@ -416,10 +558,11 @@ class FirestoreSessionRepository extends SessionRepository {
 
       
       if (session.status !== "active") {
-        throw sessionError(
-          "This session has already been completed.",
-          409
-        );
+        throw sessionError("This session has already been completed.", 409);
+      }
+      if (Number.isSafeInteger(session.activeExpiresAtMs) &&
+          session.activeExpiresAtMs <= Date.now()) {
+        throw reject("This interview has expired. Start a new interview.", 409, "SESSION_EXPIRED");
       }
 
       // Enforce the assignment inside the Firestore transaction.
@@ -540,25 +683,32 @@ class FirestoreSessionRepository extends SessionRepository {
           );
         }
 
-        // Read graded responses in the
-        // same transaction as session status.
-        const responseSnapshot =
-          await transaction.get(
-            responsesQuery
-          );
+        // Verify the slot still belongs to this session before releasing it.
+        // Old sessions without a slot continue to work unchanged.
+        const slotRef = typeof session.activeSlotId === "string" &&
+          /^slot-[0-9]+$/.test(session.activeSlotId)
+          ? this.db.collection("users").doc(userId)
+              .collection("activeSessionSlots").doc(session.activeSlotId)
+          : null;
+        const slotSnap = slotRef ? await transaction.get(slotRef) : null;
+
+        // Read graded responses in the same transaction as session status.
+        const responseSnapshot = await transaction.get(responsesQuery);
 
         // SEC-03:
         // Validate against the frozen assignment
         // and use its question count.
-        const result =
-          calculateSessionCompletion(
-            session,
-            responseSnapshot.docs
-          );
+        const result = calculateSessionCompletion(session, responseSnapshot.docs);
+        const expired = Number.isSafeInteger(session.activeExpiresAtMs) &&
+          session.activeExpiresAtMs <= this.now().getTime();
+        if (expired) result.rankEligible = false;
 
         const timestamp =
           this.getTimestamp();
 
+        if (slotSnap?.exists && slotSnap.data().sessionId === sessionId) {
+          transaction.delete(slotRef);
+        }
         transaction.update(
           sessionRef,
           {
@@ -572,8 +722,8 @@ class FirestoreSessionRepository extends SessionRepository {
             completionStatus:
               result.completionStatus,
 
-            rankEligible:
-              result.rankEligible,
+            rankEligible: result.rankEligible,
+            ...(expired ? { completionReason: "lease_expired" } : {}),
           }
         );
 
@@ -583,8 +733,8 @@ class FirestoreSessionRepository extends SessionRepository {
           status: "completed",
           completionStatus:
             result.completionStatus,
-          rankEligible:
-            result.rankEligible,
+          rankEligible: result.rankEligible,
+          ...(expired ? { completionReason: "lease_expired" } : {}),
           result,
         };
       }
