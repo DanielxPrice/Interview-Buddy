@@ -113,7 +113,16 @@ function HistoryPage({ currentPage, onNavigate, onSelectMode }) {
         </div>}
         {status === "success" && olderError && <div role="alert">{olderError}</div>}
         {status === "success" && (visible.length < filtered.length || nextCursor) && <div className="ibHistoryLoadMore"><button className="secondaryButton" type="button" disabled={loadingOlder} onClick={() => visible.length < filtered.length ? setLimit((count) => count + PAGE_SIZE) : loadOlder()}>{loadingOlder ? "Loading Older Sessions..." : "Load Older Sessions"} <span aria-hidden="true">⌄</span></button></div>}
-        {status === "success" && sessions.length > 0 && <p className="ibHistoryFootnote">History loads saved session summaries in pages. Filters apply to loaded sessions; use Load Older Sessions to include earlier records. Detailed answers and AI feedback for older sessions require a backend results-retrieval endpoint. ELO is shown only when present in the saved record.</p>}
+        {status === "success" && sessions.length > 0 && (
+          <p className="ibHistoryFootnote">
+            History loads saved session summaries in pages.
+            Filters apply to loaded sessions; use Load Older Sessions
+            to include earlier records. Select View Results to
+            review available saved answers, scores, and feedback.
+            ELO is shown only when present in the saved record.
+          </p>
+        )}
+
       </section>
     </PageLayout>
   );
