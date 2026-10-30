@@ -24,14 +24,20 @@ function HistoryPage({ currentPage, onNavigate, onSelectMode }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [limit, setLimit] = useState(PAGE_SIZE);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState("");
 
   const loadSessions = useCallback(async (isActive = () => true) => {
     setStatus("loading");
     setError("");
     try {
-      const data = await historyService.getSessions();
+      const page = await historyService.getSessionPage({ pageSize: 25 });
       if (!isActive()) return;
-      setSessions(data.map(normalizeHistorySession).sort((a, b) => (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0)));
+      setSessions(page.sessions.map(normalizeHistorySession).sort((a, b) => (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0)));
+      setNextCursor(page.nextCursor);
+      setLimit(PAGE_SIZE);
+      setOlderError("");
       setStatus("success");
     } catch (err) {
       if (!isActive()) return;
@@ -45,6 +51,26 @@ function HistoryPage({ currentPage, onNavigate, onSelectMode }) {
     loadSessions(() => active);
     return () => { active = false; };
   }, [loadSessions]);
+
+  const loadOlder = useCallback(async () => {
+    if (!nextCursor || loadingOlder) return;
+    setLoadingOlder(true);
+    setOlderError("");
+    try {
+      const page = await historyService.getSessionPage({ cursor: nextCursor, pageSize: 25 });
+      setSessions((current) => {
+        const ids = new Set(current.map((session) => session.id));
+        const additions = page.sessions.map(normalizeHistorySession).filter((session) => !ids.has(session.id));
+        return [...current, ...additions].sort((a, b) => (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0));
+      });
+      setNextCursor(page.nextCursor);
+      setLimit((count) => count + PAGE_SIZE);
+    } catch (error) {
+      setOlderError(error.message || "Unable to load older sessions.");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [nextCursor, loadingOlder]);
 
   const filtered = useMemo(() => filterHistorySessions(sessions, { query: search, mode, score, from, to }), [sessions, search, mode, score, from, to]);
   const visible = filtered.slice(0, limit);
@@ -68,7 +94,7 @@ function HistoryPage({ currentPage, onNavigate, onSelectMode }) {
           <div className="ibHistoryDates"><label>From <input aria-label="From date" type="date" value={from} max={to || undefined} onChange={(event) => { setFrom(event.target.value); setLimit(PAGE_SIZE); }}/></label><label>To <input aria-label="To date" type="date" value={to} min={from || undefined} onChange={(event) => { setTo(event.target.value); setLimit(PAGE_SIZE); }}/></label></div>
         </div>
         <div className="ibHistoryStatusBar">
-          <span>{status === "success" ? `${filtered.length} completed ${filtered.length === 1 ? "session" : "sessions"}` : "Completed sessions"}</span>
+          <span>{status === "success" ? `${filtered.length} loaded completed ${filtered.length === 1 ? "session" : "sessions"}` : "Completed sessions"}</span>
           <div className="ibHistoryStatusActions">
             {hasFilters && <button type="button" onClick={resetFilters}>Clear filters</button>}
             <button type="button" onClick={() => { setLimit(PAGE_SIZE); loadSessions(); }} disabled={status === "loading"} aria-label="Refresh interview history">↻ Refresh</button>
@@ -85,8 +111,18 @@ function HistoryPage({ currentPage, onNavigate, onSelectMode }) {
             <div className="ibHistoryActions"><button className="ibHistoryViewButton" type="button" onClick={() => onNavigate(`${PAGES.SESSION_RESULTS}/${encodeURIComponent(session.id)}`)}>View Results</button>{onSelectMode && <button className="ibHistoryRepeatButton" type="button" title="Start a new interview in this mode (configure your questions again)" aria-label={`Practice ${session.mode} again`} onClick={() => onSelectMode(session.mode)}>↻</button>}</div>
           </article>)}
         </div>}
-        {status === "success" && visible.length < filtered.length && <div className="ibHistoryLoadMore"><button className="secondaryButton" type="button" onClick={() => setLimit((count) => count + PAGE_SIZE)}>Load Older Sessions <span aria-hidden="true">⌄</span></button></div>}
-        {status === "success" && sessions.length > 0 && <p className="ibHistoryFootnote">History shows your saved session summaries. Detailed answers and AI feedback for older sessions require a backend results-retrieval endpoint. ELO is shown only when present in the saved record.</p>}
+        {status === "success" && olderError && <div role="alert">{olderError}</div>}
+        {status === "success" && (visible.length < filtered.length || nextCursor) && <div className="ibHistoryLoadMore"><button className="secondaryButton" type="button" disabled={loadingOlder} onClick={() => visible.length < filtered.length ? setLimit((count) => count + PAGE_SIZE) : loadOlder()}>{loadingOlder ? "Loading Older Sessions..." : "Load Older Sessions"} <span aria-hidden="true">⌄</span></button></div>}
+        {status === "success" && sessions.length > 0 && (
+          <p className="ibHistoryFootnote">
+            History loads saved session summaries in pages.
+            Filters apply to loaded sessions; use Load Older Sessions
+            to include earlier records. Select View Results to
+            review available saved answers, scores, and feedback.
+            ELO is shown only when present in the saved record.
+          </p>
+        )}
+
       </section>
     </PageLayout>
   );

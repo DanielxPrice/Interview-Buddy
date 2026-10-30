@@ -10,6 +10,7 @@ const createAccountDeletionRouter = require("./routes/accountDeletion");
 
 const requireAuth = require("./middleware/requireAuth");
 const createRequireAccountReady = require("./middleware/requireAccountReady");
+const createApiRateLimiter = require("./middleware/createApiRateLimiter");
 const getHealthPayload = require("./health");
 
 const {
@@ -21,6 +22,7 @@ const {
 } = require("./services/questionMetadataService");
 
 const {
+  apiRateLimitRepository,
   questionRepository,
   questionCatalogRepository,
   evaluationRepository,
@@ -47,6 +49,8 @@ const requireAccountReady =
     userRepository,
   });
 
+const apiRateLimiter = createApiRateLimiter({ rateLimitRepository: apiRateLimitRepository });
+
 const app = express();
 
 app.use(
@@ -70,16 +74,18 @@ app.get("/api/health", (req, res) => {
   res.json(getHealthPayload());
 });
 
-// Authentication and account-readiness
-// checks run before protected question routes.
+// SEC-02 checks remain active for questions.
+// SEC-03 additionally injects sessionRepository.
 app.use(
   "/api/questions",
   requireAuth,
+  apiRateLimiter,
   requireAccountReady,
   createQuestionRouter({
     questionRepository,
     questionQuotaService,
     questionMetadataService,
+    sessionRepository,
   })
 );
 
@@ -87,6 +93,7 @@ app.use(
 app.use(
   "/api/evaluate",
   requireAuth,
+  apiRateLimiter,
   requireAccountReady,
   createEvaluateRouter({
     questionRepository,
@@ -95,32 +102,24 @@ app.use(
   })
 );
 
+// Mount authentication and rate limiting once for both user routers.
+// A request such as DELETE /api/users/account must not be counted twice.
+app.use("/api/users", requireAuth, apiRateLimiter, requireAccountReady);
+
 // Protected profile/settings routes.
-app.use(
-  "/api/users",
-  requireAuth,
-  requireAccountReady,
-  createUserRouter({
-    userRepository,
-  })
-);
+app.use("/api/users", createUserRouter({ userRepository }));
 
 // Secure account deletion.
-// Incomplete accounts can still delete themselves.
-app.use(
-  "/api/users",
-  requireAuth,
-  requireAccountReady,
-  createAccountDeletionRouter({
-    accountDeletionService,
-    authClient,
-  })
-);
+app.use("/api/users", createAccountDeletionRouter({
+  accountDeletionService,
+  authClient,
+}));
 
 // Protected interview session routes.
 app.use(
   "/api/sessions",
   requireAuth,
+  apiRateLimiter,
   requireAccountReady,
   createSessionRouter({
     sessionRepository,

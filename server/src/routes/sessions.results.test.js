@@ -1,3 +1,4 @@
+
 const express = require("express");
 const request = require("supertest");
 const createSessionRouter = require("./sessions");
@@ -12,7 +13,10 @@ function makeApp(
 
   if (authenticated) {
     app.use((req, _res, next) => {
-      req.user = { uid: "user-1" };
+      req.user = {
+        uid: "user-1",
+      };
+
       next();
     });
   }
@@ -44,28 +48,50 @@ describe("SCRUM-82 results endpoints", () => {
         id: "session-1",
         userId: "user-1",
         status: "active",
+        mode: "Quiz Style",
+        assignmentStatus: "assigned",
+        assignedQuestionIds: ["quiz-1"],
       }),
 
-      finalizeSessionWithResults: jest.fn().mockResolvedValue({
-        id: "session-1",
-        status: "completed",
-        result: {
-          score: 85,
-          questionsAnswered: 2,
-          totalScore: 170,
-        },
-      }),
+      finalizeSessionWithResults:
+        jest.fn().mockResolvedValue({
+          id: "session-1",
+          status: "completed",
+
+          result: {
+            score: 85,
+            questionsAnswered: 2,
+            totalScore: 170,
+
+            questionsAssigned: 2,
+            questionsUnanswered: 0,
+            answeredAverageScore: 85,
+
+            completionStatus: "completed",
+            rankEligible: true,
+          },
+        }),
 
       listResponses: jest.fn().mockResolvedValue([
         {
           questionId: "quiz-1",
           questionPrompt: "What is 2 + 2?",
-          evaluation: { score: 100, isCorrect: true, feedback: "Correct." },
+
+          evaluation: {
+            score: 100,
+            isCorrect: true,
+            feedback: "Correct.",
+          },
         },
         {
           questionId: "quiz-2",
           questionPrompt: "Pick the sorted list.",
-          evaluation: { score: 70, isCorrect: false, feedback: "Close." },
+
+          evaluation: {
+            score: 70,
+            isCorrect: false,
+            feedback: "Close.",
+          },
         },
       ]),
 
@@ -87,9 +113,14 @@ describe("SCRUM-82 results endpoints", () => {
 
   test("persists a Quiz answer under the authenticated session", async () => {
     const response = await request(
-      makeApp({ sessionRepository, questionRepository })
+      makeApp({
+        sessionRepository,
+        questionRepository,
+      })
     )
-      .post("/api/sessions/session-1/quiz-answers")
+      .post(
+        "/api/sessions/session-1/quiz-answers"
+      )
       .send({
         questionId: "quiz-1",
         answer: "A",
@@ -99,21 +130,33 @@ describe("SCRUM-82 results endpoints", () => {
     expect(response.status).toBe(200);
     expect(response.body.isCorrect).toBe(true);
 
-    expect(sessionRepository.saveQuizAnswer).toHaveBeenCalledWith({
+    expect(
+      sessionRepository.saveQuizAnswer
+    ).toHaveBeenCalledWith({
       sessionId: "session-1",
       userId: "user-1",
+
       question: expect.objectContaining({
         id: "quiz-1",
       }),
+
       answer: "A",
     });
   });
 
   test("rejects Quiz answer requests without authentication", async () => {
     const response = await request(
-      makeApp({ sessionRepository, questionRepository }, false)
+      makeApp(
+        {
+          sessionRepository,
+          questionRepository,
+        },
+        false
+      )
     )
-      .post("/api/sessions/session-1/quiz-answers")
+      .post(
+        "/api/sessions/session-1/quiz-answers"
+      )
       .send({
         questionId: "quiz-1",
         answer: "A",
@@ -121,21 +164,30 @@ describe("SCRUM-82 results endpoints", () => {
 
     expect(response.status).toBe(401);
 
-    expect(sessionRepository.saveQuizAnswer).not.toHaveBeenCalled();
+    expect(
+      sessionRepository.saveQuizAnswer
+    ).not.toHaveBeenCalled();
   });
 
   test("rejects a missing Quiz question ID before writing", async () => {
     const response = await request(
-      makeApp({ sessionRepository, questionRepository })
+      makeApp({
+        sessionRepository,
+        questionRepository,
+      })
     )
-      .post("/api/sessions/session-1/quiz-answers")
+      .post(
+        "/api/sessions/session-1/quiz-answers"
+      )
       .send({
         answer: "A",
       });
 
     expect(response.status).toBe(400);
 
-    expect(sessionRepository.saveQuizAnswer).not.toHaveBeenCalled();
+    expect(
+      sessionRepository.saveQuizAnswer
+    ).not.toHaveBeenCalled();
   });
 
   test("forwards ownership failures as 403", async () => {
@@ -145,12 +197,18 @@ describe("SCRUM-82 results endpoints", () => {
 
     error.statusCode = 403;
 
-    sessionRepository.saveQuizAnswer.mockRejectedValue(error);
+    sessionRepository.saveQuizAnswer
+      .mockRejectedValue(error);
 
     const response = await request(
-      makeApp({ sessionRepository, questionRepository })
+      makeApp({
+        sessionRepository,
+        questionRepository,
+      })
     )
-      .post("/api/sessions/session-1/quiz-answers")
+      .post(
+        "/api/sessions/session-1/quiz-answers"
+      )
       .send({
         questionId: "quiz-1",
         answer: "A",
@@ -161,16 +219,23 @@ describe("SCRUM-82 results endpoints", () => {
 
   test("completion responds with the server-calculated result", async () => {
     const response = await request(
-      makeApp({ sessionRepository, questionRepository })
+      makeApp({
+        sessionRepository,
+        questionRepository,
+      })
     )
-      .patch("/api/sessions/session-1/complete");
+      .patch(
+        "/api/sessions/session-1/complete"
+      );
 
     expect(response.status).toBe(200);
 
-    expect(response.body.result).toEqual({
+    expect(response.body.result).toMatchObject({
       score: 85,
       questionsAnswered: 2,
       totalScore: 170,
+      completionStatus: "completed",
+      rankEligible: true,
     });
 
     expect(
@@ -188,9 +253,14 @@ describe("SCRUM-82 results endpoints", () => {
     });
 
     const response = await request(
-      makeApp({ sessionRepository, questionRepository })
+      makeApp({
+        sessionRepository,
+        questionRepository,
+      })
     )
-      .patch("/api/sessions/session-1/complete");
+      .patch(
+        "/api/sessions/session-1/complete"
+      );
 
     expect(response.status).toBe(403);
 
@@ -198,15 +268,24 @@ describe("SCRUM-82 results endpoints", () => {
       sessionRepository.finalizeSessionWithResults
     ).not.toHaveBeenCalled();
   });
+
   test("completion returns ELO change and per-question breakdown", async () => {
     const response = await request(
-      makeApp({ sessionRepository, questionRepository })
+      makeApp({
+        sessionRepository,
+        questionRepository,
+      })
     )
-      .patch("/api/sessions/session-1/complete");
+      .patch(
+        "/api/sessions/session-1/complete"
+      );
 
     expect(response.status).toBe(200);
     expect(response.body.eloChange).toBe("+2");
-    expect(response.body.breakdownAvailable).toBe(true);
+    expect(response.body.breakdownAvailable).toBe(
+      true
+    );
+
     expect(response.body.breakdown).toEqual([
       {
         questionId: "quiz-1",
@@ -226,29 +305,52 @@ describe("SCRUM-82 results endpoints", () => {
   });
 
   test("completion errors include a machine-readable code", async () => {
-    const error = new Error("Saved responses contain invalid scoring data.");
+    const error = new Error(
+      "Saved responses contain invalid scoring data."
+    );
+
     error.statusCode = 409;
-    sessionRepository.finalizeSessionWithResults.mockRejectedValue(error);
+
+    sessionRepository.finalizeSessionWithResults
+      .mockRejectedValue(error);
 
     const response = await request(
-      makeApp({ sessionRepository, questionRepository })
+      makeApp({
+        sessionRepository,
+        questionRepository,
+      })
     )
-      .patch("/api/sessions/session-1/complete");
+      .patch(
+        "/api/sessions/session-1/complete"
+      );
 
     expect(response.status).toBe(409);
-    expect(response.body.code).toBe("INVALID_SCORING_DATA");
+
+    expect(response.body.code).toBe(
+      "INVALID_SCORING_DATA"
+    );
   });
 
   test("missing session on completion returns SESSION_NOT_FOUND", async () => {
-    sessionRepository.findById.mockResolvedValue(null);
+    sessionRepository.findById
+      .mockResolvedValue(null);
 
     const response = await request(
-      makeApp({ sessionRepository, questionRepository })
+      makeApp({
+        sessionRepository,
+        questionRepository,
+      })
     )
-      .patch("/api/sessions/session-1/complete");
+      .patch(
+        "/api/sessions/session-1/complete"
+      );
 
     expect(response.status).toBe(404);
-    expect(response.body.code).toBe("SESSION_NOT_FOUND");
+
+    expect(response.body.code).toBe(
+      "SESSION_NOT_FOUND"
+    );
+
     expect(
       sessionRepository.finalizeSessionWithResults
     ).not.toHaveBeenCalled();

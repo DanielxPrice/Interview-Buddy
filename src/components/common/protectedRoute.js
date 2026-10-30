@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { Navigate } from "react-router-dom";
 
+import AuthShell from "../auth/AuthShell";
 import { useAuth } from "../../context/AuthContext";
 import { emailVerificationService } from "../../services/emailVerificationService";
 import { PAGES } from "../../utils/constants";
@@ -76,50 +77,85 @@ function EmailVerificationNotice({
   }
 
   return (
-    <main
-      className="ib-page-message"
-      aria-labelledby="email-verification-heading"
+    <AuthShell
+      eyebrow="ONE MORE STEP"
+      title="Verify your email"
+      subtitle="Confirm your email address to start practicing and tracking your progress."
     >
-      <h2 id="email-verification-heading">
-        Verify your email
-      </h2>
+      <div className="ib-auth-verification-account">
+        <span className="ib-auth-verification-icon" aria-hidden="true">
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            focusable="false"
+          >
+            <rect x="3" y="5" width="18" height="14" rx="3" />
+            <path d="m4 7 8 6 8-6" />
+          </svg>
+        </span>
+        <div className="ib-auth-verification-address">
+          <p className="ib-auth-field-help">Your account email</p>
+          <p className="ib-auth-verification-email">
+            {email || "The email address on your account"}
+          </p>
+        </div>
+      </div>
 
-      <p>
-        Confirm the email address{" "}
-        {email || "on your account"} before
-        accessing Interview Buddy practice features.
-      </p>
-
-      <button
-        type="button"
-        onClick={sendEmail}
-        disabled={busy}
-      >
-        Send verification email
-      </button>
-
-      <button
-        type="button"
-        onClick={checkEmail}
-        disabled={busy}
-      >
-        I've verified my email
-      </button>
-
-      <button
-        type="button"
-        onClick={signOut}
-        disabled={busy}
-      >
-        Sign out
-      </button>
-
-      {message && (
-        <p role="status">
-          {message}
+      <div className="ib-auth-verification-actions">
+        <p className="ib-help-text">
+          Send a verification email, open the link in your inbox, then
+          return here to continue.
         </p>
-      )}
-    </main>
+
+        <button
+          className="ib-button ib-button--primary ib-auth-action"
+          type="button"
+          onClick={sendEmail}
+          disabled={busy}
+        >
+          Send verification email
+        </button>
+
+        <button
+          className="ib-button ib-button--secondary ib-auth-action"
+          type="button"
+          onClick={checkEmail}
+          disabled={busy}
+        >
+          I've verified my email
+        </button>
+
+        {message && (
+          <p className="ib-auth-message ib-auth-verification-message" role="status">
+            {message}
+          </p>
+        )}
+      </div>
+
+      <div className="ib-auth-verification-help">
+        <p className="ib-help-text">
+          <strong>Can't find the email?</strong> Check your spam or junk
+          folder, or try sending it again.
+        </p>
+        <p className="ib-auth-switch">
+          Using a different account?{" "}
+          <button
+            className="ib-auth-switch-button"
+            type="button"
+            onClick={signOut}
+            disabled={busy}
+          >
+            Sign out
+          </button>
+        </p>
+      </div>
+    </AuthShell>
   );
 }
 

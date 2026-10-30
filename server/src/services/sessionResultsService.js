@@ -6,8 +6,9 @@ const RESULTS_ERROR_CODES = Object.freeze({
   SESSION_NOT_ACTIVE: "SESSION_NOT_ACTIVE",
   INVALID_SCORING_DATA: "INVALID_SCORING_DATA",
   RESULTS_CALCULATION_FAILED: "RESULTS_CALCULATION_FAILED",
+  SESSION_ASSIGNMENT_INVALID:
+    "SESSION_ASSIGNMENT_INVALID",
 });
-
 
 class ResultsPipelineError extends Error {
   constructor(message, statusCode, code) {
@@ -18,14 +19,14 @@ class ResultsPipelineError extends Error {
   }
 }
 
-// The repository throws plain errors with a statusCode. Translate them into
-// coded errors so the client gets a machine-readable reason.
 function toPipelineError(error) {
   if (error instanceof ResultsPipelineError) {
     return error;
   }
 
-  const message = error?.message || "Unable to calculate session results.";
+  const message =
+    error?.message ||
+    "Unable to calculate session results.";
 
   switch (error?.statusCode) {
     case 400:
@@ -34,30 +35,37 @@ function toPipelineError(error) {
         400,
         RESULTS_ERROR_CODES.SESSION_ID_REQUIRED
       );
+
     case 403:
       return new ResultsPipelineError(
         message,
         403,
         RESULTS_ERROR_CODES.SESSION_FORBIDDEN
       );
+
     case 404:
       return new ResultsPipelineError(
         message,
         404,
         RESULTS_ERROR_CODES.SESSION_NOT_FOUND
       );
+
     case 409:
-      // The repository uses 409 both for "not active" and for corrupt
-      // scores; the message tells them apart.
       return new ResultsPipelineError(
         message,
         409,
-        /scoring data/i.test(message)
-          ? RESULTS_ERROR_CODES.INVALID_SCORING_DATA
-          : RESULTS_ERROR_CODES.SESSION_NOT_ACTIVE
+        error.code ===
+          RESULTS_ERROR_CODES.INVALID_SCORING_DATA ||
+        error.code ===
+          RESULTS_ERROR_CODES.SESSION_ASSIGNMENT_INVALID
+          ? error.code
+          : /scoring data/i.test(message)
+            ? RESULTS_ERROR_CODES.INVALID_SCORING_DATA
+            : RESULTS_ERROR_CODES.SESSION_NOT_ACTIVE
       );
+
     default:
-      // Unknown failure (Firestore outage, bug). Hide internal details.
+      // Do not expose internal database failures to clients.
       return new ResultsPipelineError(
         "Unable to calculate session results. Please try again.",
         500,
@@ -66,8 +74,8 @@ function toPipelineError(error) {
   }
 }
 
-// Same thresholds the client used before, now decided on the server so every
-// screen shows the same number.
+// Display estimate only.
+// This function does not update a ranking database.
 function calculateEloChange(score) {
   if (score >= 70) {
     return "+2";
@@ -80,7 +88,6 @@ function calculateEloChange(score) {
   return "-2";
 }
 
-// Firestore Timestamps, Dates and ISO strings all become an ISO string.
 function toIsoString(value) {
   if (!value) {
     return null;
@@ -101,26 +108,102 @@ function toIsoString(value) {
   return null;
 }
 
+// Convert a saved response into public feedback.
+// Never return arbitrary Firestore response fields.
 function toBreakdownItem(response) {
   const evaluation = response?.evaluation || {};
 
-  return {
+  const item = {
     questionId: response?.questionId || null,
-    questionPrompt: response?.questionPrompt || "",
-    score: Number.isFinite(evaluation.score) ? evaluation.score : null,
-    isCorrect:
-      typeof evaluation.isCorrect === "boolean" ? evaluation.isCorrect : null,
-    feedback: evaluation.feedback || evaluation.summary || "",
-  };
-}
 
-function createSessionResultsService({ sessionRepository, logger = console }) {
-  if (!sessionRepository) {
-    throw new Error("createSessionResultsService requires sessionRepository.");
+    questionPrompt:
+      response?.questionPrompt || "",
+
+    score:
+      Number.isFinite(evaluation.score)
+        ? evaluation.score
+        : null,
+
+    isCorrect:
+      typeof evaluation.isCorrect === "boolean"
+        ? evaluation.isCorrect
+        : null,
+
+    feedback:
+      evaluation.feedback ||
+      evaluation.summary ||
+      "",
+  };
+
+  if (
+    typeof response?.candidateResponse === "string"
+  ) {
+    item.userAnswer = response.candidateResponse;
   }
 
+  for (const name of [
+    "strengths",
+    "weaknesses",
+    "suggestions",
+  ]) {
+    if (Array.isArray(evaluation[name])) {
+      item[name] = evaluation[name]
+        .filter(
+          (value) => typeof value === "string"
+        )
+        .slice(0, 6);
+    }
+  }
+
+  if (
+    Array.isArray(evaluation.criterionResults)
+  ) {
+    item.criterionResults =
+      evaluation.criterionResults.map(
+        (criterion) => ({
+          name: String(
+            criterion?.name || ""
+          ),
+
+          awardedPoints:
+            Number.isFinite(
+              criterion?.awardedPoints
+            )
+              ? criterion.awardedPoints
+              : null,
+
+          maxPoints:
+            Number.isFinite(
+              criterion?.maxPoints
+            )
+              ? criterion.maxPoints
+              : null,
+
+          feedback: String(
+            criterion?.feedback || ""
+          ),
+        })
+      );
+  }
+
+  return item;
+}
+
+function createSessionResultsService({
+  sessionRepository,
+  logger = console,
+}) {
+  if (!sessionRepository) {
+    throw new Error(
+      "createSessionResultsService requires sessionRepository."
+    );
+  }
+
+  // Confirm the session exists and belongs
+  // to the Firebase-authenticated user.
   async function checkAccess(sessionId, userId) {
-    const session = await sessionRepository.findById(sessionId);
+    const session =
+      await sessionRepository.findById(sessionId);
 
     if (!session) {
       throw new ResultsPipelineError(
@@ -141,14 +224,19 @@ function createSessionResultsService({ sessionRepository, logger = console }) {
     return session;
   }
 
-  // The score is already saved once finalize succeeds, so a failure here must
-  // not fail the whole request. We log it and tell the client the breakdown
-  // is unavailable rather than hiding a valid score.
+  // Loading feedback is best-effort.
+  // A feedback read failure should not erase the saved score.
   async function buildBreakdown(sessionId) {
     try {
-      const responses = await sessionRepository.listResponses(sessionId);
+      const responses =
+        await sessionRepository.listResponses(
+          sessionId
+        );
+
       return {
-        breakdown: responses.map(toBreakdownItem),
+        breakdown:
+          responses.map(toBreakdownItem),
+
         breakdownAvailable: true,
       };
     } catch (error) {
@@ -156,25 +244,39 @@ function createSessionResultsService({ sessionRepository, logger = console }) {
         `[results] breakdown failed for session ${sessionId}:`,
         error
       );
-      return { breakdown: [], breakdownAvailable: false };
+
+      return {
+        breakdown: [],
+        breakdownAvailable: false,
+      };
     }
   }
 
-  // Same idea: the completion time is nice to have, not worth failing over.
   async function loadCompletedAt(sessionId) {
     try {
-      const saved = await sessionRepository.findById(sessionId);
-      return toIsoString(saved?.completedAt);
+      const saved =
+        await sessionRepository.findById(
+          sessionId
+        );
+
+      return toIsoString(
+        saved?.completedAt
+      );
     } catch (error) {
       logger.error(
         `[results] completedAt lookup failed for session ${sessionId}:`,
         error
       );
+
       return null;
     }
   }
 
-  async function completeSession({ sessionId, userId }) {
+  // Finalization writes the authoritative result once.
+  async function completeSession({
+    sessionId,
+    userId,
+  }) {
     if (!sessionId || !userId) {
       throw new ResultsPipelineError(
         "Session ID and authenticated user are required.",
@@ -184,10 +286,16 @@ function createSessionResultsService({ sessionRepository, logger = console }) {
     }
 
     try {
-      await checkAccess(sessionId, userId);
+      await checkAccess(
+        sessionId,
+        userId
+      );
 
       const completedSession =
-        await sessionRepository.finalizeSessionWithResults(sessionId, userId);
+        await sessionRepository.finalizeSessionWithResults(
+          sessionId,
+          userId
+        );
 
       if (!completedSession) {
         throw new ResultsPipelineError(
@@ -197,34 +305,52 @@ function createSessionResultsService({ sessionRepository, logger = console }) {
         );
       }
 
-      const result = completedSession.result || {
-        score: 0,
-        questionsAnswered: 0,
-        totalScore: 0,
-      };
+      const result =
+        completedSession.result || {
+          score: 0,
+          questionsAnswered: 0,
+          totalScore: 0,
+        };
 
-      const [{ breakdown, breakdownAvailable }, reloadedCompletedAt] =
-        await Promise.all([
-          buildBreakdown(sessionId),
-          loadCompletedAt(sessionId),
-        ]);
+      const [
+        {
+          breakdown,
+          breakdownAvailable,
+        },
+        reloadedCompletedAt,
+      ] = await Promise.all([
+        buildBreakdown(sessionId),
+        loadCompletedAt(sessionId),
+      ]);
 
       return {
         ...completedSession,
         result,
+
         completedAt:
           reloadedCompletedAt ||
-          toIsoString(completedSession.completedAt),
-        eloChange: calculateEloChange(result.score),
+          toIsoString(
+            completedSession.completedAt
+          ),
+
+        eloChange:
+          result.rankEligible === true &&
+          result.completionStatus === "completed"
+            ? calculateEloChange(
+                result.score
+              )
+            : null,
+
         breakdown,
         breakdownAvailable,
       };
     } catch (error) {
-      const pipelineError = toPipelineError(error);
+      const pipelineError =
+        toPipelineError(error);
 
-      // Unexpected errors are logged with the session ID so they can be
-      // traced; expected ones (404, 403, 409) are normal user outcomes.
-      if (pipelineError.statusCode >= 500) {
+      if (
+        pipelineError.statusCode >= 500
+      ) {
         logger.error(
           `[results] completion failed for session ${sessionId}:`,
           error
@@ -235,7 +361,115 @@ function createSessionResultsService({ sessionRepository, logger = console }) {
     }
   }
 
-  return { completeSession };
+  // SEC-03 M06:
+  // Read the completed result without changing Firestore.
+  async function getCompletedSessionResults({
+    sessionId,
+    userId,
+  }) {
+    if (!sessionId || !userId) {
+      throw new ResultsPipelineError(
+        "Session ID and authenticated user are required.",
+        400,
+        RESULTS_ERROR_CODES.SESSION_ID_REQUIRED
+      );
+    }
+
+    try {
+      // Authorization happens BEFORE loading answers.
+      const session =
+        await checkAccess(
+          sessionId,
+          userId
+        );
+
+      if (session.status !== "completed") {
+        throw new ResultsPipelineError(
+          "This session has not been completed.",
+          409,
+          RESULTS_ERROR_CODES.SESSION_NOT_ACTIVE
+        );
+      }
+
+      const {
+        breakdown,
+        breakdownAvailable,
+      } = await buildBreakdown(
+        sessionId
+      );
+
+      const result =
+        session.result || null;
+
+      const isRanked =
+        result?.rankEligible === true &&
+        result?.completionStatus === "completed" &&
+        Number.isFinite(result?.score);
+
+      return {
+        id: session.id || sessionId,
+        status: session.status,
+        mode: session.mode,
+
+        jobRole:
+          session.jobRole || "",
+
+        experienceLevel:
+          session.experienceLevel || "",
+
+        tags:
+          Array.isArray(session.tags)
+            ? session.tags
+            : [],
+
+        completedAt:
+          toIsoString(
+            session.completedAt
+          ),
+
+        result,
+
+        completionStatus:
+          result?.completionStatus ??
+          session.completionStatus ??
+          null,
+
+        rankEligible:
+          result?.rankEligible ??
+          session.rankEligible ??
+          null,
+
+        eloChange:
+          isRanked
+            ? calculateEloChange(
+                result.score
+              )
+            : null,
+
+        breakdown,
+        breakdownAvailable,
+      };
+    } catch (error) {
+      const pipelineError =
+        toPipelineError(error);
+
+      if (
+        pipelineError.statusCode >= 500
+      ) {
+        logger.error(
+          `[results] saved result retrieval failed for session ${sessionId}:`,
+          error
+        );
+      }
+
+      throw pipelineError;
+    }
+  }
+
+  return {
+    completeSession,
+    getCompletedSessionResults,
+  };
 }
 
 module.exports = {

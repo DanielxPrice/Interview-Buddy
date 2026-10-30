@@ -542,6 +542,16 @@ describe("historyService", () => {
     );
   });
 
+  test("getSessionPage retrieves bounded completed history with an opaque cursor", async () => {
+    const page = { sessions: [completedSession], nextCursor: "saved-1" };
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => page });
+    await expect(historyService.getSessionPage({ cursor: "prior-id", pageSize: 25 })).resolves.toEqual(page);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/sessions?status=completed&pageSize=25&cursor=prior-id",
+      { headers: { Authorization: "Bearer test-id-token" } }
+    );
+  });
+
   test("getSessionById retrieves an authorized saved session", async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => completedSession });
     expect(await historyService.getSessionById("saved-1")).toEqual(completedSession);
@@ -571,53 +581,72 @@ describe("historyService", () => {
 });
 
 describe("leaderboardService", () => {
-  test("global leaderboard is sorted by rank", async () => {
-    const leaderboard =
-      await leaderboardService.getGlobalLeaderboard();
-
-    const ranks = leaderboard.map((user) => user.rank);
-    const sortedRanks = [...ranks].sort((a, b) => a - b);
-
-    expect(ranks).toEqual(sortedRanks);
+  beforeEach(() => {
+    global.fetch = jest.fn();
   });
 
-  test("friends leaderboard is sorted by rank", async () => {
-    const leaderboard =
-      await leaderboardService.getFriendsLeaderboard();
-
-    const ranks = leaderboard.map((user) => user.rank);
-    const sortedRanks = [...ranks].sort((a, b) => a - b);
-
-    expect(ranks).toEqual(sortedRanks);
+  test("GET global leaderboard uses the Firebase token and sorts database records", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ rankings: [
+        { uid: "two", username: "Second", rank: 2, elo: 1200 },
+        { uid: "one", username: "First", rank: 1, elo: 1400 },
+      ] }),
+    });
+    const result = await leaderboardService.getGlobalLeaderboard();
+    expect(result.map((r) => r.username)).toEqual(["First", "Second"]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/leaderboard/global",
+      { headers: { Authorization: "Bearer test-id-token" } }
+    );
   });
 
-  test("getUserRanking retrieves an existing user", async () => {
-    const leaderboard =
-      await leaderboardService.getGlobalLeaderboard();
-
-    const targetUser = leaderboard[0];
-
-    const result =
-      await leaderboardService.getUserRanking(
-        targetUser.id
-      );
-
-    expect(result).toEqual(targetUser);
+  test("GET friends leaderboard accepts a real empty response", async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ rankings: [] }) });
+    expect(await leaderboardService.getFriendsLeaderboard()).toEqual([]);
+    expect(global.fetch.mock.calls[0][0]).toContain("/leaderboard/friends");
   });
 
-  test("getUserRanking returns null for an unknown user", async () => {
-    const result =
-      await leaderboardService.getUserRanking(
-        "does-not-exist"
-      );
-
-    expect(result).toBeNull();
+  test("GET personal ranking uses the authenticated user's endpoint", async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ranking: null }) });
+    expect(await leaderboardService.getUserRanking()).toBeNull();
+    expect(global.fetch.mock.calls[0][0]).toContain("/leaderboard/me");
   });
 
-  test("getUserRanking requires a user ID", async () => {
-    await expect(
-      leaderboardService.getUserRanking()
-    ).rejects.toThrow("User ID is required.");
+  test("unimplemented endpoint signals unavailable instead of inventing data", async () => {
+    global.fetch.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) });
+    await expect(leaderboardService.getGlobalLeaderboard()).rejects.toMatchObject({ code: "feature-unavailable" });
+    await expect(leaderboardService.getFriendsLeaderboard()).rejects.toMatchObject({ code: "feature-unavailable" });
+    await expect(leaderboardService.getUserRanking()).rejects.toMatchObject({ code: "feature-unavailable" });
+  });
+
+  test("malformed successful data is rejected", async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: "oops" }) });
+    await expect(leaderboardService.getGlobalLeaderboard()).rejects.toThrow("invalid leaderboard response");
+  });
+
+  test("missing Elo and rank stay unknown rather than appearing as zero", async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ rankings: [{ uid: "a", username: "Alex", rank: null, elo: null }] }) });
+    expect(await leaderboardService.getGlobalLeaderboard()).toEqual([{ uid: "a", username: "Alex", rank: null, elo: null }]);
+  });
+
+  test("friend requests use authenticated POST and no local-only mutation", async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 202, json: async () => ({ status: "pending" }) });
+    await leaderboardService.sendFriendRequest("Alex");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/friends/requests",
+      { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer test-id-token" }, body: JSON.stringify({ username: "Alex" }) }
+    );
+  });
+
+  test("removing a friend uses the database API and a stable ID", async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 204, json: async () => null });
+    await leaderboardService.removeFriend("u/1");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:5001/api/friends/u%2F1",
+      { method: "DELETE", headers: { Authorization: "Bearer test-id-token" } }
+    );
   });
 });
 

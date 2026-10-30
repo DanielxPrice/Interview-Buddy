@@ -210,14 +210,17 @@ describe("aggregateSessionScore - invalid data is rejected", () => {
     );
   });
 
-  test("reports which response was invalid", () => {
+    test("reports which response was invalid", () => {
+    let caught;
+
     try {
       aggregateSessionScore([answered(90), answered(90), answered(500)]);
-      throw new Error("expected a throw");
     } catch (error) {
-      expect(error).toBeInstanceOf(InvalidScoringDataError);
-      expect(error.index).toBe(2);
+      caught = error;
     }
+
+    expect(caught).toBeInstanceOf(InvalidScoringDataError);
+    expect(caught.index).toBe(2);
   });
 
   test("rejects input that is not an array", () => {

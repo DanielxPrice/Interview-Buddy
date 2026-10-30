@@ -1,0 +1,354 @@
+/* Leaderboard and friends page — scoped to avoid affecting other screens. */
+.ibRankingPage {
+  --ib-ranking-purple: #5147d9;
+  --ib-ranking-purple-hover: #4036c1;
+  --ib-ranking-purple-soft: #eeedff;
+  --ib-ranking-purple-text: #4840ca;
+  display: grid;
+  /* Let rankings and summary cards share the whole available page width. */
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr);
+  gap: clamp(16px, 2vw, 28px);
+  align-items: stretch;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  align-self: stretch;
+  /* Fill the available screen height without forcing short screens to squash cards. */
+  min-height: max(520px, calc(100dvh - 176px));
+}
+
+.ibRankingPage .ibRankingMain,
+.ibRankingPage .ibRankingAside { min-width: 0; }
+.ibRankingMain { display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+.ibRankingAside { display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+/* Global leaderboard occupies the remaining space after the tabs and footnote. */
+.ibRankingMain > .ibRankingPanel {
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+/* On the Friends tab, the search card stays natural-sized and the rankings grow. */
+.ibRankingFriendsContent { flex: 1 1 auto; min-height: 0; }
+.ibRankingFriendsContent > .ibRankingPanel {
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+/* Grow the friends overview rather than leaving blank space underneath it. */
+.ibRankingAside > .ibRankingSideCard { flex: 1 1 auto; }
+
+.ibRankingToolbar {
+  min-height: 44px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ibRankingTabs {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--ib-surface-subtle);
+  gap: 4px;
+}
+.ibRankingTab {
+  min-width: 94px;
+  min-height: 34px;
+  padding: 7px 16px;
+  background: transparent;
+  color: var(--ib-text-secondary);
+  border-radius: 7px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: color 150ms ease, background 150ms ease;
+}
+.ibRankingTab:hover { color: var(--ib-text); }
+.ibRankingTab.is-active {
+  background: var(--ib-surface);
+  color: var(--ib-ranking-purple-text);
+  box-shadow: var(--ib-shadow-sm);
+}
+.ibRankingToolbarNote {
+  color: var(--ib-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ibRankingPanel,
+.ibRankingAddCard,
+.ibRankingSideCard {
+  border: 1px solid var(--ib-border);
+  border-radius: 12px;
+  background: var(--ib-surface);
+  box-shadow: var(--ib-shadow-card);
+  overflow: hidden;
+}
+.ibRankingTableScroll { width: 100%; overflow-x: auto; }
+.ibRankingTable {
+  width: 100%;
+  min-width: 430px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+.ibRankingTable thead { background: var(--ib-surface-muted); }
+.ibRankingTable th {
+  padding: 16px 20px;
+  color: var(--ib-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.075em;
+  font-size: 0.68rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.ibRankingTable th:first-child,
+.ibRankingTable td:first-child { width: 86px; padding-left: 24px; }
+.ibRankingTable th:nth-child(3),
+.ibRankingTable td:nth-child(3) { text-align: right; padding-right: 26px; }
+.ibRankingTable th:last-child.ibRankingActionHeading,
+.ibRankingTable td:last-child.ibRankingActionCell { text-align: right; padding-right: 22px; }
+.ibRankingTable td {
+  padding: 15px 20px;
+  color: var(--ib-text);
+  border-top: 1px solid var(--ib-border);
+  vertical-align: middle;
+}
+.ibRankingTable tbody tr { transition: background 130ms ease; }
+.ibRankingTable tbody tr:hover { background: var(--ib-surface-muted); }
+.ibRankingTable tbody tr.ibRankingTableRow--current { background: var(--ib-ranking-purple-soft); }
+.ibRankingTable tbody tr.ibRankingTableRow--current:hover { background: var(--ib-ranking-purple-soft); }
+.ibRankingRank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 6px;
+  border-radius: 10px;
+  color: var(--ib-text-secondary);
+  background: var(--ib-surface-subtle);
+  font-weight: 750;
+  font-size: 0.8rem;
+}
+.ibRankingRank--1 { background: #fff1c9; color: #a16c11; }
+.ibRankingRank--2 { background: #e7ebf1; color: #536274; }
+.ibRankingRank--3 { background: #fae6d7; color: #9f6544; }
+.ibRankingUser { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.ibRankingUsername { color: var(--ib-text); font-weight: 650; overflow-wrap: anywhere; }
+.ibRankingScore { font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ibRankingYou {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--ib-ranking-purple);
+  color: #fff;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.ibRankingLoadMore {
+  display: block;
+  width: 100%;
+  min-height: 50px;
+  padding: 12px;
+  background: var(--ib-surface);
+  color: var(--ib-ranking-purple-text);
+  border-top: 1px solid var(--ib-border);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.ibRankingLoadMore:hover { background: var(--ib-surface-muted); }
+.ibRankingEmpty { padding: 42px 20px; text-align: center; }
+.ibRankingEmpty h2 { color: var(--ib-text); font-size: 1rem; margin-bottom: 8px; }
+.ibRankingEmpty p { color: var(--ib-text-secondary); line-height: 1.6; font-size: 0.875rem; }
+/* Center no-data and unavailable messages in the available ranking card space. */
+.ibRankingPanel > .ibRankingEmpty {
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.ibRankingFootnote { font-size: 0.75rem; line-height: 1.6; color: var(--ib-text-muted); }
+
+/* Purple ranking highlight follows the reference without changing the global brand. */
+.ibRankingStandingCard {
+  position: relative;
+  overflow: hidden;
+  padding: 24px 22px 22px;
+  border-radius: 12px;
+  background: #4c45da;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(68, 59, 196, 0.2);
+}
+.ibRankingStandingBadge {
+  position: absolute;
+  top: 12px;
+  right: 11px;
+  z-index: 0;
+  width: min(40%, 126px);
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.ibRankingStandingBadge img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 7px rgba(16, 13, 94, 0.22));
+}
+.ibRankingStandingBadgePlaceholder {
+  width: 85%;
+  height: 85%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 2px dashed rgba(255,255,255,0.23);
+  border-radius: 50%;
+  color: rgba(255,255,255,0.30);
+  font-size: 2.2rem;
+  font-weight: 600;
+}
+.ibRankingEyebrow {
+  position: relative;
+  z-index: 1;
+  color: rgba(255,255,255,0.77);
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-size: 0.71rem;
+  margin-bottom: 15px;
+}
+.ibRankingStandingValue { position: relative; z-index: 1; display: flex; align-items: baseline; gap: 10px; margin-bottom: 28px; }
+.ibRankingStandingValue strong { font-size: 2.5rem; line-height: 1; letter-spacing: -0.04em; }
+.ibRankingStandingValue span { color: rgba(255,255,255,0.78); font-size: 0.78rem; }
+.ibRankingStandingStats { position: relative; display: flex; flex-direction: column; gap: 10px; }
+.ibRankingStandingStats > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 43px;
+  padding: 11px 12px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.12);
+  font-size: 0.82rem;
+}
+.ibRankingStandingStats span { color: rgba(255,255,255,0.82); }
+.ibRankingStandingStats strong { color: #fff; font-variant-numeric: tabular-nums; }
+.ibRankingStandingHint { position: relative; margin-top: 14px; color: rgba(255,255,255,0.8); line-height: 1.5; font-size: 0.75rem; }
+
+.ibRankingSideCard { padding: 22px 20px; }
+.ibRankingSideTitle { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 16px; }
+.ibRankingSideTitle h2 { font-size: 0.72rem; letter-spacing: 0.06em; font-weight: 750; color: var(--ib-text-secondary); text-transform: uppercase; }
+.ibRankingCount { border-radius: 999px; background: var(--ib-ranking-purple-soft); color: var(--ib-ranking-purple-text); padding: 3px 8px; font-size: 0.75rem; font-weight: 750; }
+.ibRankingFriendPreview { display: flex; flex-direction: column; }
+.ibRankingPreviewRow { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 11px 0; }
+.ibRankingPreviewRow + .ibRankingPreviewRow { border-top: 1px solid var(--ib-border); }
+.ibRankingPreviewRow > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ibRankingPreviewRow strong { font-size: 0.82rem; color: var(--ib-text); overflow-wrap: anywhere; }
+.ibRankingPreviewRow > div span { font-size: 0.74rem; color: var(--ib-text-muted); }
+.ibRankingPreviewScore { color: var(--ib-text-secondary); font-size: 0.75rem; white-space: nowrap; font-weight: 650; }
+.ibRankingNoFriends { font-size: 0.82rem; line-height: 1.6; color: var(--ib-text-secondary); }
+.ibRankingViewFriends { margin-top: 14px; width: 100%; min-height: 37px; border-radius: 7px; background: var(--ib-ranking-purple-soft); color: var(--ib-ranking-purple-text); font-size: 0.8rem; font-weight: 750; }
+.ibRankingViewFriends:hover { filter: brightness(0.97); }
+
+/* Friends tab uses the same table, cards and spacing as the global tab. */
+.ibRankingFriendsContent { display: flex; flex-direction: column; gap: 20px; }
+.ibRankingAddCard { padding: 24px; }
+.ibRankingAddHeading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 19px; }
+.ibRankingAddHeading h2, .ibRankingPanelTitle h2 { color: var(--ib-text); font-size: 1.06rem; margin-bottom: 5px; }
+.ibRankingAddHeading p { color: var(--ib-text-secondary); font-size: 0.83rem; line-height: 1.5; }
+.ibRankingAddIcon { display: inline-flex; flex: 0 0 32px; width: 32px; height: 32px; align-items: center; justify-content: center; color: var(--ib-ranking-purple-text); background: var(--ib-ranking-purple-soft); border-radius: 9px; font-size: 1.35rem; }
+.ibRankingAddForm { display: flex; gap: 10px; }
+.ibRankingAddForm input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 13px;
+  border: 1px solid var(--ib-input-border);
+  border-radius: 7px;
+  background: var(--ib-surface);
+  color: var(--ib-text);
+  font-size: 0.875rem;
+}
+.ibRankingAddForm input::placeholder { color: var(--ib-text-muted); }
+.ibRankingAddForm button {
+  flex: 0 0 auto;
+  padding: 10px 17px;
+  border-radius: 7px;
+  background: var(--ib-ranking-purple);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.ibRankingAddForm button:hover:not(:disabled) { background: var(--ib-ranking-purple-hover); }
+.ibRankingAddForm button:disabled { opacity: 0.48; cursor: not-allowed; }
+.ibRankingFormStatus { margin-top: 12px; font-size: 0.8rem; line-height: 1.5; }
+.ibRankingFormStatus--success { color: var(--ib-success); }
+.ibRankingFormStatus--error { color: var(--ib-danger); }
+.ibRankingPanelTitle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 19px 24px; }
+.ibRankingPanelTitle h2 { margin: 0; }
+.ibRankingPanelTitle span { color: var(--ib-text-secondary); font-size: 0.76rem; }
+.ibRankingRemoveButton { padding: 7px 12px; border-radius: 6px; background: var(--ib-danger-soft); color: var(--ib-danger); font-size: 0.78rem; font-weight: 700; }
+.ibRankingRemoveButton:hover { background: var(--ib-danger-border); }
+.ibRankingVisuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; border: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.ibRankingPage button:focus-visible, .ibRankingAddForm input:focus-visible { outline: 2px solid var(--ib-ranking-purple); outline-offset: 2px; }
+
+[data-theme="dark"] .ibRankingPage {
+  --ib-ranking-purple: #7872f3;
+  --ib-ranking-purple-hover: #645ddd;
+  --ib-ranking-purple-soft: #292848;
+  --ib-ranking-purple-text: #b7b2ff;
+}
+[data-theme="dark"] .ibRankingStandingCard { background: #423cb8; box-shadow: 0 8px 22px rgba(0,0,0,0.28); }
+[data-theme="dark"] .ibRankingRank--1 { background: #42371c; color: #f9d37c; }
+[data-theme="dark"] .ibRankingRank--2 { background: #354157; color: #ced9e9; }
+[data-theme="dark"] .ibRankingRank--3 { background: #442f25; color: #e8b18d; }
+[data-theme="dark"] .ibRankingYou { color: #15122b; }
+[data-theme="dark"] .ibRankingAddForm button { background: #625be0; }
+[data-theme="dark"] .ibRankingAddForm button:hover:not(:disabled) { background: #7770f1; }
+
+@media (max-width: 1120px) {
+  .ibRankingPage { grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; }
+}
+@media (max-width: 900px) {
+  /* Stack the summary below the table and avoid viewport-height forcing. */
+  .ibRankingPage { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .ibRankingAside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .ibRankingAside > .ibRankingSideCard { flex: initial; }
+}
+@media (max-width: 600px) {
+  .ibRankingAside { grid-template-columns: 1fr; }
+  .ibRankingTable th, .ibRankingTable td { padding-left: 13px; padding-right: 13px; }
+  .ibRankingTable th:first-child, .ibRankingTable td:first-child { padding-left: 15px; width: 65px; }
+  .ibRankingTable th:nth-child(3), .ibRankingTable td:nth-child(3) { padding-right: 15px; }
+  .ibRankingAddCard { padding: 18px; }
+  .ibRankingAddForm { flex-wrap: wrap; }
+  .ibRankingAddForm button { flex: 1 0 100%; }
+  .ibRankingToolbarNote { font-size: 0.72rem; }
+}
+
+/* Real-service loading, empty and disabled states. */
+.ibRankingToolbarActions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.ibRankingRefresh {
+  padding: 8px 12px;
+  border: 1px solid var(--ib-border);
+  border-radius: 7px;
+  background: var(--ib-surface);
+  color: var(--ib-ranking-purple-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.ibRankingRefresh:hover:not(:disabled) { background: var(--ib-surface-muted); }
+.ibRankingRefresh:disabled,
+.ibRankingRemoveButton:disabled { opacity: 0.5; cursor: not-allowed; }
+.ibRankingFormHint { margin-top: 12px; color: var(--ib-text-secondary); font-size: 0.82rem; line-height: 1.5; }
+.ibRankingAddForm input:disabled { opacity: 0.65; cursor: not-allowed; }
