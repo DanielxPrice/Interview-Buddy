@@ -1,4 +1,5 @@
 const SessionRepository = require("../contracts/SessionRepository");
+const { nextRanking } = require("../../services/rankingScore");
 const { getDateKey } = require("../../services/questionQuotaService");
 const {
   SESSION_DAILY_CREATE_LIMIT,
@@ -703,11 +704,31 @@ class FirestoreSessionRepository extends SessionRepository {
           session.activeExpiresAtMs <= this.now().getTime();
         if (expired) result.rankEligible = false;
 
+        // SCRUM-84: Include the user's ranking in this SAME transaction.
+        // An already-completed session returned above cannot award points again.
+        // Partial, abandoned, and expired sessions never affect ranking.
+        let userRef = null;
+        let updatedRanking = null;
+        if (result.rankEligible === true && result.completionStatus === "completed") {
+          userRef = this.db.collection("users").doc(userId);
+          const userSnapshot = await transaction.get(userRef);
+          if (!userSnapshot.exists) {
+            throw sessionError("User profile required for ranked completion.", 503);
+          }
+          updatedRanking = nextRanking(userSnapshot.data()?.ranking, result.score);
+        }
+
         const timestamp =
           this.getTimestamp();
 
         if (slotSnap?.exists && slotSnap.data().sessionId === sessionId) {
           transaction.delete(slotRef);
+        }
+        if (updatedRanking) {
+          transaction.update(userRef, {
+            ranking: { ...updatedRanking, updatedAt: timestamp },
+            updatedAt: timestamp,
+          });
         }
         transaction.update(
           sessionRef,

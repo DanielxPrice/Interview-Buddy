@@ -21,6 +21,7 @@ function fixture({
   };
 
   const responsesRef = {};
+  const userRef = { id: "owner" };
 
   const sessionRef = {
     id: "session-1",
@@ -29,6 +30,9 @@ function fixture({
 
   const tx = {
     get: jest.fn(async (ref) => {
+      if (ref === userRef) {
+        return { exists: true, data: () => ({ uid: "owner" }) };
+      }
       if (ref === sessionRef) {
         return {
           exists: true,
@@ -50,8 +54,8 @@ function fixture({
   };
 
   const db = {
-    collection: () => ({
-      doc: () => sessionRef,
+    collection: (name) => ({
+      doc: () => name === "users" ? userRef : sessionRef,
     }),
 
     runTransaction: jest.fn(
@@ -68,6 +72,7 @@ function fixture({
     session,
     tx,
     sessionRef,
+    userRef,
   };
 }
 

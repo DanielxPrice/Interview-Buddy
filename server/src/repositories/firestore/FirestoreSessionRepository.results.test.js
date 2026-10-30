@@ -12,6 +12,8 @@ function fixture(mode = "Quiz Style") {
     doc: jest.fn(() => responseRef),
   };
 
+  const userRef = { id: "user-1" };
+
   const sessionRef = {
     id: "session-1",
     collection: jest.fn(
@@ -33,7 +35,7 @@ function fixture(mode = "Quiz Style") {
 
   const db = {
     collection: jest.fn(
-      () => collection
+      (name) => name === "users" ? { doc: () => userRef } : collection
     ),
 
     runTransaction: jest.fn(
@@ -72,6 +74,10 @@ function fixture(mode = "Quiz Style") {
   };
 
   tx.get.mockImplementation(async (ref) => {
+    if (ref === userRef) {
+      return { exists: true, data: () => ({ uid: "user-1" }) };
+    }
+
     if (ref === sessionRef) {
       return sessionSnapshot;
     }
@@ -98,6 +104,7 @@ function fixture(mode = "Quiz Style") {
     responses,
     sessionRef,
     responseRef,
+    userRef,
     db,
   };
 }

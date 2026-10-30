@@ -1,3 +1,4 @@
+
 const FirestoreUserRepository = require(
   "./FirestoreUserRepository"
 );
@@ -8,6 +9,7 @@ describe("FirestoreUserRepository", () => {
   let repository;
 
   let setMock;
+  let createMock;
   let getMock;
   let updateMock;
   let docMock;
@@ -19,11 +21,13 @@ describe("FirestoreUserRepository", () => {
     jest.clearAllMocks();
 
     setMock = jest.fn();
+    createMock = jest.fn();
     getMock = jest.fn();
     updateMock = jest.fn();
 
     docMock = jest.fn(() => ({
       set: setMock,
+      create: createMock,
       get: getMock,
       update: updateMock,
     }));
@@ -68,34 +72,31 @@ describe("FirestoreUserRepository", () => {
         }),
       });
 
-      setMock.mockResolvedValue();
+      createMock.mockResolvedValue();
 
-      const result =
-        await repository.createProfile({
-          uid: " user-123 ",
-          username: " TestUser ",
-          email: " test@example.com ",
-        });
+      const result = await repository.createProfile({
+        uid: " user-123 ",
+        username: " TestUser ",
+        email: " test@example.com ",
+      });
 
-      expect(
-        collectionMock
-      ).toHaveBeenCalledWith("users");
+      expect(collectionMock).toHaveBeenCalledWith("users");
+      expect(docMock).toHaveBeenCalledWith("user-123");
 
-      expect(docMock).toHaveBeenCalledWith(
-        "user-123"
-      );
-
-      expect(setMock).toHaveBeenCalledWith({
+      expect(createMock).toHaveBeenCalledWith({
         uid: "user-123",
         username: "TestUser",
         usernameLower: "testuser",
         email: "test@example.com",
         role: "user",
-
+        ranking: {
+          points: 0,
+          rankedSessions: 0,
+          averageScore: 0,
+        },
         settings: {
           theme: "light",
         },
-
         createdAt: "mock-server-timestamp",
         updatedAt: "mock-server-timestamp",
       });
@@ -106,14 +107,62 @@ describe("FirestoreUserRepository", () => {
         usernameLower: "testuser",
         email: "test@example.com",
         role: "user",
-
+        ranking: {
+          points: 0,
+          rankedSessions: 0,
+          averageScore: 0,
+        },
         settings: {
           theme: "light",
         },
-
         createdAt: "mock-server-timestamp",
         updatedAt: "mock-server-timestamp",
       });
+    });
+
+    test("repeated profile creation preserves ranking and role", async () => {
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: true,
+          docs: [],
+        }),
+      });
+
+      createMock.mockRejectedValue(
+        new Error("Already exists")
+      );
+
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+          username: "TestUser",
+          email: "test@example.com",
+          role: "admin",
+          ranking: {
+            points: 190,
+            rankedSessions: 2,
+            averageScore: 95,
+          },
+        }),
+      });
+
+      const result = await repository.createProfile({
+        uid: "user-123",
+        username: "TestUser",
+        email: "test@example.com",
+      });
+
+      expect(result.ranking).toEqual({
+        points: 190,
+        rankedSessions: 2,
+        averageScore: 95,
+      });
+
+      expect(result.role).toBe("admin");
+      expect(createMock).toHaveBeenCalledTimes(1);
+      expect(setMock).not.toHaveBeenCalled();
     });
 
     test("rejects a username owned by another user", async () => {
@@ -141,11 +190,10 @@ describe("FirestoreUserRepository", () => {
         })
       ).rejects.toMatchObject({
         code: "username-already-exists",
-        message:
-          "That username is already in use.",
+        message: "That username is already in use.",
       });
 
-      expect(setMock).not.toHaveBeenCalled();
+      expect(createMock).not.toHaveBeenCalled();
     });
 
     test("rejects missing required fields", async () => {
@@ -159,36 +207,34 @@ describe("FirestoreUserRepository", () => {
         "uid, username, and email are required to create a user profile."
       );
 
-      expect(setMock).not.toHaveBeenCalled();
+      expect(createMock).not.toHaveBeenCalled();
     });
   });
 
   describe("findByUsername", () => {
     test("performs a lowercase username lookup", async () => {
-      const queryGet =
-        jest.fn().mockResolvedValue({
-          empty: false,
-          docs: [
-            {
-              id: "user-123",
-              data: () => ({
-                uid: "user-123",
-                username: "TestUser",
-                usernameLower: "testuser",
-                email: "test@example.com",
-              }),
-            },
-          ],
-        });
+      const queryGet = jest.fn().mockResolvedValue({
+        empty: false,
+        docs: [
+          {
+            id: "user-123",
+            data: () => ({
+              uid: "user-123",
+              username: "TestUser",
+              usernameLower: "testuser",
+              email: "test@example.com",
+            }),
+          },
+        ],
+      });
 
       limitMock.mockReturnValue({
         get: queryGet,
       });
 
-      const result =
-        await repository.findByUsername(
-          "  TESTUSER  "
-        );
+      const result = await repository.findByUsername(
+        "  TESTUSER  "
+      );
 
       expect(whereMock).toHaveBeenCalledWith(
         "usernameLower",
@@ -215,20 +261,17 @@ describe("FirestoreUserRepository", () => {
         }),
       });
 
-      const result =
-        await repository.findByUsername(
-          "missinguser"
-        );
+      const result = await repository.findByUsername(
+        "missinguser"
+      );
 
       expect(result).toBeNull();
     });
 
     test("returns null for an empty username", async () => {
-      const result =
-        await repository.findByUsername(" ");
+      const result = await repository.findByUsername(" ");
 
       expect(result).toBeNull();
-
       expect(whereMock).not.toHaveBeenCalled();
     });
   });
@@ -246,12 +289,9 @@ describe("FirestoreUserRepository", () => {
         }),
       });
 
-      const result =
-        await repository.findById("user-123");
+      const result = await repository.findById("user-123");
 
-      expect(docMock).toHaveBeenCalledWith(
-        "user-123"
-      );
+      expect(docMock).toHaveBeenCalledWith("user-123");
 
       expect(result).toEqual({
         id: "user-123",
@@ -267,26 +307,21 @@ describe("FirestoreUserRepository", () => {
         exists: false,
       });
 
-      const result =
-        await repository.findById("user-123");
+      const result = await repository.findById("user-123");
 
       expect(result).toBeNull();
     });
 
     test("returns null for an empty user id", async () => {
-      const result =
-        await repository.findById(" ");
+      const result = await repository.findById(" ");
 
       expect(result).toBeNull();
-
       expect(docMock).not.toHaveBeenCalled();
     });
   });
 
   describe("updateProfile", () => {
     test("updates username and display name", async () => {
-      // First get() checks whether the document exists.
-      // Second get() occurs through findById() after the update.
       getMock
         .mockResolvedValueOnce({
           exists: true,
@@ -307,12 +342,10 @@ describe("FirestoreUserRepository", () => {
             usernameLower: "newuser",
             displayName: "New Name",
             email: "test@example.com",
-            updatedAt:
-              "mock-server-timestamp",
+            updatedAt: "mock-server-timestamp",
           }),
         });
 
-      // Username availability check.
       limitMock.mockReturnValue({
         get: jest.fn().mockResolvedValue({
           empty: true,
@@ -322,21 +355,19 @@ describe("FirestoreUserRepository", () => {
 
       updateMock.mockResolvedValue();
 
-      const result =
-        await repository.updateProfile(
-          " user-123 ",
-          {
-            username: " NewUser ",
-            displayName: " New Name ",
-          }
-        );
+      const result = await repository.updateProfile(
+        " user-123 ",
+        {
+          username: " NewUser ",
+          displayName: " New Name ",
+        }
+      );
 
       expect(updateMock).toHaveBeenCalledWith({
         username: "NewUser",
         usernameLower: "newuser",
         displayName: "New Name",
-        updatedAt:
-          "mock-server-timestamp",
+        updatedAt: "mock-server-timestamp",
       });
 
       expect(result).toEqual({
@@ -346,8 +377,7 @@ describe("FirestoreUserRepository", () => {
         usernameLower: "newuser",
         displayName: "New Name",
         email: "test@example.com",
-        updatedAt:
-          "mock-server-timestamp",
+        updatedAt: "mock-server-timestamp",
       });
     });
 
@@ -368,16 +398,14 @@ describe("FirestoreUserRepository", () => {
         exists: false,
       });
 
-      const result =
-        await repository.updateProfile(
-          "user-123",
-          {
-            displayName: "New Name",
-          }
-        );
+      const result = await repository.updateProfile(
+        "user-123",
+        {
+          displayName: "New Name",
+        }
+      );
 
       expect(result).toBeNull();
-
       expect(updateMock).not.toHaveBeenCalled();
     });
 
@@ -438,8 +466,7 @@ describe("FirestoreUserRepository", () => {
         )
       ).rejects.toMatchObject({
         code: "username-already-exists",
-        message:
-          "That username is already in use.",
+        message: "That username is already in use.",
       });
 
       expect(updateMock).not.toHaveBeenCalled();
@@ -500,8 +527,7 @@ describe("FirestoreUserRepository", () => {
       expect(updateMock).toHaveBeenCalledWith({
         username: "TestUser",
         usernameLower: "testuser",
-        updatedAt:
-          "mock-server-timestamp",
+        updatedAt: "mock-server-timestamp",
       });
     });
   });
@@ -521,10 +547,7 @@ describe("FirestoreUserRepository", () => {
         }),
       });
 
-      const result =
-        await repository.getSettings(
-          "user-123"
-        );
+      const result = await repository.getSettings("user-123");
 
       expect(result).toEqual({
         theme: "dark",
@@ -542,10 +565,7 @@ describe("FirestoreUserRepository", () => {
         }),
       });
 
-      const result =
-        await repository.getSettings(
-          "user-123"
-        );
+      const result = await repository.getSettings("user-123");
 
       expect(result).toEqual({});
     });
@@ -555,10 +575,7 @@ describe("FirestoreUserRepository", () => {
         exists: false,
       });
 
-      const result =
-        await repository.getSettings(
-          "user-123"
-        );
+      const result = await repository.getSettings("user-123");
 
       expect(result).toBeNull();
     });
@@ -566,7 +583,6 @@ describe("FirestoreUserRepository", () => {
 
   describe("updateSettings", () => {
     test("updates user settings", async () => {
-      // Initial existence/data lookup.
       getMock
         .mockResolvedValueOnce({
           exists: true,
@@ -576,7 +592,6 @@ describe("FirestoreUserRepository", () => {
             settings: {},
           }),
         })
-        // getSettings() -> findById() after update
         .mockResolvedValueOnce({
           exists: true,
           id: "user-123",
@@ -591,22 +606,20 @@ describe("FirestoreUserRepository", () => {
 
       updateMock.mockResolvedValue();
 
-      const result =
-        await repository.updateSettings(
-          " user-123 ",
-          {
-            theme: "dark",
-            notifications: false,
-          }
-        );
+      const result = await repository.updateSettings(
+        " user-123 ",
+        {
+          theme: "dark",
+          notifications: false,
+        }
+      );
 
       expect(updateMock).toHaveBeenCalledWith({
         settings: {
           theme: "dark",
           notifications: false,
         },
-        updatedAt:
-          "mock-server-timestamp",
+        updatedAt: "mock-server-timestamp",
       });
 
       expect(result).toEqual({
@@ -642,21 +655,19 @@ describe("FirestoreUserRepository", () => {
 
       updateMock.mockResolvedValue();
 
-      const result =
-        await repository.updateSettings(
-          "user-123",
-          {
-            theme: "dark",
-          }
-        );
+      const result = await repository.updateSettings(
+        "user-123",
+        {
+          theme: "dark",
+        }
+      );
 
       expect(updateMock).toHaveBeenCalledWith({
         settings: {
           theme: "dark",
           notifications: true,
         },
-        updatedAt:
-          "mock-server-timestamp",
+        updatedAt: "mock-server-timestamp",
       });
 
       expect(result).toEqual({
@@ -682,16 +693,14 @@ describe("FirestoreUserRepository", () => {
         exists: false,
       });
 
-      const result =
-        await repository.updateSettings(
-          "user-123",
-          {
-            theme: "dark",
-          }
-        );
+      const result = await repository.updateSettings(
+        "user-123",
+        {
+          theme: "dark",
+        }
+      );
 
       expect(result).toBeNull();
-
       expect(updateMock).not.toHaveBeenCalled();
     });
 
@@ -743,14 +752,16 @@ describe("FirestoreUserRepository", () => {
       expect(updateMock).not.toHaveBeenCalled();
     });
   });
-  
+
   describe("Repository security and error handling", () => {
     test("filters unsupported profile update fields", async () => {
       getMock
         .mockResolvedValueOnce({
           exists: true,
           id: "user-123",
-          data: () => ({ uid: "user-123" }),
+          data: () => ({
+            uid: "user-123",
+          }),
         })
         .mockResolvedValueOnce({
           exists: true,
@@ -785,7 +796,9 @@ describe("FirestoreUserRepository", () => {
           id: "user-123",
           data: () => ({
             uid: "user-123",
-            settings: { theme: "light" },
+            settings: {
+              theme: "light",
+            },
           }),
         })
         .mockResolvedValueOnce({
@@ -793,7 +806,9 @@ describe("FirestoreUserRepository", () => {
           id: "user-123",
           data: () => ({
             uid: "user-123",
-            settings: { theme: "dark" },
+            settings: {
+              theme: "dark",
+            },
           }),
         });
 
@@ -806,7 +821,9 @@ describe("FirestoreUserRepository", () => {
       });
 
       expect(updateMock).toHaveBeenCalledWith({
-        settings: { theme: "dark" },
+        settings: {
+          theme: "dark",
+        },
         updatedAt: "mock-server-timestamp",
       });
     });
@@ -823,7 +840,7 @@ describe("FirestoreUserRepository", () => {
         "Firestore write failed"
       );
 
-      setMock.mockRejectedValue(databaseError);
+      createMock.mockRejectedValue(databaseError);
 
       await expect(
         repository.createProfile({
@@ -833,7 +850,7 @@ describe("FirestoreUserRepository", () => {
         })
       ).rejects.toThrow("Firestore write failed");
 
-      expect(setMock).toHaveBeenCalledTimes(1);
+      expect(createMock).toHaveBeenCalledTimes(1);
     });
 
     test("propagates Firestore errors during settings updates", async () => {
@@ -842,7 +859,9 @@ describe("FirestoreUserRepository", () => {
         id: "user-123",
         data: () => ({
           uid: "user-123",
-          settings: { theme: "light" },
+          settings: {
+            theme: "light",
+          },
         }),
       });
 
