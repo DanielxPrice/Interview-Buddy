@@ -1,4 +1,5 @@
 const FirestoreQuestionRepository = require("./FirestoreQuestionRepository");
+const { QUESTION_MODE_SCAN_LIMIT } = require("../../config/questionCatalogLimits");
 
 describe("FirestoreQuestionRepository", () => {
   test("requires a Firestore database instance", () => {
@@ -16,7 +17,8 @@ describe("FirestoreQuestionRepository", () => {
           { id: "q-2", data: () => ({ mode, prompt: "Second question" }) },
         ];
         const get = jest.fn().mockResolvedValue({ docs: documents });
-        const where = jest.fn().mockReturnValue({ get });
+        const limit = jest.fn().mockReturnValue({ get });
+        const where = jest.fn().mockReturnValue({ limit });
         const collection = jest.fn().mockReturnValue({ where });
         const repository = new FirestoreQuestionRepository({
           db: { collection },
@@ -28,6 +30,7 @@ describe("FirestoreQuestionRepository", () => {
         ]);
         expect(collection).toHaveBeenCalledWith("questions");
         expect(where).toHaveBeenCalledWith("mode", "==", mode);
+        expect(limit).toHaveBeenCalledWith(QUESTION_MODE_SCAN_LIMIT + 1);
         expect(get).toHaveBeenCalledTimes(1);
       }
     );
@@ -35,7 +38,7 @@ describe("FirestoreQuestionRepository", () => {
     test("returns an empty array when the mode has no documents", async () => {
       const db = {
         collection: jest.fn(() => ({
-          where: jest.fn(() => ({ get: jest.fn().mockResolvedValue({ docs: [] }) })),
+          where: jest.fn(() => ({ limit: jest.fn(() => ({ get: jest.fn().mockResolvedValue({ docs: [] }) })) })),
         })),
       };
       const repository = new FirestoreQuestionRepository({ db });
@@ -46,7 +49,7 @@ describe("FirestoreQuestionRepository", () => {
       const db = {
         collection: jest.fn(() => ({
           where: jest.fn(() => ({
-            get: jest.fn().mockRejectedValue(new Error("Firestore unavailable")),
+            limit: jest.fn(() => ({ get: jest.fn().mockRejectedValue(new Error("Firestore unavailable")) })),
           })),
         })),
       };
@@ -54,6 +57,51 @@ describe("FirestoreQuestionRepository", () => {
       await expect(repository.findByMode("Quiz Style")).rejects.toThrow(
         "Firestore unavailable"
       );
+    });
+  });
+
+  test("mode scans have a hard read ceiling and fail closed instead of truncating", async () => {
+    const get = jest.fn().mockResolvedValue({ docs: Array.from({ length: QUESTION_MODE_SCAN_LIMIT + 1 }, (_, i) => ({
+      id: `q-${i}`, data: () => ({ mode: "Code Style" }),
+    })) });
+    const limit = jest.fn(() => ({ get }));
+    const db = { collection: () => ({ where: () => ({ limit }) }) };
+    const repository = new FirestoreQuestionRepository({ db });
+    await expect(repository.findByMode("Code Style")).rejects.toMatchObject({
+      statusCode: 503,
+      code: "QUESTION_CATALOG_TOO_LARGE",
+    });
+    expect(limit).toHaveBeenCalledWith(QUESTION_MODE_SCAN_LIMIT + 1);
+  });
+
+  test("metadata query uses a bounded field projection without private question data", async () => {
+    const get = jest.fn().mockResolvedValue({ docs: [{
+      id: "quiz-1", data: () => ({ mode: "Quiz Style", tags: ["trees"] }),
+    }] });
+    const limit = jest.fn(() => ({ get }));
+    const select = jest.fn(() => ({ limit }));
+    const where = jest.fn(() => ({ select }));
+    const repo = new FirestoreQuestionRepository({ db: {
+      collection: jest.fn(() => ({ where })),
+    } });
+    await expect(repo.findByModeMetadata("Quiz Style")).resolves.toEqual([
+      { id: "quiz-1", mode: "Quiz Style", tags: ["trees"] },
+    ]);
+    expect(select).toHaveBeenCalledWith("mode", "active", "jobRoles", "experienceLevels", "tags");
+    expect(limit).toHaveBeenCalledWith(QUESTION_MODE_SCAN_LIMIT + 1);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  test("metadata projection also fails closed on oversized mode collections", async () => {
+    const docs = Array.from({ length: QUESTION_MODE_SCAN_LIMIT + 1 }, (_, i) => ({
+      id: `q${i}`, data: () => ({}),
+    }));
+    const db = { collection: () => ({ where: () => ({
+      select: () => ({ limit: () => ({ get: async () => ({ docs }) }) }),
+    }) }) };
+    const repo = new FirestoreQuestionRepository({ db });
+    await expect(repo.findByModeMetadata("Quiz Style")).rejects.toMatchObject({
+      code: "QUESTION_CATALOG_TOO_LARGE", statusCode: 503,
     });
   });
 

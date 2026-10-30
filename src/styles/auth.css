@@ -263,3 +263,71 @@
   font-size: var(--ib-font-size-xs);
   line-height: var(--ib-line-height-normal);
 }
+
+/* Email verification uses the same shell as login and registration. */
+.ib-auth-verification-account {
+  display: flex;
+  align-items: center;
+  gap: var(--ib-space-3);
+  padding: var(--ib-space-4);
+  margin-bottom: var(--ib-space-6);
+  border: 1px solid var(--ib-accent-border);
+  border-radius: var(--ib-radius-md);
+  background: var(--ib-accent-soft);
+}
+
+.ib-auth-verification-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--ib-radius-md);
+  background: var(--ib-surface);
+  color: var(--ib-accent-700);
+}
+
+.ib-auth-verification-address {
+  min-width: 0;
+}
+
+.ib-auth-verification-address .ib-auth-field-help {
+  color: var(--ib-text-secondary);
+}
+
+.ib-auth-verification-email {
+  margin-top: var(--ib-space-1);
+  color: var(--ib-text);
+  font-size: var(--ib-font-size-sm);
+  font-weight: var(--ib-font-weight-semibold);
+  line-height: var(--ib-line-height-normal);
+  overflow-wrap: anywhere;
+}
+
+.ib-auth-verification-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ib-space-3);
+}
+
+.ib-auth-verification-actions > .ib-help-text {
+  margin-bottom: var(--ib-space-1);
+}
+
+.ib-auth-verification-message {
+  background: var(--ib-surface-muted);
+  border-color: var(--ib-border);
+  color: var(--ib-text);
+  overflow-wrap: anywhere;
+}
+
+.ib-auth-verification-help {
+  margin-top: var(--ib-space-6);
+  padding-top: var(--ib-space-5);
+  border-top: 1px solid var(--ib-border);
+}
+
+.ib-auth-verification-help .ib-auth-switch {
+  margin-top: var(--ib-space-4);
+}

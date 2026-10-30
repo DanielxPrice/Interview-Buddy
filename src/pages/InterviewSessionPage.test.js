@@ -840,7 +840,10 @@ describe(
                 1,
 
               eloChange:
-                "+2",
+                null,
+
+              rankEligible:
+                false,
 
               isCorrect:
                 true,
@@ -907,7 +910,15 @@ describe(
         id: "mock-session-1",
         status: "completed",
         completedAt: "2026-10-25T20:00:00.000Z",
-        result: { score: 40, questionsAnswered: 1, totalScore: 40 },
+        result: {
+          score: 40,
+          questionsAnswered: 1,
+          totalScore: 40,
+          questionsAssigned: 1,
+          questionsUnanswered: 0,
+          completionStatus: "completed",
+          rankEligible: true,
+        },
         eloChange: "-2",
         breakdownAvailable: true,
         breakdown: [

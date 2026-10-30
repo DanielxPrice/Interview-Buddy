@@ -36,7 +36,9 @@ function createQuestionMetadataService({ questionRepository, catalogRepository, 
       pendingBuild = (async () => {
         const revisionAtStart = version;
         const questionGroups = await Promise.all(MODES.map(
-          (mode) => questionRepository.findByMode(mode)
+          (mode) => typeof questionRepository.findByModeMetadata === "function"
+            ? questionRepository.findByModeMetadata(mode)
+            : questionRepository.findByMode(mode)
         ));
         const metadata = buildQuestionMetadata(questionGroups.flat());
         // Re-check Firestore after rebuilding to catch writes during the scan.
