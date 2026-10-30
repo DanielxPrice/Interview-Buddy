@@ -1,44 +1,127 @@
-import mockSessions from "../data/mockSessions";
 
-/**
- * React-facing session history service facade.
- *
- * Sprint 1 reads the existing mock array. A future implementation will replace
- * these internals with authenticated backend/Firebase requests.
- */
+import { auth } from "../config/firebase";
+
+const API_BASE_URL = (
+  process.env.REACT_APP_API_BASE_URL ||
+  "http://localhost:5001/api"
+).replace(/\/$/, "");
+
+async function getAuthorizedJson(path) {
+  const user = auth.currentUser;
+
+  if (!user) {
+    throw new Error(
+      "Sign in to view your interview history."
+    );
+  }
+
+  const token = await user.getIdToken();
+
+  const response = await fetch(
+    `${API_BASE_URL}${path}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  let body = null;
+
+  try {
+    body = await response.json();
+  } catch (_) {
+    // Handle responses that do not contain JSON.
+  }
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (
+      response.status === 401 ||
+      response.status === 403
+    ) {
+      throw new Error(
+        "You do not have permission to view these session results."
+      );
+    }
+
+    throw new Error(
+      body?.error ||
+      body?.message ||
+      "Unable to retrieve interview history."
+    );
+  }
+
+  return body;
+}
+
 export const historyService = {
+  // History list: summary records only.
   async getSessions() {
-    // Return copies so a component cannot accidentally mutate the source mocks.
-    return mockSessions.map((session) => ({ ...session }));
+    const sessions =
+      await getAuthorizedJson(
+        "/sessions?status=completed"
+      );
+
+    if (!Array.isArray(sessions)) {
+      throw new Error(
+        "The server returned an invalid history response."
+      );
+    }
+
+    return sessions;
   },
 
+  // SEC-05: explicit, bounded history retrieval. Unlike the legacy array API,
+  // this response includes a cursor for loading older sessions on demand.
+  async getSessionPage({ cursor = null, pageSize = 25 } = {}) {
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 50) {
+      throw new Error("History page size must be between 1 and 50.");
+    }
+    const params = new URLSearchParams({ status: "completed", pageSize: String(pageSize) });
+    if (cursor) params.set("cursor", cursor);
+    const payload = await getAuthorizedJson(`/sessions?${params.toString()}`);
+    if (!payload || !Array.isArray(payload.sessions) ||
+        (payload.nextCursor !== null && typeof payload.nextCursor !== "string")) {
+      throw new Error("The server returned an invalid history page.");
+    }
+    return payload;
+  },
+
+  // Existing lightweight session endpoint.
   async getSessionById(sessionId) {
-    if (sessionId === undefined || sessionId === null) {
-      throw new Error("Session ID is required.");
+    if (!sessionId) {
+      throw new Error(
+        "Session ID is required."
+      );
     }
 
-    const session = mockSessions.find(
-      (item) => String(item.id) === String(sessionId)
+    return getAuthorizedJson(
+      `/sessions/${encodeURIComponent(sessionId)}`
     );
-
-    return session ? { ...session } : null;
   },
 
-  async deleteSession(sessionId) {
-    if (sessionId === undefined || sessionId === null) {
-      throw new Error("Session ID is required.");
+  // SEC-03 M06:
+  // Read saved results and public question feedback.
+  async getCompletedSessionResults(sessionId) {
+    if (!sessionId) {
+      throw new Error(
+        "Session ID is required."
+      );
     }
 
-    // Sprint 1 does not persist mutations. The real implementation will
-    // request deletion through the backend Application Layer.
-    const exists = mockSessions.some(
-      (item) => String(item.id) === String(sessionId)
+    return getAuthorizedJson(
+      `/sessions/${encodeURIComponent(sessionId)}/results`
     );
+  },
 
-    return {
-      success: exists,
-      sessionId,
-      simulated: true,
-    };
+  // No deletion API is implemented.
+  async deleteSession() {
+    throw new Error(
+      "Deleting interview history is not supported by the current backend."
+    );
   },
 };

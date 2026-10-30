@@ -125,6 +125,7 @@ describe("AppRoutes", () => {
     [PAGES.INTERVIEW_SETUP, "Interview Setup Route"],
     [PAGES.INTERVIEW, "Interview Session Route"],
     [PAGES.SESSION_RESULTS, "Session Results Route"],
+    [`${PAGES.SESSION_RESULTS}/saved-1`, "Session Results Route"],
     [PAGES.HISTORY, "History Route"],
     [PAGES.LEADERBOARD, "Leaderboard Route"],
     [PAGES.ANALYTICS, "Analytics Route"],

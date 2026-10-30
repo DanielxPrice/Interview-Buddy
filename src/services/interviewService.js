@@ -1,16 +1,17 @@
+
 import { auth } from "../config/firebase";
+
 import {
   getCachedSetupOptions,
+  getCachedAvailableQuestionCount,
   subscribeSetupMetadata,
   refreshSetupMetadata,
   resetMetadataVerification,
 } from "./questionMetadataCache";
 
 /**
- * React-facing interview/session service facade.
- *
- * The page layer calls this service instead of talking directly to Firebase.
- * Database access stays behind the Express application layer.
+ * React-facing interview/session service.
+ * Database access remains behind Express.
  */
 
 export const INTERVIEW_MODES = Object.freeze({
@@ -65,28 +66,13 @@ function normalizeTags(value) {
   ];
 }
 
-/**
- * Read an Express JSON response.
- *
- * In addition to the message, preserve backend
- * metadata such as the error code and quota state.
- *
- * This lets pages distinguish:
- *
- * normal network/server failure
- *
- * from
- *
- * daily-question-limit-exceeded
- */
 async function readJsonResponse(response) {
   let payload = null;
 
   try {
     payload = await response.json();
   } catch (error) {
-    // Leave payload as null so the caller still
-    // receives a useful HTTP error.
+    // Return a useful HTTP error if JSON parsing fails.
   }
 
   if (!response.ok) {
@@ -95,19 +81,14 @@ async function readJsonResponse(response) {
       payload?.message ||
       `Interview service request failed (${response.status}).`;
 
-    const serviceError =
-      new Error(message);
+    const serviceError = new Error(message);
 
     serviceError.code =
-      payload?.code ||
-      "interview-service-error";
+      payload?.code || "interview-service-error";
 
-    serviceError.status =
-      response.status;
+    serviceError.status = response.status;
 
-    serviceError.quota =
-      payload?.quota ||
-      null;
+    serviceError.quota = payload?.quota || null;
 
     throw serviceError;
   }
@@ -120,15 +101,10 @@ function normalizeQuota(quota) {
     return null;
   }
 
-  const unlimited =
-    Boolean(quota.unlimited);
+  const unlimited = Boolean(quota.unlimited);
 
   return {
-    role:
-      String(
-        quota.role || ""
-      ),
-
+    role: String(quota.role || ""),
     unlimited,
 
     limit:
@@ -137,41 +113,24 @@ function normalizeQuota(quota) {
         ? null
         : Number(quota.limit),
 
-    used:
-      Number(
-        quota.used || 0
-      ),
+    used: Number(quota.used || 0),
 
     remaining:
       quota.remaining === null ||
       quota.remaining === undefined
         ? null
-        : Number(
-            quota.remaining
-          ),
+        : Number(quota.remaining),
 
-    codeQuestionsUsed:
-      Number(
-        quota.codeQuestionsUsed ||
-        0
-      ),
+    codeQuestionsUsed: Number(
+      quota.codeQuestionsUsed || 0
+    ),
 
-    theoreticalQuestionsUsed:
-      Number(
-        quota
-          .theoreticalQuestionsUsed ||
-          0
-      ),
+    theoreticalQuestionsUsed: Number(
+      quota.theoreticalQuestionsUsed || 0
+    ),
 
-    dateKey:
-      String(
-        quota.dateKey || ""
-      ),
-
-    timeZone:
-      String(
-        quota.timeZone || ""
-      ),
+    dateKey: String(quota.dateKey || ""),
+    timeZone: String(quota.timeZone || ""),
   };
 }
 
@@ -188,7 +147,6 @@ export const interviewService = {
       jobRole,
       experienceLevel,
       tags,
-      // Compatibility fallback for older callers/tests.
       practiceGoals,
       codingLanguage,
       questionCount = 10,
@@ -196,15 +154,12 @@ export const interviewService = {
 
     validateMode(mode);
 
-    const selectedTags =
-      normalizeTags(tags);
+    const selectedTags = normalizeTags(tags);
 
     const normalizedTags =
       selectedTags.length > 0
         ? selectedTags
-        : normalizeTags(
-            practiceGoals
-          );
+        : normalizeTags(practiceGoals);
 
     if (
       !jobRole ||
@@ -220,9 +175,7 @@ export const interviewService = {
       Number(questionCount);
 
     if (
-      !Number.isInteger(
-        normalizedQuestionCount
-      ) ||
+      !Number.isInteger(normalizedQuestionCount) ||
       normalizedQuestionCount < 1 ||
       normalizedQuestionCount > 20
     ) {
@@ -231,7 +184,6 @@ export const interviewService = {
       );
     }
 
-        
     const idToken = await getIdToken();
 
     const response = await fetch(
@@ -246,6 +198,8 @@ export const interviewService = {
           mode,
           jobRole,
           experienceLevel,
+          tags: normalizedTags,
+          questionCount: normalizedQuestionCount,
         }),
       }
     );
@@ -262,60 +216,93 @@ export const interviewService = {
   },
 
   /**
-   * Retrieve the user's current shared
-   * Code + Theoretical daily allowance.
-   *
-   * Quiz Style does not consume this allowance,
-   * but the endpoint itself is mode-independent.
+   * Retrieve the shared Code + Theoretical
+   * daily question allowance.
    */
   async getQuestionQuota() {
-    const idToken =
-      await getIdToken();
+    const idToken = await getIdToken();
 
-    const response =
-      await fetch(
-        `${API_BASE_URL}/questions/quota`,
-        {
-          headers: {
-            Authorization:
-              `Bearer ${idToken}`,
-          },
-        }
-      );
-
-    const payload =
-      await readJsonResponse(
-        response
-      );
-
-    return normalizeQuota(
-      payload?.quota
+    const response = await fetch(
+      `${API_BASE_URL}/questions/quota`,
+      {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      }
     );
+
+    const payload = await readJsonResponse(response);
+
+    return normalizeQuota(payload?.quota);
   },
 
-  /** Total active matches before the 20-question session cap or daily quota. */
-  async getAvailableQuestionCount({ mode, jobRole, experienceLevel, tags, fresh = false }) {
+  /**
+   * Count available questions before applying
+   * the 20-question cap or daily quota.
+   */
+  async getAvailableQuestionCount({
+    mode,
+    jobRole,
+    experienceLevel,
+    tags,
+    fresh = false,
+  }) {
     validateMode(mode);
+
     const selectedTags = normalizeTags(tags);
-    if (!jobRole || !experienceLevel || selectedTags.length === 0) {
-      throw new Error("Job role, experience level, and at least one tag are required.");
+
+    if (
+      !jobRole ||
+      !experienceLevel ||
+      selectedTags.length === 0
+    ) {
+      throw new Error(
+        "Job role, experience level, and at least one tag are required."
+      );
     }
-    const params = new URLSearchParams({ mode, jobRole, experienceLevel });
-    selectedTags.forEach((tag) => params.append("tags", tag));
-    if (fresh) params.set("fresh", "1");
-    const idToken = await getIdToken();
-    const response = await fetch(`${API_BASE_URL}/questions/count?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${idToken}` },
+
+    const params = new URLSearchParams({
+      mode,
+      jobRole,
+      experienceLevel,
     });
-    const payload = await readJsonResponse(response);
-    if (!Number.isSafeInteger(payload?.availableCount) || payload.availableCount < 0) {
-      throw new Error("The server returned an invalid available-question count.");
+
+    selectedTags.forEach((tag) =>
+      params.append("tags", tag)
+    );
+
+    if (fresh) {
+      params.set("fresh", "1");
     }
+
+    const idToken = await getIdToken();
+
+    const response = await fetch(
+      `${API_BASE_URL}/questions/count?${params.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      }
+    );
+
+    const payload = await readJsonResponse(response);
+
+    if (
+      !Number.isSafeInteger(payload?.availableCount) ||
+      payload.availableCount < 0
+    ) {
+      throw new Error(
+        "The server returned an invalid available-question count."
+      );
+    }
+
     return payload.availableCount;
   },
 
-  // Synchronous local lookups remove the format-switching loading delay.
+  // Synchronous local lookups avoid a request on each tag selection.
   getCachedSetupOptions,
+  getCachedAvailableQuestionCount,
   subscribeSetupMetadata,
   refreshSetupMetadata,
   resetMetadataVerification,
@@ -325,11 +312,8 @@ export const interviewService = {
   },
 
   /**
-   * Retrieve interview questions through
-   * the backend.
-   *
-   * The backend performs the actual quota
-   * reservation for Code/Theoretical modes.
+   * Retrieve interview questions through Express.
+   * The backend reserves AI question quota.
    */
   async getQuestions({
     sessionId = "",
@@ -342,15 +326,12 @@ export const interviewService = {
   } = {}) {
     validateMode(mode);
 
-    const selectedTags =
-      normalizeTags(tags);
+    const selectedTags = normalizeTags(tags);
 
     const normalizedTags =
       selectedTags.length > 0
         ? selectedTags
-        : normalizeTags(
-            practiceGoals
-          );
+        : normalizeTags(practiceGoals);
 
     if (
       !jobRole ||
@@ -362,107 +343,76 @@ export const interviewService = {
       );
     }
 
-    const params =
-      new URLSearchParams({
-        mode,
-        jobRole,
-        experienceLevel,
-        limit: String(limit),
-      });
+    const params = new URLSearchParams({
+      mode,
+      jobRole,
+      experienceLevel,
+      limit: String(limit),
+    });
 
     if (sessionId) {
-      params.set(
-        "sessionId",
-        sessionId
-      );
+      params.set("sessionId", sessionId);
     }
 
-    normalizedTags.forEach(
-      (tag) => {
-        params.append(
-          "tags",
-          tag
-        );
+    normalizedTags.forEach((tag) => {
+      params.append("tags", tag);
+    });
+
+    const idToken = await getIdToken();
+
+    const response = await fetch(
+      `${API_BASE_URL}/questions?${params.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
       }
     );
 
-    const idToken =
-      await getIdToken();
+    const payload = await readJsonResponse(response);
 
-    const response =
-      await fetch(
-        `${API_BASE_URL}/questions?${params.toString()}`,
-        {
-          headers: {
-            Authorization:
-              `Bearer ${idToken}`,
-          },
-        }
-      );
-
-    const payload =
-      await readJsonResponse(
-        response
-      );
-
-    return Array.isArray(
-      payload?.questions
-    )
+    return Array.isArray(payload?.questions)
       ? payload.questions
       : [];
   },
 
   /**
-   * Validate a Quiz Style answer
-   * on the server.
+   * Grade and persist a Quiz answer under
+   * its interview session.
    */
-  async checkQuizAnswer(
-    questionId,
-    answer
-  ) {
+  async checkQuizAnswer(questionId, answer, sessionId) {
     if (!questionId) {
+      throw new Error("Question ID is required.");
+    }
+
+    if (!answer || !String(answer).trim()) {
+      throw new Error("An answer is required.");
+    }
+
+    if (!sessionId) {
       throw new Error(
-        "Question ID is required."
+        "Session ID is required to save a Quiz answer."
       );
     }
 
-    if (
-      !answer ||
-      !String(answer).trim()
-    ) {
-      throw new Error(
-        "An answer is required."
-      );
-    }
+    const idToken = await getIdToken();
 
-    const idToken =
-      await getIdToken();
-
-    const response =
-      await fetch(
-        `${API_BASE_URL}/questions/${encodeURIComponent(
-          questionId
-        )}/check`,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-
-            Authorization:
-              `Bearer ${idToken}`,
-          },
-
-          body: JSON.stringify({
-            answer,
-          }),
-        }
-      );
-
-    return readJsonResponse(
-      response
+    const response = await fetch(
+      `${API_BASE_URL}/sessions/${encodeURIComponent(sessionId)}/quiz-answers`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          questionId,
+          answer,
+        }),
+      }
     );
+
+    return readJsonResponse(response);
   },
 
   /**
@@ -471,23 +421,14 @@ export const interviewService = {
    */
   async getQuestion(sessionId) {
     if (!sessionId) {
-      throw new Error(
-        "Session ID is required."
-      );
+      throw new Error("Session ID is required.");
     }
 
     return null;
   },
 
-  async submitAnswer(
-    sessionId,
-    questionId,
-    answer
-  ) {
-    if (
-      !sessionId ||
-      !questionId
-    ) {
+  async submitAnswer(sessionId, questionId, answer) {
+    if (!sessionId || !questionId) {
       throw new Error(
         "Session ID and question ID are required."
       );
@@ -496,12 +437,9 @@ export const interviewService = {
     if (
       answer === undefined ||
       answer === null ||
-      String(answer).trim() ===
-        ""
+      String(answer).trim() === ""
     ) {
-      throw new Error(
-        "An answer is required."
-      );
+      throw new Error("An answer is required.");
     }
 
     return {
@@ -511,7 +449,6 @@ export const interviewService = {
     };
   },
 
-  
   async endSession(sessionId) {
     if (!sessionId) {
       throw new Error("Session ID is required.");

@@ -76,18 +76,12 @@ function App() {
     questionCount: 10,
   });
 
-  const [
-    sessionResult,
-    setSessionResult,
-  ] = useState({
-    mode: "Quiz Style",
-    date: "May 4, 2026",
-    score: "0%",
-    questionsAnswered: 0,
-    eloChange: "0",
-    isCorrect: null,
-    answerSubmitted: false,
-  });
+  const [sessionResult, setSessionResult] = useState(null);
+
+  // Do not carry a previous account's in-memory results into another login.
+  useEffect(() => {
+    setSessionResult(null);
+  }, [authenticatedUid]);
 
   const [
     loginMessage,
@@ -108,15 +102,7 @@ function App() {
   }
 
   function handleAccountDeleted() {
-    setSessionResult({
-      mode: "Quiz Style",
-      date: "May 4, 2026",
-      score: "0%",
-      questionsAnswered: 0,
-      eloChange: "0",
-      isCorrect: null,
-      answerSubmitted: false,
-    });
+    setSessionResult(null);
 
     setSelectedMode("");
 
@@ -163,8 +149,9 @@ function App() {
       resultData
     );
 
-    navigate(
-      PAGES.SESSION_RESULTS
+    navigate(resultData?.sessionId
+      ? `${PAGES.SESSION_RESULTS}/${encodeURIComponent(resultData.sessionId)}`
+      : PAGES.SESSION_RESULTS
     );
   }
 

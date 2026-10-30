@@ -594,13 +594,13 @@ describe(
         );
 
 
-        await waitFor(() => {
+        await waitFor(() => {  
           expect(
-            interviewService
-              .checkQuizAnswer
+            interviewService.checkQuizAnswer
           ).toHaveBeenCalledWith(
             "quiz-test-001",
-            "Queue"
+            "Queue",
+            "mock-session-1"
           );
         });
 
@@ -840,7 +840,10 @@ describe(
                 1,
 
               eloChange:
-                "+2",
+                null,
+
+              rankEligible:
+                false,
 
               isCorrect:
                 true,
@@ -883,6 +886,149 @@ describe(
         );
       }
     );
+
+
+    /* ========================================================
+       RESULTS PIPELINE (completion -> result, errors surfaced)
+       ======================================================== */
+
+    function clickEndInterview() {
+      userEvent.click(
+        screen.getByRole("button", { name: "End Interview" })
+      );
+    }
+
+    function serviceError(code, status) {
+      const error = new Error("raw server message");
+      error.code = code;
+      error.status = status;
+      return error;
+    }
+
+    test("uses the server-calculated score, ELO and date", async () => {
+      interviewService.endSession.mockResolvedValue({
+        id: "mock-session-1",
+        status: "completed",
+        completedAt: "2026-10-25T20:00:00.000Z",
+        result: {
+          score: 40,
+          questionsAnswered: 1,
+          totalScore: 40,
+          questionsAssigned: 1,
+          questionsUnanswered: 0,
+          completionStatus: "completed",
+          rankEligible: true,
+        },
+        eloChange: "-2",
+        breakdownAvailable: true,
+        breakdown: [
+          {
+            questionId: "quiz-test-001",
+            questionPrompt: "Which data structure uses FIFO ordering?",
+            score: 40,
+            isCorrect: false,
+            feedback: "Server feedback",
+          },
+        ],
+      });
+
+      await loadQuizSession();
+      await selectQueueAnswer();
+      await submitQuizAnswer();
+      await screen.findByText("Correct Answer");
+
+      clickEndInterview();
+
+      await waitFor(() => {
+        expect(onEndInterview).toHaveBeenCalledWith(
+          expect.objectContaining({
+            score: "40%",
+            eloChange: "-2",
+            date: "October 25, 2026",
+            scoreSource: "server",
+            perQuestion: [
+              expect.objectContaining({
+                questionId: "quiz-test-001",
+                score: 40,
+                isCorrect: false,
+                userAnswer: "Queue",
+              }),
+            ],
+          })
+        );
+      });
+    });
+
+    test("shows a friendly message and a retry option for a retryable error", async () => {
+      interviewService.endSession.mockRejectedValue(
+        serviceError("RESULTS_CALCULATION_FAILED", 500)
+      );
+
+      await loadQuizSession();
+      clickEndInterview();
+
+      expect(
+        await screen.findByText(
+          "Your results could not be calculated right now. Please try again."
+        )
+      ).toBeInTheDocument();
+
+      expect(screen.queryByText("raw server message")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Start New Session" })
+      ).not.toBeInTheDocument();
+      expect(onEndInterview).not.toHaveBeenCalled();
+
+      // Retrying works because completion is safe to repeat.
+      interviewService.endSession.mockResolvedValue({
+        id: "mock-session-1",
+        result: { score: 0, questionsAnswered: 0, totalScore: 0 },
+        eloChange: "-2",
+        breakdown: [],
+      });
+
+      clickEndInterview();
+
+      await waitFor(() => {
+        expect(onEndInterview).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    test("offers a new session when the session cannot be completed", async () => {
+      interviewService.endSession.mockRejectedValue(
+        serviceError("SESSION_NOT_ACTIVE", 409)
+      );
+
+      await loadQuizSession();
+      clickEndInterview();
+
+      expect(
+        await screen.findByText(
+          "This session can no longer be completed. Start a new session to continue."
+        )
+      ).toBeInTheDocument();
+
+      userEvent.click(
+        screen.getByRole("button", { name: "Start New Session" })
+      );
+
+      expect(onNavigate).toHaveBeenCalledWith(PAGES.INTERVIEW_SETUP);
+    });
+
+    test("explains a network failure when ending the session", async () => {
+      interviewService.endSession.mockRejectedValue(
+        new TypeError("Failed to fetch")
+      );
+
+      await loadQuizSession();
+      clickEndInterview();
+
+      expect(
+        await screen.findByText(
+          "Could not reach the server. Check your connection and try again."
+        )
+      ).toBeInTheDocument();
+    });
 
 
     /* ========================================================
@@ -1194,11 +1340,11 @@ test(
 
         await waitFor(() => {
           expect(
-            interviewService
-              .checkQuizAnswer
+            interviewService.checkQuizAnswer
           ).toHaveBeenCalledWith(
             "quiz-test-001",
-            "Queue"
+            "Queue",
+            "mock-session-1"
           );
         });
 

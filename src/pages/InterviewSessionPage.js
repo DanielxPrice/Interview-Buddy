@@ -16,6 +16,12 @@ import SubmittingState from "../components/state/SubmittingState";
 import { PAGES } from "../utils/constants";
 
 import {
+  buildSessionResult,
+  getEndSessionErrorMessage,
+  isRetryableEndSessionError,
+} from "../utils/sessionResults";
+
+import {
   aiService,
   interviewService,
 } from "../services";
@@ -79,19 +85,6 @@ function calculateAverageScore(
   );
 }
 
-function calculateEloChange(
-  score
-) {
-  if (score >= 70) {
-    return "+2";
-  }
-
-  if (score >= 50) {
-    return "+1";
-  }
-
-  return "-2";
-}
 
 /**
  * Select an editor language only when a question explicitly requires one.
@@ -215,6 +208,13 @@ function InterviewSessionPage({
     endSessionError,
     setEndSessionError
   ] = useState("");
+
+  // False when ending again will not help (session missing, not yours,
+  // or no longer active), so the page offers a new session instead.
+  const [
+    canRetryEndSession,
+    setCanRetryEndSession
+  ] = useState(true);
 
   const modeDetails =
     getModeDetails(
@@ -515,7 +515,8 @@ function InterviewSessionPage({
         const result =
           await interviewService.checkQuizAnswer(
             currentQuestion.id,
-            selectedQuizAnswer
+            selectedQuizAnswer,
+            setupData?.id
           );
 
         const normalizedResult = {
@@ -721,45 +722,30 @@ function InterviewSessionPage({
 
     setIsEndingSession(true);
     setEndSessionError("");
+    setCanRetryEndSession(true);
 
     try {
       if (!setupData?.id) {
         throw new Error("Session ID is missing.");
       }
 
-      await interviewService.endSession(setupData.id);
+      // The server calculates the official result (score, ELO, date,
+      // breakdown). buildSessionResult merges it with the answer details
+      // kept in the browser.
+      const savedSession = await interviewService.endSession(setupData.id);
 
-      const averageScore =
-        calculateAverageScore(answeredQuestions);
-
-      const lastAnswer =
-        answeredQuestions[answeredQuestions.length - 1];
-
-      onEndInterview({
-        mode: selectedMode,
-
-        score: `${averageScore}%`,
-
-        questionsAnswered: answeredQuestions.length,
-
-        eloChange: calculateEloChange(averageScore),
-
-        isCorrect: Boolean(lastAnswer?.isCorrect),
-
-        answerSubmitted: answeredQuestions.length > 0,
-
-        perQuestion: answeredQuestions,
-
-        jobRole: setupData?.jobRole || "",
-
-        experienceLevel: setupData?.experienceLevel || "",
-
-        tags: setupData?.tags || [],
-      });
-    } catch (error) {
-      setEndSessionError(
-        error.message || "Unable to complete the interview session."
+      onEndInterview(
+        buildSessionResult({
+          savedSession,
+          answeredQuestions,
+          mode: selectedMode,
+          setupData,
+        })
       );
+    } catch (error) {
+      // Turn the server's error code into a message the user can act on.
+      setEndSessionError(getEndSessionErrorMessage(error));
+      setCanRetryEndSession(isRetryableEndSessionError(error));
     } finally {
       setIsEndingSession(false);
     }
@@ -1708,9 +1694,19 @@ function InterviewSessionPage({
 
             <div className="sessionQuestionActions">
               {endSessionError && (
-                <p role="alert" className="sessionError">
-                  {endSessionError}
-                </p>
+                <div role="alert" className="sessionError">
+                  <p>{endSessionError}</p>
+
+                  {!canRetryEndSession && (
+                    <button
+                      type="button"
+                      className="ib-button ib-button--primary"
+                      onClick={() => onNavigate(PAGES.INTERVIEW_SETUP)}
+                    >
+                      Start New Session
+                    </button>
+                  )}
+                </div>
               )}
 
               <button

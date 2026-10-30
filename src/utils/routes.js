@@ -121,6 +121,21 @@ function AppRoutes({
             <SessionResultsPage
               {...commonProps}
               sessionResult={sessionResult}
+              onSelectMode={onSelectMode}
+            />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Saved results can also be opened directly from history or a refresh. */}
+      <Route
+        path={`${PAGES.SESSION_RESULTS}/:sessionId`}
+        element={
+          <ProtectedRoute>
+            <SessionResultsPage
+              {...commonProps}
+              sessionResult={sessionResult}
+              onSelectMode={onSelectMode}
             />
           </ProtectedRoute>
         }
@@ -131,7 +146,7 @@ function AppRoutes({
         path={PAGES.HISTORY}
         element={
           <ProtectedRoute>
-            <HistoryPage {...commonProps} />
+            <HistoryPage {...commonProps} onSelectMode={onSelectMode} />
           </ProtectedRoute>
         }
       />

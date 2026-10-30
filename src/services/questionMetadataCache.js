@@ -26,6 +26,43 @@ export function getCachedSetupOptions(mode, { jobRole = "", experienceLevel = ""
   return { jobRoles: entry.all.jobRoles, experienceLevels, tags };
 }
 
+/**
+ * Count the entire active matching pool using the bundled/refreshable index.
+ * This mirrors the server's role + level + ANY-selected-tag matching.
+ * Each grouped record contributes its number of unique questions just once.
+ * Returns null when a legacy metadata response has no count index, so the
+ * page can fall back to the existing /questions/count endpoint.
+ */
+export function getCachedAvailableQuestionCount({
+  mode, jobRole = "", experienceLevel = "", tags = [],
+} = {}) {
+  if (!VALID_MODES.includes(mode)) {
+    throw new Error(`Invalid interview mode: ${mode || "none"}`);
+  }
+
+  const countIndex = metadata?.modes?.[mode]?.countIndex;
+  if (!Array.isArray(countIndex)) return null;
+
+  const selectedTags = new Set(
+    (Array.isArray(tags) ? tags : [tags])
+      .flatMap((value) => String(value || "").split(","))
+      .map(normalize)
+      .filter(Boolean)
+  );
+  const role = normalize(jobRole);
+  const level = normalize(experienceLevel);
+  if (!role || !level || selectedTags.size === 0) return null;
+
+  return countIndex.reduce((total, group) => {
+    if (!group.jobRoles.includes(role) ||
+        !group.experienceLevels.includes(level) ||
+        !group.tags.some((tag) => selectedTags.has(tag))) {
+      return total;
+    }
+    return total + group.count;
+  }, 0);
+}
+
 export function subscribeSetupMetadata(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -50,7 +87,9 @@ export function refreshSetupMetadata() {
     // Bundled metadata may be out of date even if Firestore revision is zero.
     if (verified && revision === version) return false;
     const fresh = await request("");
-    if (fresh.schemaVersion !== 1 || !fresh.modes || fresh.version !== version) {
+    // Support old backend responses during a rolling frontend/backend deploy.
+    // Schema 1 has no index; counting falls back to the existing API.
+    if (![1, 2].includes(fresh.schemaVersion) || !fresh.modes || fresh.version !== version) {
       throw new Error("Incompatible or changed metadata revision; retry on next refresh.");
     }
     metadata = fresh;

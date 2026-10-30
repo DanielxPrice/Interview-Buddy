@@ -1,6 +1,7 @@
 const QuestionRepository = require("../contracts/QuestionRepository");
 const { randomUUID } = require("node:crypto");
 const { FieldValue } = require("firebase-admin/firestore");
+const { QUESTION_MODE_SCAN_LIMIT } = require("../../config/questionCatalogLimits");
 
 /**
  * Firestore implementation of the question data-access contract.
@@ -24,7 +25,44 @@ class FirestoreQuestionRepository extends QuestionRepository {
     const snapshot = await this.db
       .collection("questions")
       .where("mode", "==", mode)
+      .limit(QUESTION_MODE_SCAN_LIMIT + 1)
       .get();
+
+    // Do not quietly return an incomplete candidate pool. If the collection
+    // outgrows this bound, an administrator must raise the limit or replace
+    // this scan with an indexed, paginated candidate-selection design.
+    if (snapshot.docs.length > QUESTION_MODE_SCAN_LIMIT) {
+      const error = new Error("Question catalog exceeds the configured mode scan limit.");
+      error.statusCode = 503;
+      error.code = "QUESTION_CATALOG_TOO_LARGE";
+      throw error;
+    }
+
+    return snapshot.docs.map((document) => ({
+      id: document.id,
+      ...document.data(),
+    }));
+  }
+
+  /**
+   * Build public setup metadata using a Firestore field projection. This
+   * avoids transferring private answers, prompts, grading criteria, etc.
+   * Full question reads remain available to the authoritative assignment path.
+   */
+  async findByModeMetadata(mode) {
+    const snapshot = await this.db
+      .collection("questions")
+      .where("mode", "==", mode)
+      .select("mode", "active", "jobRoles", "experienceLevels", "tags")
+      .limit(QUESTION_MODE_SCAN_LIMIT + 1)
+      .get();
+
+    if (snapshot.docs.length > QUESTION_MODE_SCAN_LIMIT) {
+      const error = new Error("Question catalog exceeds the configured mode scan limit.");
+      error.statusCode = 503;
+      error.code = "QUESTION_CATALOG_TOO_LARGE";
+      throw error;
+    }
 
     return snapshot.docs.map((document) => ({
       id: document.id,

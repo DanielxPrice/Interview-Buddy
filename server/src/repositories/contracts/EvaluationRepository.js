@@ -1,9 +1,3 @@
-/**
- * Data-access contract for persisted AI answer evaluations.
- *
- * The application layer only knows about this method. It does not know how
- * sessions or nested responses are represented in Firestore.
- */
 class EvaluationRepository {
   constructor() {
     if (new.target === EvaluationRepository) {
@@ -13,17 +7,46 @@ class EvaluationRepository {
     }
   }
 
-  async saveEvaluation({
-    sessionId,
-    questionId,
-    questionPrompt,
-    mode,
-    candidateResponse,
-    evaluation,
-    metadata,
-    evaluatedAt,
-  }) {
-    throw new Error("saveEvaluation() must be implemented.");
+  async reserveEvaluation(_options) {
+    throw new Error(
+      "reserveEvaluation() must be implemented."
+    );
+  }
+
+  async markProviderStarted(_options) {
+    throw new Error(
+      "markProviderStarted() must be implemented."
+    );
+  }
+
+  async markUncertainEvaluation(_options) {
+    throw new Error(
+      "markUncertainEvaluation() must be implemented."
+    );
+  }
+
+  async reconcileUncertainEvaluation(_options) {
+    throw new Error(
+      "reconcileUncertainEvaluation() must be implemented."
+    );
+  }
+
+  async completeReservedEvaluation(_options) {
+    throw new Error(
+      "completeReservedEvaluation() must be implemented."
+    );
+  }
+
+  async failReservedEvaluation(_options) {
+    throw new Error(
+      "failReservedEvaluation() must be implemented."
+    );
+  }
+
+  async saveEvaluation(_options) {
+    throw new Error(
+      "saveEvaluation() must be implemented."
+    );
   }
 }
 

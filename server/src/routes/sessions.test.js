@@ -9,30 +9,43 @@ const TEST_SESSION_ID = "session-123";
 const testSession = {
   id: TEST_SESSION_ID,
   userId: TEST_USER_ID,
-  mode: "technical",
+  mode: "Quiz Style",
   jobRole: "Software Engineer",
   experienceLevel: "entry",
   status: "active",
   completedAt: null,
 };
 
-function createTestApp(sessionRepository, authenticated = true) {
+function createTestApp(
+  sessionRepository,
+  authenticated = true
+) {
   const app = express();
   app.use(express.json());
 
-  // Test-only identity injection; production uses Firebase requireAuth.
+  // Test-only identity injection.
+  // Production uses Firebase requireAuth.
   if (authenticated) {
     app.use((req, res, next) => {
-      req.user = { uid: TEST_USER_ID };
+      req.user = {
+        uid: TEST_USER_ID,
+      };
+
       next();
     });
   }
 
-  app.use("/api/sessions", createSessionRouter({ sessionRepository }));
+  app.use(
+    "/api/sessions",
+    createSessionRouter({
+      sessionRepository,
+    })
+  );
 
-  // Test-only error handler, so we can verify error propagation.
   app.use((error, req, res, _next) => {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({
+      error: error.message,
+    });
   });
 
   return app;
@@ -47,87 +60,131 @@ describe("Session API endpoints", () => {
       createSession: jest.fn(),
       findById: jest.fn(),
       listByUser: jest.fn(),
-      completeSession: jest.fn(),
+      finalizeSessionWithResults: jest.fn(),
+      listResponses: jest.fn().mockResolvedValue([]),
     };
 
     app = createTestApp(sessionRepository);
   });
 
   test("requires a session repository", () => {
-    expect(() => createSessionRouter({})).toThrow(
+    expect(() =>
+      createSessionRouter({})
+    ).toThrow(
       "createSessionRouter requires sessionRepository."
     );
   });
 
   test("creates a session with authenticated ownership and trimmed inputs", async () => {
-    sessionRepository.createSession.mockResolvedValue(testSession);
+    sessionRepository.createSession.mockResolvedValue(
+      testSession
+    );
 
     const response = await request(app)
       .post("/api/sessions")
       .send({
         userId: "forged-user",
-        mode: " technical ",
+        mode: "Quiz Style",
         jobRole: " Software Engineer ",
         experienceLevel: " entry ",
+        tags: ["Trees"],
+        questionCount: 2,
       });
 
     expect(response.status).toBe(201);
     expect(response.body).toEqual(testSession);
-    expect(sessionRepository.createSession).toHaveBeenCalledWith({
+
+    expect(
+      sessionRepository.createSession
+    ).toHaveBeenCalledWith({
       userId: TEST_USER_ID,
-      mode: "technical",
+      mode: "Quiz Style",
       jobRole: "Software Engineer",
       experienceLevel: "entry",
+      tags: ["trees"],
+      questionCount: 2,
     });
+  });
+
+  test("SEC-05 propagates active session capacity errors without creating a session", async () => {
+    const error = new Error("Finish an active interview before starting another.");
+    error.statusCode = 429;
+    error.code = "ACTIVE_SESSION_LIMIT_EXCEEDED";
+    sessionRepository.createSession.mockRejectedValue(error);
+    const response = await request(app).post("/api/sessions").send({
+      mode: "Quiz Style", jobRole: "Software Engineer",
+      experienceLevel: "Beginner", tags: ["trees"], questionCount: 2,
+    });
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe("ACTIVE_SESSION_LIMIT_EXCEEDED");
+    expect(sessionRepository.createSession).toHaveBeenCalledTimes(1);
   });
 
   test.each([
     ["missing", undefined],
     ["whitespace-only", "   "],
     ["non-string", 123],
-  ])("rejects a %s interview mode", async (_label, mode) => {
-    const response = await request(app)
-      .post("/api/sessions")
-      .send({
-        mode,
-        jobRole: "Software Engineer",
-        experienceLevel: "entry",
-      });
+  ])(
+    "rejects a %s interview mode",
+    async (_label, mode) => {
+      const response = await request(app)
+        .post("/api/sessions")
+        .send({
+          mode,
+          jobRole: "Software Engineer",
+          experienceLevel: "entry",
+          tags: ["trees"],
+          questionCount: 2,
+        });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe("mode is required.");
-    expect(sessionRepository.createSession).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(
+        /supported interview mode/i
+      );
+
+      expect(
+        sessionRepository.createSession
+      ).not.toHaveBeenCalled();
+    }
+  );
 
   test.each([
     [
       "missing job role",
       {
-        mode: "technical",
+        mode: "Quiz Style",
         experienceLevel: "entry",
+        tags: ["trees"],
+        questionCount: 2,
       },
     ],
     [
       "blank job role",
       {
-        mode: "technical",
+        mode: "Quiz Style",
         jobRole: " ",
         experienceLevel: "entry",
+        tags: ["trees"],
+        questionCount: 2,
       },
     ],
     [
       "missing experience level",
       {
-        mode: "technical",
+        mode: "Quiz Style",
         jobRole: "Software Engineer",
+        tags: ["trees"],
+        questionCount: 2,
       },
     ],
     [
       "invalid experience level",
       {
-        mode: "technical",
+        mode: "Quiz Style",
         jobRole: "Software Engineer",
         experienceLevel: 3,
+        tags: ["trees"],
+        questionCount: 2,
       },
     ],
   ])("rejects %s", async (_label, body) => {
@@ -136,24 +193,39 @@ describe("Session API endpoints", () => {
       .send(body);
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe(
-      "Job role and experience level are required."
+
+    expect(response.body.error).toMatch(
+      /job role and experience level/i
     );
-    expect(sessionRepository.createSession).not.toHaveBeenCalled();
+
+    expect(
+      sessionRepository.createSession
+    ).not.toHaveBeenCalled();
   });
 
   test("lists sessions belonging to the authenticated user", async () => {
-    sessionRepository.listByUser.mockResolvedValue([testSession]);
+    sessionRepository.listByUser.mockResolvedValue([
+      testSession,
+    ]);
 
-    const response = await request(app).get("/api/sessions");
+    const response = await request(app).get(
+      "/api/sessions"
+    );
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual([testSession]);
-    expect(sessionRepository.listByUser).toHaveBeenCalledWith(TEST_USER_ID);
+    expect(response.body).toEqual([
+      testSession,
+    ]);
+
+    expect(
+      sessionRepository.listByUser
+    ).toHaveBeenCalledWith(TEST_USER_ID);
   });
 
   test("retrieves a session owned by the authenticated user", async () => {
-    sessionRepository.findById.mockResolvedValue(testSession);
+    sessionRepository.findById.mockResolvedValue(
+      testSession
+    );
 
     const response = await request(app).get(
       `/api/sessions/${TEST_SESSION_ID}`
@@ -161,18 +233,25 @@ describe("Session API endpoints", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(testSession);
-    expect(sessionRepository.findById).toHaveBeenCalledWith(TEST_SESSION_ID);
+
+    expect(
+      sessionRepository.findById
+    ).toHaveBeenCalledWith(TEST_SESSION_ID);
   });
 
   test("returns 404 when a requested session does not exist", async () => {
-    sessionRepository.findById.mockResolvedValue(null);
+    sessionRepository.findById.mockResolvedValue(
+      null
+    );
 
     const response = await request(app).get(
       "/api/sessions/missing-session"
     );
 
     expect(response.status).toBe(404);
-    expect(response.body.error).toBe("Session not found.");
+    expect(response.body.error).toBe(
+      "Session not found."
+    );
   });
 
   test("rejects access to another user's session", async () => {
@@ -186,10 +265,14 @@ describe("Session API endpoints", () => {
     );
 
     expect(response.status).toBe(403);
+
     expect(response.body.error).toBe(
       "You do not have access to this session."
     );
-    expect(sessionRepository.completeSession).not.toHaveBeenCalled();
+
+    expect(
+      sessionRepository.finalizeSessionWithResults
+    ).not.toHaveBeenCalled();
   });
 
   test("completes an existing session owned by the authenticated user", async () => {
@@ -199,17 +282,29 @@ describe("Session API endpoints", () => {
       completedAt: "2026-10-11T00:00:00.000Z",
     };
 
-    sessionRepository.findById.mockResolvedValue(testSession);
-    sessionRepository.completeSession.mockResolvedValue(completedSession);
+    sessionRepository.findById.mockResolvedValue(
+      testSession
+    );
+
+    sessionRepository.finalizeSessionWithResults
+      .mockResolvedValue(completedSession);
 
     const response = await request(app).patch(
       `/api/sessions/${TEST_SESSION_ID}/complete`
     );
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(completedSession);
-    expect(sessionRepository.completeSession).toHaveBeenCalledWith(
-      TEST_SESSION_ID
+    expect(response.body).toMatchObject(
+      completedSession
+    );
+
+    expect(response.body.breakdown).toEqual([]);
+
+    expect(
+      sessionRepository.finalizeSessionWithResults
+    ).toHaveBeenCalledWith(
+      TEST_SESSION_ID,
+      TEST_USER_ID
     );
   });
 
@@ -224,31 +319,47 @@ describe("Session API endpoints", () => {
     );
 
     expect(response.status).toBe(403);
-    expect(sessionRepository.completeSession).not.toHaveBeenCalled();
+
+    expect(
+      sessionRepository.finalizeSessionWithResults
+    ).not.toHaveBeenCalled();
   });
 
   test("returns 404 when completing an unknown session", async () => {
-    sessionRepository.findById.mockResolvedValue(null);
+    sessionRepository.findById.mockResolvedValue(
+      null
+    );
 
     const response = await request(app).patch(
       "/api/sessions/missing-session/complete"
     );
 
     expect(response.status).toBe(404);
-    expect(sessionRepository.completeSession).not.toHaveBeenCalled();
+
+    expect(
+      sessionRepository.finalizeSessionWithResults
+    ).not.toHaveBeenCalled();
   });
 
   test("returns 404 if the session disappears during completion", async () => {
-    sessionRepository.findById.mockResolvedValue(testSession);
-    sessionRepository.completeSession.mockResolvedValue(null);
+    sessionRepository.findById.mockResolvedValue(
+      testSession
+    );
+
+    sessionRepository.finalizeSessionWithResults
+      .mockResolvedValue(null);
 
     const response = await request(app).patch(
       `/api/sessions/${TEST_SESSION_ID}/complete`
     );
 
     expect(response.status).toBe(404);
-    expect(sessionRepository.completeSession).toHaveBeenCalledWith(
-      TEST_SESSION_ID
+
+    expect(
+      sessionRepository.finalizeSessionWithResults
+    ).toHaveBeenCalledWith(
+      TEST_SESSION_ID,
+      TEST_USER_ID
     );
   });
 
@@ -258,13 +369,19 @@ describe("Session API endpoints", () => {
       false
     );
 
-    const response = await request(unauthenticatedApp).get(
-      "/api/sessions"
-    );
+    const response = await request(
+      unauthenticatedApp
+    ).get("/api/sessions");
 
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe("Authentication is required.");
-    expect(sessionRepository.listByUser).not.toHaveBeenCalled();
+
+    expect(response.body.error).toBe(
+      "Authentication is required."
+    );
+
+    expect(
+      sessionRepository.listByUser
+    ).not.toHaveBeenCalled();
   });
 
   test("forwards repository failures to the error handler", async () => {
@@ -272,9 +389,14 @@ describe("Session API endpoints", () => {
       new Error("Firestore unavailable.")
     );
 
-    const response = await request(app).get("/api/sessions");
+    const response = await request(app).get(
+      "/api/sessions"
+    );
 
     expect(response.status).toBe(500);
-    expect(response.body.error).toBe("Firestore unavailable.");
+
+    expect(response.body.error).toBe(
+      "Firestore unavailable."
+    );
   });
 });

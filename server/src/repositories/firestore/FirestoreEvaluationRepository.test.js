@@ -11,6 +11,7 @@ describe("FirestoreEvaluationRepository", () => {
   let responseRef;
 
   const evaluationData = {
+    userId: "test-user",
     sessionId: "session-123",
     questionId: "question-123",
     questionPrompt: "Explain closures.",
@@ -52,13 +53,30 @@ describe("FirestoreEvaluationRepository", () => {
       callback(transaction)
     );
 
-    transaction.get.mockResolvedValue({
-      exists: true,
-      data: () => ({
-        userId: "test-user",
-        status: "active",
-      }),
-    });
+    
+    transaction.get.mockImplementation(
+      async (reference) => {
+        if (reference === responseRef) {
+          return {
+            exists: false,
+          };
+        }
+
+        return {
+          exists: true,
+          data: () => ({
+            userId: "test-user",
+            status: "active",
+            mode: "Theoretical Style",
+            assignmentStatus: "assigned",
+            assignedQuestionIds: [
+              "question-123",
+            ],
+          }),
+        };
+      }
+    );
+
 
     repository = new FirestoreEvaluationRepository({
       db,
@@ -83,7 +101,6 @@ describe("FirestoreEvaluationRepository", () => {
         candidateResponse: "My answer",
         evaluation: evaluationData.evaluation,
       }),
-      { merge: true }
     );
   });
 
@@ -107,7 +124,9 @@ describe("FirestoreEvaluationRepository", () => {
     transaction.get.mockResolvedValue({
       exists: true,
       data: () => ({
+        userId: "test-user",
         status: "completed",
+        mode: "Theoretical Style",
       }),
     });
 
@@ -128,9 +147,10 @@ describe("FirestoreEvaluationRepository", () => {
         ...evaluationData,
         sessionId: null,
       })
-    ).rejects.toThrow(
-      "sessionId and questionId are required"
-    );
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: "EVALUATION_IDENTIFIERS_REQUIRED",
+    });
 
     expect(db.runTransaction).not.toHaveBeenCalled();
   });

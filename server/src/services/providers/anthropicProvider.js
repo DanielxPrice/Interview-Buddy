@@ -9,12 +9,21 @@ const {
   normalizeEvaluation,
 } = require("../evaluationContract");
 const { getAiConfig } = require("../../config/aiConfig");
+const {
+  AI_PROVIDER_TIMEOUT_MS,
+} = require("../../config/evaluationRecovery");
 
 async function getAnthropicClient() {
   const config = await getAiConfig();
 
   return new Anthropic({
     apiKey: config.anthropicApiKey,
+
+    // Prevent the SDK from silently retrying.
+    maxRetries: 0,
+
+    // Bound one provider HTTP request.
+    timeout: AI_PROVIDER_TIMEOUT_MS,
   });
 }
 

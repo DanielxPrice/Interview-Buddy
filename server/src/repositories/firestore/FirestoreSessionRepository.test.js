@@ -1,265 +1,890 @@
-
-const FirestoreSessionRepository = require(
-  "./FirestoreSessionRepository"
+const FirestoreUserRepository = require(
+  "./FirestoreUserRepository"
 );
 
-const TEST_USER_ID = "user-123";
-const TEST_SESSION_ID = "session-123";
-
-const createTestSession = (overrides = {}) => ({
-  userId: TEST_USER_ID,
-  mode: "technical",
-  jobRole: "Software Engineer",
-  experienceLevel: "entry",
-  status: "active",
-  createdAt: "CREATED_TIMESTAMP",
-  updatedAt: "UPDATED_TIMESTAMP",
-  completedAt: null,
-  ...overrides,
-});
-
-describe("FirestoreSessionRepository", () => {
-  let repository;
+describe("FirestoreUserRepository", () => {
   let db;
-  let collection;
-  let docRef;
-  let transaction;
+  let admin;
+  let repository;
+
+  let setMock;
+  let createMock;
+  let getMock;
+  let updateMock;
+  let docMock;
+  let whereMock;
+  let limitMock;
+  let collectionMock;
 
   beforeEach(() => {
-    docRef = {
-      id: TEST_SESSION_ID,
-      get: jest.fn(),
-    };
+    jest.clearAllMocks();
 
-    collection = {
-      add: jest.fn(),
-      doc: jest.fn(() => docRef),
-      where: jest.fn(),
-      orderBy: jest.fn(),
-      get: jest.fn(),
-    };
+    setMock = jest.fn();
+    createMock = jest.fn();
+    getMock = jest.fn();
+    updateMock = jest.fn();
 
-    collection.where.mockReturnValue(collection);
-    collection.orderBy.mockReturnValue(collection);
+    docMock = jest.fn(() => ({
+      set: setMock,
+      create: createMock,
+      get: getMock,
+      update: updateMock,
+    }));
 
-    transaction = {
-      get: jest.fn(),
-      update: jest.fn(),
-    };
+    limitMock = jest.fn();
+
+    whereMock = jest.fn(() => ({
+      limit: limitMock,
+    }));
+
+    collectionMock = jest.fn(() => ({
+      doc: docMock,
+      where: whereMock,
+    }));
 
     db = {
-      collection: jest.fn(() => collection),
-      runTransaction: jest.fn(async (callback) =>
-        callback(transaction)
-      ),
+      collection: collectionMock,
     };
 
-    repository = new FirestoreSessionRepository({
-      db,
-      admin: null,
-    });
-  });
-
-  test("rejects missing Firestore database", () => {
-    expect(() =>
-      new FirestoreSessionRepository({ db: null })
-    ).toThrow("requires a Firestore db instance");
-  });
-
-  test("creates an active session with the expected fields", async () => {
-    collection.add.mockResolvedValue({ id: TEST_SESSION_ID });
-
-    const result = await repository.createSession({
-      userId: TEST_USER_ID,
-      mode: "technical",
-      jobRole: "Software Engineer",
-      experienceLevel: "entry",
-    });
-
-    expect(db.collection).toHaveBeenCalledWith("sessions");
-    expect(collection.add).toHaveBeenCalledWith({
-      userId: TEST_USER_ID,
-      mode: "technical",
-      jobRole: "Software Engineer",
-      experienceLevel: "entry",
-      status: "active",
-      createdAt: expect.any(String),
-      updatedAt: expect.any(String),
-      completedAt: null,
-    });
-
-    expect(result).toEqual({
-      id: TEST_SESSION_ID,
-      ...collection.add.mock.calls[0][0],
-    });
-  });
-
-  test("uses Firebase server timestamps when Admin is available", async () => {
-    const serverTimestamp = jest.fn(() => "SERVER_TIMESTAMP");
-    const firebaseAdmin = {
+    admin = {
       firestore: {
-        FieldValue: { serverTimestamp },
+        FieldValue: {
+          serverTimestamp: jest.fn(
+            () => "mock-server-timestamp"
+          ),
+        },
       },
     };
 
-    repository = new FirestoreSessionRepository({
+    repository = new FirestoreUserRepository({
       db,
-      admin: firebaseAdmin,
-    });
-    collection.add.mockResolvedValue({ id: TEST_SESSION_ID });
-
-    const result = await repository.createSession({
-      userId: TEST_USER_ID,
-      mode: "technical",
-    });
-
-    expect(collection.add).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jobRole: null,
-        experienceLevel: null,
-        createdAt: "SERVER_TIMESTAMP",
-        updatedAt: "SERVER_TIMESTAMP",
-      })
-    );
-    expect(result.createdAt).toBe("SERVER_TIMESTAMP");
-    expect(serverTimestamp).toHaveBeenCalledTimes(2);
-  });
-
-  test("rejects creating a session without required fields", async () => {
-    await expect(
-      repository.createSession({ userId: null, mode: "technical" })
-    ).rejects.toThrow("userId and mode are required.");
-
-    await expect(
-      repository.createSession({ userId: TEST_USER_ID, mode: null })
-    ).rejects.toThrow("userId and mode are required.");
-
-    expect(collection.add).not.toHaveBeenCalled();
-  });
-
-  test("finds an existing session by ID", async () => {
-    const savedData = createTestSession();
-    docRef.get.mockResolvedValue({
-      exists: true,
-      id: TEST_SESSION_ID,
-      data: () => savedData,
-    });
-
-    const result = await repository.findById(TEST_SESSION_ID);
-
-    expect(collection.doc).toHaveBeenCalledWith(TEST_SESSION_ID);
-    expect(result).toEqual({ id: TEST_SESSION_ID, ...savedData });
-  });
-
-  test("returns null when a session does not exist", async () => {
-    docRef.get.mockResolvedValue({ exists: false });
-
-    await expect(repository.findById("missing")).resolves.toBeNull();
-  });
-
-  test("rejects finding a session without an ID", async () => {
-    await expect(repository.findById(null)).rejects.toThrow(
-      "sessionId is required."
-    );
-    expect(collection.doc).not.toHaveBeenCalled();
-  });
-
-  test("lists all sessions for a user using newest-first query", async () => {
-    const firstSession = createTestSession();
-    const secondSession = createTestSession({
-      mode: "behavioral",
-      status: "completed",
-    });
-
-    collection.get.mockResolvedValue({
-      docs: [
-        { id: "session-1", data: () => firstSession },
-        { id: "session-2", data: () => secondSession },
-      ],
-    });
-
-    const result = await repository.listByUser(TEST_USER_ID);
-
-    expect(collection.where).toHaveBeenCalledWith(
-      "userId",
-      "==",
-      TEST_USER_ID
-    );
-    expect(collection.orderBy).toHaveBeenCalledWith(
-      "createdAt",
-      "desc"
-    );
-    expect(result).toEqual([
-      { id: "session-1", ...firstSession },
-      { id: "session-2", ...secondSession },
-    ]);
-  });
-
-  test("rejects listing sessions without a user ID", async () => {
-    await expect(repository.listByUser(null)).rejects.toThrow(
-      "userId is required."
-    );
-    expect(collection.where).not.toHaveBeenCalled();
-  });
-
-  test("completes an active session using a transaction", async () => {
-    const existingData = createTestSession();
-    transaction.get.mockResolvedValue({
-      exists: true,
-      id: TEST_SESSION_ID,
-      data: () => existingData,
-    });
-
-    const result = await repository.completeSession(TEST_SESSION_ID);
-
-    expect(collection.doc).toHaveBeenCalledWith(TEST_SESSION_ID);
-    expect(db.runTransaction).toHaveBeenCalledTimes(1);
-    expect(transaction.get).toHaveBeenCalledWith(docRef);
-    expect(transaction.update).toHaveBeenCalledWith(
-      docRef,
-      expect.objectContaining({
-        status: "completed",
-        completedAt: expect.any(String),
-        updatedAt: expect.any(String),
-      })
-    );
-    expect(result).toEqual({
-      id: TEST_SESSION_ID,
-      ...existingData,
-      status: "completed",
+      admin,
     });
   });
 
-  test("does not update an already completed session", async () => {
-    const completedData = createTestSession({
-      status: "completed",
-      completedAt: "PREVIOUS_TIMESTAMP",
-    });
-    transaction.get.mockResolvedValue({
-      exists: true,
-      id: TEST_SESSION_ID,
-      data: () => completedData,
+  describe("createProfile", () => {
+    test("creates a normalized user profile", async () => {
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: true,
+          docs: [],
+        }),
+      });
+
+      createMock.mockResolvedValue();
+
+      const result =
+        await repository.createProfile({
+          uid: " user-123 ",
+          username: " TestUser ",
+          email: " test@example.com ",
+        });
+
+      expect(
+        collectionMock
+      ).toHaveBeenCalledWith("users");
+
+      expect(docMock).toHaveBeenCalledWith(
+        "user-123"
+      );
+
+      expect(createMock).toHaveBeenCalledWith({
+        uid: "user-123",
+        username: "TestUser",
+        usernameLower: "testuser",
+        email: "test@example.com",
+        role: "user",
+        ranking: { points: 0, rankedSessions: 0, averageScore: 0 },
+
+        settings: {
+          theme: "light",
+        },
+
+        createdAt: "mock-server-timestamp",
+        updatedAt: "mock-server-timestamp",
+      });
+
+      expect(result).toEqual({
+        uid: "user-123",
+        username: "TestUser",
+        usernameLower: "testuser",
+        email: "test@example.com",
+        role: "user",
+        ranking: { points: 0, rankedSessions: 0, averageScore: 0 },
+
+        settings: {
+          theme: "light",
+        },
+
+        createdAt: "mock-server-timestamp",
+        updatedAt: "mock-server-timestamp",
+      });
     });
 
-    const result = await repository.completeSession(TEST_SESSION_ID);
+    test("repeated profile creation never overwrites earned ranking points", async () => {
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({ empty: true, docs: [] }),
+      });
+      createMock.mockRejectedValue(new Error("Already exists"));
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123", username: "ExistingName", email: "test@example.com",
+          role: "admin", ranking: { points: 190, rankedSessions: 2, averageScore: 95 },
+        }),
+      });
+      const saved = await repository.createProfile({
+        uid: "user-123", username: "ExistingName", email: "test@example.com",
+      });
+      expect(saved.ranking.points).toBe(190);
+      expect(saved.role).toBe("admin");
+      expect(setMock).not.toHaveBeenCalled();
+    });
 
-    expect(result).toEqual({ id: TEST_SESSION_ID, ...completedData });
-    expect(transaction.update).not.toHaveBeenCalled();
+    test("rejects a username owned by another user", async () => {
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: false,
+          docs: [
+            {
+              id: "different-user",
+              data: () => ({
+                uid: "different-user",
+                username: "TestUser",
+                usernameLower: "testuser",
+              }),
+            },
+          ],
+        }),
+      });
+
+      await expect(
+        repository.createProfile({
+          uid: "user-123",
+          username: "TestUser",
+          email: "test@example.com",
+        })
+      ).rejects.toMatchObject({
+        code: "username-already-exists",
+        message:
+          "That username is already in use.",
+      });
+
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    test("rejects missing required fields", async () => {
+      await expect(
+        repository.createProfile({
+          uid: "",
+          username: "",
+          email: "",
+        })
+      ).rejects.toThrow(
+        "uid, username, and email are required to create a user profile."
+      );
+
+      expect(createMock).not.toHaveBeenCalled();
+    });
   });
 
-  test("returns null when completing a missing session", async () => {
-    transaction.get.mockResolvedValue({ exists: false });
+  describe("findByUsername", () => {
+    test("performs a lowercase username lookup", async () => {
+      const queryGet =
+        jest.fn().mockResolvedValue({
+          empty: false,
+          docs: [
+            {
+              id: "user-123",
+              data: () => ({
+                uid: "user-123",
+                username: "TestUser",
+                usernameLower: "testuser",
+                email: "test@example.com",
+              }),
+            },
+          ],
+        });
 
-    await expect(
-      repository.completeSession("missing")
-    ).resolves.toBeNull();
-    expect(transaction.update).not.toHaveBeenCalled();
+      limitMock.mockReturnValue({
+        get: queryGet,
+      });
+
+      const result =
+        await repository.findByUsername(
+          "  TESTUSER  "
+        );
+
+      expect(whereMock).toHaveBeenCalledWith(
+        "usernameLower",
+        "==",
+        "testuser"
+      );
+
+      expect(limitMock).toHaveBeenCalledWith(1);
+
+      expect(result).toEqual({
+        id: "user-123",
+        uid: "user-123",
+        username: "TestUser",
+        usernameLower: "testuser",
+        email: "test@example.com",
+      });
+    });
+
+    test("returns null when no profile exists", async () => {
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: true,
+          docs: [],
+        }),
+      });
+
+      const result =
+        await repository.findByUsername(
+          "missinguser"
+        );
+
+      expect(result).toBeNull();
+    });
+
+    test("returns null for an empty username", async () => {
+      const result =
+        await repository.findByUsername(" ");
+
+      expect(result).toBeNull();
+
+      expect(whereMock).not.toHaveBeenCalled();
+    });
   });
 
-  test("rejects completing a session without an ID", async () => {
-    await expect(repository.completeSession(null)).rejects.toThrow(
-      "sessionId is required."
-    );
-    expect(db.runTransaction).not.toHaveBeenCalled();
+  describe("findById", () => {
+    test("returns the stored user profile", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+          username: "TestUser",
+          usernameLower: "testuser",
+          email: "test@example.com",
+        }),
+      });
+
+      const result =
+        await repository.findById("user-123");
+
+      expect(docMock).toHaveBeenCalledWith(
+        "user-123"
+      );
+
+      expect(result).toEqual({
+        id: "user-123",
+        uid: "user-123",
+        username: "TestUser",
+        usernameLower: "testuser",
+        email: "test@example.com",
+      });
+    });
+
+    test("returns null when user does not exist", async () => {
+      getMock.mockResolvedValue({
+        exists: false,
+      });
+
+      const result =
+        await repository.findById("user-123");
+
+      expect(result).toBeNull();
+    });
+
+    test("returns null for an empty user id", async () => {
+      const result =
+        await repository.findById(" ");
+
+      expect(result).toBeNull();
+
+      expect(docMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updateProfile", () => {
+    test("updates username and display name", async () => {
+      // First get() checks whether the document exists.
+      // Second get() occurs through findById() after the update.
+      getMock
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            username: "OldUser",
+            usernameLower: "olduser",
+            email: "test@example.com",
+          }),
+        })
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            username: "NewUser",
+            usernameLower: "newuser",
+            displayName: "New Name",
+            email: "test@example.com",
+            updatedAt:
+              "mock-server-timestamp",
+          }),
+        });
+
+      // Username availability check.
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: true,
+          docs: [],
+        }),
+      });
+
+      updateMock.mockResolvedValue();
+
+      const result =
+        await repository.updateProfile(
+          " user-123 ",
+          {
+            username: " NewUser ",
+            displayName: " New Name ",
+          }
+        );
+
+      expect(updateMock).toHaveBeenCalledWith({
+        username: "NewUser",
+        usernameLower: "newuser",
+        displayName: "New Name",
+        updatedAt:
+          "mock-server-timestamp",
+      });
+
+      expect(result).toEqual({
+        id: "user-123",
+        uid: "user-123",
+        username: "NewUser",
+        usernameLower: "newuser",
+        displayName: "New Name",
+        email: "test@example.com",
+        updatedAt:
+          "mock-server-timestamp",
+      });
+    });
+
+    test("rejects an empty uid", async () => {
+      await expect(
+        repository.updateProfile("", {
+          username: "NewUser",
+        })
+      ).rejects.toThrow(
+        "uid is required to update a user profile."
+      );
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    test("returns null when the user does not exist", async () => {
+      getMock.mockResolvedValue({
+        exists: false,
+      });
+
+      const result =
+        await repository.updateProfile(
+          "user-123",
+          {
+            displayName: "New Name",
+          }
+        );
+
+      expect(result).toBeNull();
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    test("rejects an empty username", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+        }),
+      });
+
+      await expect(
+        repository.updateProfile(
+          "user-123",
+          {
+            username: "   ",
+          }
+        )
+      ).rejects.toThrow(
+        "Username cannot be empty."
+      );
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    test("rejects a username owned by another user", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+        }),
+      });
+
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: false,
+          docs: [
+            {
+              id: "different-user",
+              data: () => ({
+                uid: "different-user",
+                username: "TakenUser",
+                usernameLower: "takenuser",
+              }),
+            },
+          ],
+        }),
+      });
+
+      await expect(
+        repository.updateProfile(
+          "user-123",
+          {
+            username: "TakenUser",
+          }
+        )
+      ).rejects.toMatchObject({
+        code: "username-already-exists",
+        message:
+          "That username is already in use.",
+      });
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    test("allows keeping the same username", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            username: "TestUser",
+          }),
+        })
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            username: "TestUser",
+            usernameLower: "testuser",
+          }),
+        });
+
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: false,
+          docs: [
+            {
+              id: "user-123",
+              data: () => ({
+                uid: "user-123",
+                username: "TestUser",
+                usernameLower: "testuser",
+              }),
+            },
+          ],
+        }),
+      });
+
+      updateMock.mockResolvedValue();
+
+      await expect(
+        repository.updateProfile(
+          "user-123",
+          {
+            username: "TestUser",
+          }
+        )
+      ).resolves.toEqual({
+        id: "user-123",
+        uid: "user-123",
+        username: "TestUser",
+        usernameLower: "testuser",
+      });
+
+      expect(updateMock).toHaveBeenCalledWith({
+        username: "TestUser",
+        usernameLower: "testuser",
+        updatedAt:
+          "mock-server-timestamp",
+      });
+    });
+  });
+
+  describe("getSettings", () => {
+    test("returns stored user settings", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+          username: "TestUser",
+          settings: {
+            theme: "dark",
+            notifications: true,
+          },
+        }),
+      });
+
+      const result =
+        await repository.getSettings(
+          "user-123"
+        );
+
+      expect(result).toEqual({
+        theme: "dark",
+        notifications: true,
+      });
+    });
+
+    test("returns an empty object when the user has no settings", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+          username: "TestUser",
+        }),
+      });
+
+      const result =
+        await repository.getSettings(
+          "user-123"
+        );
+
+      expect(result).toEqual({});
+    });
+
+    test("returns null when the user does not exist", async () => {
+      getMock.mockResolvedValue({
+        exists: false,
+      });
+
+      const result =
+        await repository.getSettings(
+          "user-123"
+        );
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("updateSettings", () => {
+    test("updates user settings", async () => {
+      // Initial existence/data lookup.
+      getMock
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            settings: {},
+          }),
+        })
+        // getSettings() -> findById() after update
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            settings: {
+              theme: "dark",
+              notifications: false,
+            },
+          }),
+        });
+
+      updateMock.mockResolvedValue();
+
+      const result =
+        await repository.updateSettings(
+          " user-123 ",
+          {
+            theme: "dark",
+            notifications: false,
+          }
+        );
+
+      expect(updateMock).toHaveBeenCalledWith({
+        settings: {
+          theme: "dark",
+          notifications: false,
+        },
+        updatedAt:
+          "mock-server-timestamp",
+      });
+
+      expect(result).toEqual({
+        theme: "dark",
+        notifications: false,
+      });
+    });
+
+    test("merges settings with existing settings", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            settings: {
+              theme: "light",
+              notifications: true,
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            settings: {
+              theme: "dark",
+              notifications: true,
+            },
+          }),
+        });
+
+      updateMock.mockResolvedValue();
+
+      const result =
+        await repository.updateSettings(
+          "user-123",
+          {
+            theme: "dark",
+          }
+        );
+
+      expect(updateMock).toHaveBeenCalledWith({
+        settings: {
+          theme: "dark",
+          notifications: true,
+        },
+        updatedAt:
+          "mock-server-timestamp",
+      });
+
+      expect(result).toEqual({
+        theme: "dark",
+        notifications: true,
+      });
+    });
+
+    test("rejects an empty uid", async () => {
+      await expect(
+        repository.updateSettings("", {
+          theme: "dark",
+        })
+      ).rejects.toThrow(
+        "uid is required to update settings."
+      );
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    test("returns null when the user does not exist", async () => {
+      getMock.mockResolvedValue({
+        exists: false,
+      });
+
+      const result =
+        await repository.updateSettings(
+          "user-123",
+          {
+            theme: "dark",
+          }
+        );
+
+      expect(result).toBeNull();
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    test("rejects an invalid theme", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+          settings: {},
+        }),
+      });
+
+      await expect(
+        repository.updateSettings(
+          "user-123",
+          {
+            theme: "blue",
+          }
+        )
+      ).rejects.toThrow(
+        "theme must be either light or dark."
+      );
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    test("rejects a non-boolean notifications value", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+          settings: {},
+        }),
+      });
+
+      await expect(
+        repository.updateSettings(
+          "user-123",
+          {
+            notifications: "yes",
+          }
+        )
+      ).rejects.toThrow(
+        "notifications must be a boolean."
+      );
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+  });
+  
+  describe("Repository security and error handling", () => {
+    test("filters unsupported profile update fields", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({ uid: "user-123" }),
+        })
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            displayName: "New Name",
+          }),
+        });
+
+      updateMock.mockResolvedValue();
+
+      await repository.updateProfile("user-123", {
+        displayName: "New Name",
+        role: "admin",
+        email: "hacker@example.com",
+        uid: "different-user",
+      });
+
+      expect(updateMock).toHaveBeenCalledWith({
+        displayName: "New Name",
+        updatedAt: "mock-server-timestamp",
+      });
+
+      expect(updateMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("filters unsupported settings fields", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            settings: { theme: "light" },
+          }),
+        })
+        .mockResolvedValueOnce({
+          exists: true,
+          id: "user-123",
+          data: () => ({
+            uid: "user-123",
+            settings: { theme: "dark" },
+          }),
+        });
+
+      updateMock.mockResolvedValue();
+
+      await repository.updateSettings("user-123", {
+        theme: "dark",
+        role: "admin",
+        language: "en",
+      });
+
+      expect(updateMock).toHaveBeenCalledWith({
+        settings: { theme: "dark" },
+        updatedAt: "mock-server-timestamp",
+      });
+    });
+
+    test("propagates Firestore errors during profile creation", async () => {
+      limitMock.mockReturnValue({
+        get: jest.fn().mockResolvedValue({
+          empty: true,
+          docs: [],
+        }),
+      });
+
+      const databaseError = new Error(
+        "Firestore write failed"
+      );
+
+      createMock.mockRejectedValue(databaseError);
+
+      await expect(
+        repository.createProfile({
+          uid: "user-123",
+          username: "TestUser",
+          email: "test@example.com",
+        })
+      ).rejects.toThrow("Firestore write failed");
+
+      expect(createMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("propagates Firestore errors during settings updates", async () => {
+      getMock.mockResolvedValue({
+        exists: true,
+        id: "user-123",
+        data: () => ({
+          uid: "user-123",
+          settings: { theme: "light" },
+        }),
+      });
+
+      const databaseError = new Error(
+        "Firestore update failed"
+      );
+
+      updateMock.mockRejectedValue(databaseError);
+
+      await expect(
+        repository.updateSettings("user-123", {
+          theme: "dark",
+        })
+      ).rejects.toThrow("Firestore update failed");
+
+      expect(updateMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

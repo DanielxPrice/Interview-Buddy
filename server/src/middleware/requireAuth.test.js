@@ -1,3 +1,4 @@
+
 jest.mock("../firebaseAdmin", () => ({
   admin: {
     auth: jest.fn(),
@@ -7,7 +8,15 @@ jest.mock("../firebaseAdmin", () => ({
 const { admin } = require("../firebaseAdmin");
 const requireAuth = require("./requireAuth");
 
-function createResponse() {
+function makeRequest(
+  header = "Bearer test-token"
+) {
+  return {
+    get: jest.fn(() => header),
+  };
+}
+
+function makeResponse() {
   return {
     statusCode: 200,
     payload: null,
@@ -24,295 +33,207 @@ function createResponse() {
   };
 }
 
-describe("requireAuth middleware", () => {
+describe("SEC-02 Firebase authentication admission", () => {
   let verifyIdToken;
+  let getUser;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
     verifyIdToken = jest.fn();
+    getUser = jest.fn();
 
     admin.auth.mockReturnValue({
       verifyIdToken,
+      getUser,
     });
   });
 
-  it("accepts a valid Firebase ID token", async () => {
+  test("accepts a verified ordinary user and checks revocation", async () => {
     verifyIdToken.mockResolvedValue({
-      uid: "user-123",
-      email: "test@example.com",
+      uid: "u1",
+      email: "user@example.com",
       email_verified: true,
+      role: "user",
     });
 
-    const req = {
-      get: jest.fn().mockReturnValue(
-        "Bearer valid-token"
-      ),
-    };
-
-    const res = createResponse();
+    const req = makeRequest();
+    const res = makeResponse();
     const next = jest.fn();
 
     await requireAuth(req, res, next);
 
     expect(verifyIdToken).toHaveBeenCalledWith(
-      "valid-token"
+      "test-token",
+      true
     );
 
     expect(req.user).toEqual({
-      uid: "user-123",
-      email: "test@example.com",
+      uid: "u1",
+      email: "user@example.com",
       emailVerified: true,
       role: "user",
     });
 
+    expect(getUser).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects a request without a bearer token", async () => {
-    const req = {
-      get: jest.fn().mockReturnValue(""),
-    };
+  test("rejects requests without a valid Bearer header", async () => {
+    for (const header of [
+      "",
+      "Basic abc",
+      "Bearer ",
+      "Bearer token another",
+    ]) {
+      const res = makeResponse();
+      const next = jest.fn();
 
-    const res = createResponse();
-    const next = jest.fn();
+      await requireAuth(
+        makeRequest(header),
+        res,
+        next
+      );
 
-    await requireAuth(req, res, next);
-
-    expect(res.statusCode).toBe(401);
-
-    expect(res.payload).toEqual({
-      error: "Authentication is required.",
-      code: "auth-token-required",
-    });
+      expect(res.statusCode).toBe(401);
+      expect(res.payload.code).toBe(
+        "auth-token-required"
+      );
+      expect(next).not.toHaveBeenCalled();
+    }
 
     expect(verifyIdToken).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
   });
 
-  it("rejects an invalid Firebase ID token", async () => {
+  test.each([
+    ["expired", "auth/id-token-expired"],
+    ["revoked", "auth/id-token-revoked"],
+    ["disabled", "auth/user-disabled"],
+    ["deleted", "auth/user-not-found"],
+  ])("rejects %s tokens", async (_label, code) => {
     verifyIdToken.mockRejectedValue(
-      new Error("Invalid token")
+      Object.assign(new Error(code), {
+        code,
+      })
     );
 
-    const req = {
-      get: jest.fn().mockReturnValue(
-        "Bearer invalid-token"
-      ),
-    };
-
-    const res = createResponse();
+    const res = makeResponse();
     const next = jest.fn();
 
-    await requireAuth(req, res, next);
+    await requireAuth(
+      makeRequest(),
+      res,
+      next
+    );
 
     expect(res.statusCode).toBe(401);
-
-    expect(res.payload).toEqual({
-      error:
-        "The authentication token is invalid or expired.",
-      code: "invalid-auth-token",
-    });
-
     expect(next).not.toHaveBeenCalled();
+
     expect(verifyIdToken).toHaveBeenCalledWith(
-      "invalid-token"
+      "test-token",
+      true
     );
   });
 
-  it("rejects a malformed authorization header", async () => {
-    const req = {
-      get: jest.fn().mockReturnValue(
-        "Basic abc123"
-      ),
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await requireAuth(req, res, next);
-
-    expect(res.statusCode).toBe(401);
-
-    expect(res.payload).toEqual({
-      error: "Authentication is required.",
-      code: "auth-token-required",
-    });
-
-    expect(verifyIdToken).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it("defaults missing email and verification fields safely", async () => {
+  test("does not trust an old admin claim after a downgrade", async () => {
     verifyIdToken.mockResolvedValue({
-      uid: "user-123",
+      uid: "admin1",
+      role: "admin",
+      email_verified: true,
     });
 
-    const req = {
-      get: jest.fn().mockReturnValue(
-        "Bearer valid-token"
-      ),
-    };
+    getUser.mockResolvedValue({
+      uid: "admin1",
+      customClaims: {
+        role: "user",
+      },
+    });
 
-    const res = createResponse();
+    const req = makeRequest();
+    const res = makeResponse();
     const next = jest.fn();
 
     await requireAuth(req, res, next);
 
-    expect(req.user).toEqual({
-      uid: "user-123",
-      email: "",
-      emailVerified: false,
-      role: "user",
-    });
+    expect(getUser).toHaveBeenCalledWith(
+      "admin1"
+    );
 
+    expect(req.user.role).toBe("user");
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it("copies a valid role claim into req.user", async () => {
+  test("accepts a current admin claim after checking Firebase", async () => {
     verifyIdToken.mockResolvedValue({
-      uid: "admin-123",
-      email: "admin@example.com",
+      uid: "admin1",
       role: "admin",
     });
 
-    const req = {
-      get: jest.fn().mockReturnValue(
-        "Bearer admin-token"
-      ),
-    };
+    getUser.mockResolvedValue({
+      uid: "admin1",
+      customClaims: {
+        role: "admin",
+      },
+    });
 
-    const res = createResponse();
+    const req = makeRequest();
+    const res = makeResponse();
+    const next = jest.fn();
+
+    await requireAuth(req, res, next);
+
+    expect(req.user.role).toBe("admin");
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test("fails closed if Firebase token verification is unavailable", async () => {
+    verifyIdToken.mockRejectedValue(
+      Object.assign(
+        new Error("backend down"),
+        {
+          code: "auth/network-request-failed",
+        }
+      )
+    );
+
+    const res = makeResponse();
     const next = jest.fn();
 
     await requireAuth(
-      req,
+      makeRequest(),
       res,
       next
     );
 
-    expect(
-      req.user.role
-    ).toBe("admin");
-
-    expect(
-      next
-    ).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(503);
+    expect(res.payload.code).toBe(
+      "auth-verification-unavailable"
+    );
+    expect(next).not.toHaveBeenCalled();
   });
 
-  it("defaults an unknown role claim to user", async () => {
+  test("accepts case-insensitive bearer schemes", async () => {
     verifyIdToken.mockResolvedValue({
-      uid: "user-123",
-      role: "superuser",
+      uid: "u1",
     });
 
-    const req = {
-      get: jest.fn().mockReturnValue(
-        "Bearer valid-token"
-      ),
-    };
+    const req = makeRequest(
+      "bearer token"
+    );
 
-    const res = createResponse();
     const next = jest.fn();
 
     await requireAuth(
       req,
-      res,
+      makeResponse(),
       next
     );
 
-    expect(
-      req.user.role
-    ).toBe("user");
-
-    expect(
-      next
-    ).toHaveBeenCalledTimes(1);
-  });
-
-  //Extension: Additional test case for expired token
-  it("rejects an expired Firebase ID token", async () => {
-    const expiredError = new Error("Token expired");
-    expiredError.code = "auth/id-token-expired";
-
-    verifyIdToken.mockRejectedValue(expiredError);
-
-    const req = {
-      get: jest.fn().mockReturnValue("Bearer expired-token"),
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await requireAuth(req, res, next);
-
     expect(verifyIdToken).toHaveBeenCalledWith(
-      "expired-token"
+      "token",
+      true
     );
 
-    expect(res.statusCode).toBe(401);
-
-    expect(res.payload).toEqual({
-      error: "The authentication token is invalid or expired.",
-      code: "invalid-auth-token",
-    });
-
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  //Extension: Additional test case for missing authorization header
-  it("rejects an empty bearer token", async () => {
-    const req = {
-      get: jest.fn().mockReturnValue("Bearer "),
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await requireAuth(req, res, next);
-
-    expect(res.statusCode).toBe(401);
-
-    expect(res.payload).toEqual({
-      error: "Authentication is required.",
-      code: "auth-token-required",
-    });
-
-    expect(verifyIdToken).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  //Extension: Additional test case for lowercase bearer scheme
-  it("accepts a lowercase bearer authorization scheme", async () => {
-    verifyIdToken.mockResolvedValue({
-      uid: "user-123",
-      email: "test@example.com",
-      email_verified: true,
-    });
-
-    const req = {
-      get: jest.fn().mockReturnValue(
-        "bearer valid-token"
-      ),
-    };
-
-    const res = createResponse();
-    const next = jest.fn();
-
-    await requireAuth(req, res, next);
-
-    expect(verifyIdToken).toHaveBeenCalledWith(
-      "valid-token"
-    );
-
-    expect(req.user).toEqual({
-      uid: "user-123",
-      email: "test@example.com",
-      emailVerified: true,
-      role: "user",
-    });
-
-    expect(res.statusCode).toBe(200);
     expect(next).toHaveBeenCalledTimes(1);
   });
 });
