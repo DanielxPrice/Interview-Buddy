@@ -122,6 +122,7 @@ describe(
             usernameLower: "daniel",
             email: "daniel@example.com",
             role: "user",
+            ranking: { points: 0, rankedSessions: 0, averageScore: 0 },
 
             settings: {
                 theme: "light",
@@ -174,6 +175,10 @@ describe(
         documents.get("user-123").settings
         ).toEqual({
         theme: "light",
+        });
+
+        expect(documents.get("user-123").ranking).toEqual({
+          points: 0, rankedSessions: 0, averageScore: 0,
         });
 
         expect(
@@ -289,6 +294,7 @@ describe(
           settings: {
             theme: "dark",
           },
+          ranking: { points: 155, rankedSessions: 2, averageScore: 77.5 },
         };
 
         const {

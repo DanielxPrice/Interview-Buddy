@@ -1,4 +1,5 @@
 const UserRepository = require("../contracts/UserRepository");
+const { initialRanking } = require("../../services/rankingScore");
 const {
   DEFAULT_USER_ROLE,
 } = require("../../config/roles");
@@ -64,17 +65,27 @@ class FirestoreUserRepository extends UserRepository {
       usernameLower,
       email: normalizedEmail,
       role: DEFAULT_USER_ROLE,
+      ranking: initialRanking(),
       settings: {theme: "light",},
       createdAt: timestamp,
       updatedAt: timestamp,
     };
 
-    await this.db
-      .collection("users")
-      .doc(normalizedUid)
-      .set(profile);
-
-    return profile;
+    const userRef = this.db.collection("users").doc(normalizedUid);
+    try {
+      // Create-only protects existing ranking points, settings and roles.
+      // POST /profile must never reset a user's earned points.
+      await userRef.create(profile);
+      return profile;
+    } catch (error) {
+      // A repeated or parallel profile creation is idempotent.
+      // Never overwrite an existing profile.
+      const existing = await userRef.get();
+      if (existing?.exists) {
+        return { id: existing.id, ...existing.data() };
+      }
+      throw error;
+    }
   }
 
   async findById(userId) {

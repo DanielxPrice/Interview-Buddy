@@ -1,3 +1,5 @@
+const { initialRanking } = require("./rankingScore");
+
 const {
   DEFAULT_USER_ROLE,
   VALID_USER_ROLES,
@@ -253,6 +255,7 @@ async function syncAuthUsersToFirestore({
           normalizeUsernameKey(username),
         email,
         role: trustedAuthRole,
+        ranking: initialRanking(),
         settings: {theme: "light",},
         createdAt: getCreatedAt(user),
         updatedAt:
@@ -298,6 +301,11 @@ async function syncAuthUsersToFirestore({
     // username, email, role, etc.
     // ---------------------------------------------------
     const updates = {};
+
+    // Existing profiles may predate SCRUM-84. Do not overwrite existing rankings.
+    if (existingData.ranking == null) {
+      updates.ranking = initialRanking();
+    }
 
     if (!existingData.uid) {
       updates.uid = uid;

@@ -8,6 +8,7 @@ function fixture({ limit = 2, dailyLimit = 30, lifetimeHours = 1 } = {}) {
   let nowMs = Date.parse("2026-10-28T19:00:00Z");
   let serial = 0;
   const docs = new Map();
+  docs.set("users/u1", { uid: "u1", ranking: { points: 0, rankedSessions: 0, averageScore: 0 } });
   const ref = (path) => ({
     id: path.split("/").pop(), path,
     collection: (name) => collection(`${path}/${name}`),
