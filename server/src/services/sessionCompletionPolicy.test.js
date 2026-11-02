@@ -202,4 +202,126 @@ describe("SEC-03 authoritative completion policy", () => {
       )
     ).toThrow(/inconsistent/i);
   });
+
+  //Tests that close the gap between different interview mode scoring
+  describe("Scoring normalization across interview modes", () => {
+    const modes = [
+      "Code Style",
+      "Theoretical Style",
+      "Quiz Style",
+    ];
+
+    test.each(modes)(
+      "%s uses the same normalized 0-100 session score",
+      (mode) => {
+        const modeSession = {
+          ...session,
+          mode,
+        };
+
+        const scores =
+          mode === "Quiz Style"
+            ? [100, 0, 100]
+            : [100, 40, 60];
+
+        const docs = scores.map((score, index) =>
+          response(`q${index + 1}`, score, { mode })
+        );
+
+        const result = calculateSessionCompletion(
+          modeSession,
+          docs
+        );
+
+        const expectedScore = Math.round(
+          scores.reduce((sum, score) => sum + score, 0) /
+            modeSession.questionCount
+        );
+
+        expect(result.score).toBe(expectedScore);
+        expect(result.score).toBeGreaterThanOrEqual(0);
+        expect(result.score).toBeLessThanOrEqual(100);
+        expect(result.questionsAnswered).toBe(3);
+        expect(result.completionStatus).toBe("completed");
+        expect(result.rankEligible).toBe(true);
+      }
+    );
+
+    test.each(modes)(
+      "%s counts unanswered questions as zero",
+      (mode) => {
+        const modeSession = {
+          ...session,
+          mode,
+        };
+
+        const result = calculateSessionCompletion(
+          modeSession,
+          [response("q1", 100, { mode })]
+        );
+
+        expect(result).toMatchObject({
+          score: 33,
+          totalScore: 100,
+          questionsAnswered: 1,
+          questionsAssigned: 3,
+          questionsUnanswered: 2,
+          answeredAverageScore: 100,
+          completionStatus: "partial",
+          rankEligible: false,
+        });
+      }
+    );
+
+    test.each(modes)(
+      "%s rejects invalid scores and mismatched modes",
+      (mode) => {
+        const modeSession = {
+          ...session,
+          mode,
+        };
+
+        for (const invalidScore of [-1, 101, Infinity, NaN]) {
+          expect(() =>
+            calculateSessionCompletion(modeSession, [
+              response("q1", invalidScore, { mode }),
+            ])
+          ).toThrow(/invalid scoring data/i);
+        }
+
+        const wrongMode = modes.find(
+          (candidate) => candidate !== mode
+        );
+
+        expect(() =>
+          calculateSessionCompletion(modeSession, [
+            response("q1", 100, { mode: wrongMode }),
+          ])
+        ).toThrow(/invalid scoring data/i);
+      }
+    );
+
+    test.each(["Code Style", "Theoretical Style"])(
+      "%s consistently rounds fractional AI scores",
+      (mode) => {
+        const modeSession = {
+          ...session,
+          mode,
+        };
+
+        const result = calculateSessionCompletion(
+          modeSession,
+          [
+            response("q1", 85.5, { mode }),
+            response("q2", 84.5, { mode }),
+            response("q3", 80, { mode }),
+          ]
+        );
+
+        expect(result.totalScore).toBe(250);
+        expect(result.score).toBe(83);
+        expect(result.answeredAverageScore).toBe(83);
+      }
+    );
+  });
 });
