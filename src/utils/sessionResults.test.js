@@ -198,6 +198,32 @@ describe("buildSessionResult", () => {
     ]);
   });
 
+  test("normalizes fallback scores using assigned question count", () => {
+    const result = buildSessionResult({
+      mode: "Quiz Style",
+      setupData,
+      answeredQuestions,
+
+      savedSession: {
+        id: "session-1",
+        result: {
+          questionsAssigned: 5,
+          questionsAnswered: 2,
+          questionsUnanswered: 3,
+          completionStatus: "partial",
+          rankEligible: false,
+        },
+      },
+    });
+
+    expect(result.score).toBe("28%");
+    expect(result.scoreSource).toBe("local");
+    expect(result.questionsAnswered).toBe(2);
+    expect(result.questionsAssigned).toBe(5);
+    expect(result.rankEligible).toBe(false);
+    expect(result.eloChange).toBeNull();
+  });
+
   test("passes through a breakdown the server could not load", () => {
     const result = buildSessionResult({
       mode: "Quiz Style",
@@ -247,6 +273,31 @@ describe("buildSessionResult", () => {
       answerSubmitted: false,
       perQuestion: [],
     });
+  });
+
+  //Explicity verifies that an unverified setup count cannot change a locally estimated score.
+  test("does not use unverified setup question count for fallback scoring", () => {
+    const result = buildSessionResult({
+      mode: "Quiz Style",
+      setupData: {
+        ...setupData,
+        questionCount: 10,
+      },
+      answeredQuestions: [
+        {
+          questionId: "q1",
+          score: 100,
+          isCorrect: true,
+        },
+      ],
+      savedSession: {
+        id: "session-1",
+      },
+    });
+
+    expect(result.score).toBe("100%");
+    expect(result.scoreSource).toBe("local");
+    expect(result.rankEligible).toBe(false);
   });
 });
 
