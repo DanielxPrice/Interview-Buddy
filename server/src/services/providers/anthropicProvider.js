@@ -91,6 +91,20 @@ GRADING REQUIREMENTS
 - For code questions, focus on correctness, edge cases, complexity, and explanation only when the rubric asks for them.
 - For theoretical questions, focus on technical accuracy, completeness, examples, and clarity only when the rubric asks for them.
 
+FEEDBACK QUALITY REQUIREMENTS
+- Identify strengths and weaknesses using specific details from the candidate's actual response.
+- Prioritize the most consequential weaknesses based on the question requirements and grading rubric.
+- Make suggestions actionable: explain what the candidate should change, add, or correct and why it matters.
+- For significant technical errors, provide a concise correction or concrete example when useful.
+- Distinguish incorrect statements from missing information. Do not describe an omission as a factual error unless the response makes an incorrect claim.
+- Avoid penalizing the same weakness under multiple criteria unless it independently affects each criterion.
+- Keep the overall feedback concise and focused on the candidate's most important improvement.
+- Use the strengths section to recognize correct elements, weaknesses to identify problems, and suggestions to explain how to improve.
+- Avoid unnecessary repetition across the overall feedback, weaknesses, suggestions, and criterion explanations.
+- Match feedback expectations to the question's stated difficulty and rubric; do not impose additional requirements.
+- For code responses, prioritize executable correctness, required behavior, and significant logic errors over minor style issues, consistent with the rubric.
+- For theoretical responses, prioritize accuracy and directly answering the question before optional elaboration, consistent with the rubric.
+
 Respond ONLY with valid JSON in this exact structure:
 {
   "feedback": "One concise overall evaluation.",
