@@ -75,6 +75,20 @@ function normalizeEvaluation(rawEvaluation, gradingCriteria) {
 
   const criterionResults = gradingCriteria.map((criterion, index) => {
     const result = rawEvaluation.criterionResults[index] || {};
+
+    //Verify the AI returned the correct grading criterion
+    //Results must match the rubric order and names
+    //Previously we just used array position alone
+    const expectedName = String(criterion.name).trim();
+    const returnedName = String(result.name || "").trim();
+
+    if (returnedName !== expectedName) {
+      throw new Error(
+        `AI evaluation criterion name mismatch at index ${index}: ` +
+        `expected "${expectedName}", received "${returnedName}".`
+      );
+    }
+
     const awardedPoints = Number(result.awardedPoints);
     const maxPoints = Number(criterion.weight);
 

@@ -605,5 +605,49 @@ describe("evaluationContract", () => {
         "6",
       ]);
     });
+
+    //Ensures that the criterion names match since we check an array
+    it("rejects mismatched grading criterion names", () => {
+      const mismatchedEvaluation = {
+        ...validEvaluation,
+        criterionResults: [
+          {
+            name: "Clarity",
+            awardedPoints: 30,
+            feedback: "Clear explanation.",
+          },
+          {
+            name: "Accuracy",
+            awardedPoints: 35,
+            feedback: "Accurate explanation.",
+          },
+        ],
+      };
+
+      expect(() =>
+        normalizeEvaluation(
+          mismatchedEvaluation,
+          validQuestion.gradingCriteria
+        )
+      ).toThrow(/criterion name/i);
+    });
+  });
+
+  //Explicit check inverse to the one above
+  it("accepts correctly aligned grading criterion names", () => {
+    const result = normalizeEvaluation(
+      validEvaluation,
+      validQuestion.gradingCriteria
+    );
+
+    expect(result.score).toBe(85);
+
+    expect(result.criterionResults.map((item) => item.name)).toEqual([
+      "Accuracy",
+      "Clarity",
+    ]);
+
+    expect(result.criterionResults[0].awardedPoints).toBe(55);
+    expect(result.criterionResults[1].awardedPoints).toBe(30);
   });
 });
