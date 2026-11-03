@@ -16,7 +16,8 @@
     "audit-user-fields": "node scripts/auditUserFields.js",
     "reset-google-test-accounts": "node scripts/resetGoogleTestAccounts.js",
     "test": "jest",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test:emulator": "node --test --test-concurrency=1 test/firestore.emulator.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
@@ -35,5 +36,10 @@
   },
   "overrides": {
     "body-parser": "1.20.9"
+  },
+  "jest": {
+    "testPathIgnorePatterns": [
+      "<rootDir>/test/firestore\\.emulator\\.test\\.cjs$"
+    ]
   }
 }
