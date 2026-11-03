@@ -143,6 +143,21 @@ class FirestoreUserRepository extends UserRepository {
     };
   }
 
+  // Read only the public ranking fields needed for the global leaderboard.
+  // This first implementation reads all profiles to calculate accurate /me ranks;
+  // SCRUM-86 should replace the full scan with an indexed scalable query.
+  async listRankingProfiles() {
+    const snapshot = await this.db
+      .collection("users")
+      .select("username", "ranking", "deleting", "status")
+      .get();
+
+    return snapshot.docs.map((document) => ({
+      ...document.data(),
+      uid: document.id,
+    }));
+  }
+
   async updateProfile(uid, updates = {}) {
     const normalizedUid = String(uid || "").trim();
 
