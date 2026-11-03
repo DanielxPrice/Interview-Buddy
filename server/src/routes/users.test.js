@@ -944,4 +944,478 @@ describe("users routes", () => {
       expect(next).toHaveBeenCalledTimes(1);
     });
   });
+
+  //Simulates a request authed as User A, but with malicious client-contrilled identifiers specifying user B.
+  //Expects the backend to retrieve User A, since req.user.uid is the authoritative identity.
+  //Also confirms repo isnt asked to retrieve user B.
+  describe("A-03 profile authorization isolation", () => {
+    it("retrieves only the authenticated user's profile despite a spoofed UID", async () => {
+      const handler = getRouteHandler(
+        router,
+        "/profile",
+        "get"
+      );
+
+      const profiles = {
+        "user-a": {
+          uid: "user-a",
+          username: "alice",
+        },
+        "user-b": {
+          uid: "user-b",
+          username: "bob",
+        },
+      };
+
+      userRepository.findById.mockImplementation(
+        async (uid) => profiles[uid] || null
+      );
+
+      const req = {
+        user: {
+          uid: "user-a",
+        },
+        query: {
+          uid: "user-b",
+        },
+        body: {
+          uid: "user-b",
+        },
+      };
+
+      const res = createResponse();
+      const next = jest.fn();
+
+      await handler(req, res, next);
+
+      expect(res.statusCode).toBe(200);
+
+      expect(res.payload.profile).toEqual(
+        profiles["user-a"]
+      );
+
+      expect(res.payload.profile).not.toEqual(
+        profiles["user-b"]
+      );
+
+      expect(
+        userRepository.findById
+      ).toHaveBeenCalledWith("user-a");
+
+      expect(
+        userRepository.findById
+      ).not.toHaveBeenCalledWith("user-b");
+
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    //Verify that a client supplied UID cannot redirect profile or settings retrieval
+    //Gives explicit cross-user isolation coverage for both GET endpoints.
+    it("retrieves only the authenticated user's settings despite a spoofed UID", async () => {
+      const handler = getRouteHandler(
+        router,
+        "/settings",
+        "get"
+      );
+
+      const settings = {
+        "user-a": {
+          theme: "dark",
+          notifications: true,
+        },
+        "user-b": {
+          theme: "light",
+          notifications: false,
+        },
+      };
+
+      userRepository.getSettings.mockImplementation(
+        async (uid) => settings[uid] || null
+      );
+
+      const req = {
+        user: {
+          uid: "user-a",
+        },
+        query: {
+          uid: "user-b",
+        },
+        body: {
+          uid: "user-b",
+        },
+      };
+
+      const res = createResponse();
+      const next = jest.fn();
+
+      await handler(req, res, next);
+
+      expect(res.statusCode).toBe(200);
+
+      expect(res.payload.settings).toEqual(
+        settings["user-a"]
+      );
+
+      expect(res.payload.settings).not.toEqual(
+        settings["user-b"]
+      );
+
+      expect(
+        userRepository.getSettings
+      ).toHaveBeenCalledWith("user-a");
+
+      expect(
+        userRepository.getSettings
+      ).not.toHaveBeenCalledWith("user-b");
+
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    //Even if User A attempts to impersonate User B thru request body:
+    //User A auth identity controls update, User B remains unchanged, repo never receives an update targeting B
+    //API returns 200 since User A's own profile is permitted
+    it("prevents a spoofed UID from modifying another user's profile", async () => {
+      const handler = getRouteHandler(
+        router,
+        "/profile",
+        "patch"
+      );
+
+      const profiles = {
+        "user-a": {
+          uid: "user-a",
+          username: "alice",
+          displayName: "Alice",
+        },
+        "user-b": {
+          uid: "user-b",
+          username: "bob",
+          displayName: "Bob",
+        },
+      };
+
+      userRepository.updateProfile.mockImplementation(
+        async (uid, updates) => {
+          if (!profiles[uid]) {
+            return null;
+          }
+
+          profiles[uid] = {
+            ...profiles[uid],
+            ...updates,
+          };
+
+          return profiles[uid];
+        }
+      );
+
+      const req = {
+        user: {
+          uid: "user-a",
+        },
+        body: {
+          uid: "user-b",
+          displayName: "Unauthorized Change",
+        },
+      };
+
+      const res = createResponse();
+      const next = jest.fn();
+
+      await handler(req, res, next);
+
+      expect(res.statusCode).toBe(200);
+
+      // User A's own profile can be updated.
+      expect(profiles["user-a"].displayName).toBe(
+        "Unauthorized Change"
+      );
+
+      // User B's profile must remain unchanged.
+      expect(profiles["user-b"]).toEqual({
+        uid: "user-b",
+        username: "bob",
+        displayName: "Bob",
+      });
+
+      expect(
+        userRepository.updateProfile
+      ).toHaveBeenCalledWith("user-a", {
+        displayName: "Unauthorized Change",
+      });
+
+      expect(
+        userRepository.updateProfile
+      ).not.toHaveBeenCalledWith(
+        "user-b",
+        expect.anything()
+      );
+
+      expect(next).not.toHaveBeenCalled();
+    });
+
+
+    //Even when User A sends a request containing User B's UID, backend only modifies A's settings.
+    //Also confirms that repo receives only User A's UID and supporting fields
+    //200 response is right since API treats spoofed UID as ignored field
+    it("prevents a spoofed UID from modifying another user's settings", async () => {
+      const handler = getRouteHandler(
+        router,
+        "/settings",
+        "patch"
+      );
+
+      const settings = {
+        "user-a": {
+          theme: "light",
+          notifications: true,
+        },
+        "user-b": {
+          theme: "dark",
+          notifications: false,
+        },
+      };
+
+      userRepository.updateSettings.mockImplementation(
+        async (uid, updates) => {
+          if (!settings[uid]) {
+            return null;
+          }
+
+          settings[uid] = {
+            ...settings[uid],
+            ...updates,
+          };
+
+          return settings[uid];
+        }
+      );
+
+      const req = {
+        user: {
+          uid: "user-a",
+        },
+        body: {
+          uid: "user-b",
+          theme: "dark",
+          notifications: false,
+        },
+      };
+
+      const res = createResponse();
+      const next = jest.fn();
+
+      await handler(req, res, next);
+
+      expect(res.statusCode).toBe(200);
+
+      // User A's settings are updated.
+      expect(settings["user-a"]).toEqual({
+        theme: "dark",
+        notifications: false,
+      });
+
+      // User B's settings remain unchanged.
+      expect(settings["user-b"]).toEqual({
+        theme: "dark",
+        notifications: false,
+      });
+
+      expect(
+        userRepository.updateSettings
+      ).toHaveBeenCalledWith("user-a", {
+        theme: "dark",
+        notifications: false,
+      });
+
+      expect(
+        userRepository.updateSettings
+      ).not.toHaveBeenCalledWith(
+        "user-b",
+        expect.anything()
+      );
+
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    //Test demonstrates that an unauthenticated settings update returns 401, and never invokes repo update method.
+    //Also leaves both simulated user's settings unchanged.
+    it("does not modify settings when an unauthenticated update is attempted", async () => {
+      const handler = getRouteHandler(
+        router,
+        "/settings",
+        "patch"
+      );
+
+      const settings = {
+        "user-a": {
+          theme: "light",
+          notifications: true,
+        },
+        "user-b": {
+          theme: "dark",
+          notifications: false,
+        },
+      };
+
+      const originalSettings = JSON.parse(
+        JSON.stringify(settings)
+      );
+
+      userRepository.updateSettings.mockImplementation(
+        async (uid, updates) => {
+          settings[uid] = {
+            ...settings[uid],
+            ...updates,
+          };
+
+          return settings[uid];
+        }
+      );
+
+      const req = {
+        body: {
+          uid: "user-b",
+          theme: "light",
+          notifications: true,
+        },
+      };
+
+      const res = createResponse();
+      const next = jest.fn();
+
+      await handler(req, res, next);
+
+      // Authentication is required.
+      expect(res.statusCode).toBe(401);
+
+      expect(res.payload).toEqual({
+        error: "Authentication is required.",
+      });
+
+      // The repository must never be called.
+      expect(
+        userRepository.updateSettings
+      ).not.toHaveBeenCalled();
+
+      // Neither user's stored settings can change.
+      expect(settings).toEqual(originalSettings);
+
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    //User A can successfully update their settings
+    //Subsequent GET request returns updated settings
+    //User B settings are unchanged
+    //Only User A record is updated
+    it("persists authorized settings updates without affecting another user", async () => {
+      const updateHandler = getRouteHandler(
+        router,
+        "/settings",
+        "patch"
+      );
+
+      const getHandler = getRouteHandler(
+        router,
+        "/settings",
+        "get"
+      );
+
+      const settings = {
+        "user-a": {
+          theme: "light",
+          notifications: true,
+        },
+        "user-b": {
+          theme: "dark",
+          notifications: false,
+        },
+      };
+
+      userRepository.updateSettings.mockImplementation(
+        async (uid, updates) => {
+          if (!settings[uid]) {
+            return null;
+          }
+
+          settings[uid] = {
+            ...settings[uid],
+            ...updates,
+          };
+
+          return settings[uid];
+        }
+      );
+
+      userRepository.getSettings.mockImplementation(
+        async (uid) => settings[uid] || null
+      );
+
+      // User A updates their own settings.
+      const updateRes = createResponse();
+
+      await updateHandler(
+        {
+          user: { uid: "user-a" },
+          body: {
+            theme: "dark",
+            notifications: false,
+          },
+        },
+        updateRes,
+        jest.fn()
+      );
+
+      expect(updateRes.statusCode).toBe(200);
+
+      // User A retrieves their settings separately.
+      const getRes = createResponse();
+
+      await getHandler(
+        {
+          user: { uid: "user-a" },
+        },
+        getRes,
+        jest.fn()
+      );
+
+      expect(getRes.statusCode).toBe(200);
+
+      expect(getRes.payload.settings).toEqual({
+        theme: "dark",
+        notifications: false,
+      });
+
+      // User B's settings remain unchanged.
+      const otherUserRes = createResponse();
+
+      await getHandler(
+        {
+          user: { uid: "user-b" },
+        },
+        otherUserRes,
+        jest.fn()
+      );
+
+      expect(otherUserRes.statusCode).toBe(200);
+
+      expect(otherUserRes.payload.settings).toEqual({
+        theme: "dark",
+        notifications: false,
+      });
+
+      expect(userRepository.updateSettings).toHaveBeenCalledWith(
+        "user-a",
+        {
+          theme: "dark",
+          notifications: false,
+        }
+      );
+
+      expect(userRepository.updateSettings).not.toHaveBeenCalledWith(
+        "user-b",
+        expect.anything()
+      );
+    });
+  });
 });
