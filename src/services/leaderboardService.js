@@ -72,17 +72,66 @@ async function request(path, options = {}) {
 }
 
 function normalizeRanking(row) {
-  if (!row || typeof row !== "object" || typeof row.username !== "string" || !row.username.trim()) {
-    throw new Error("The server returned an invalid ranking record.");
+  if (
+    !row ||
+    typeof row !== "object" ||
+    typeof row.username !== "string" ||
+    !row.username.trim()
+  ) {
+    throw new Error(
+      "The server returned an invalid ranking record."
+    );
   }
 
   const rank = Number(row.rank);
   const elo = Number(row.elo);
+  const points = Number(row.points);
+  const rankedSessions = Number(row.rankedSessions);
+  const averageScore = Number(row.averageScore);
+
   return {
     uid: row.uid ?? row.userId ?? row.id ?? null,
+
     username: row.username.trim(),
-    rank: row.rank != null && Number.isInteger(rank) && rank > 0 ? rank : null,
-    elo: row.elo != null && row.elo !== "" && Number.isFinite(elo) ? elo : null,
+
+    rank:
+      row.rank != null &&
+      Number.isInteger(rank) &&
+      rank > 0
+        ? rank
+        : null,
+
+    elo:
+      row.elo != null &&
+      row.elo !== "" &&
+      Number.isFinite(elo)
+        ? elo
+        : null,
+
+    points:
+      row.points != null &&
+      row.points !== "" &&
+      Number.isSafeInteger(points) &&
+      points >= 0
+        ? points
+        : null,
+
+    rankedSessions:
+      row.rankedSessions != null &&
+      row.rankedSessions !== "" &&
+      Number.isSafeInteger(rankedSessions) &&
+      rankedSessions >= 0
+        ? rankedSessions
+        : null,
+
+    averageScore:
+      row.averageScore != null &&
+      row.averageScore !== "" &&
+      Number.isFinite(averageScore) &&
+      averageScore >= 0 &&
+      averageScore <= 100
+        ? averageScore
+        : null,
   };
 }
 

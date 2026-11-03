@@ -585,17 +585,18 @@ describe("leaderboardService", () => {
     global.fetch = jest.fn();
   });
 
-  test("GET global leaderboard uses the Firebase token and sorts database records", async () => {
+  test("GET global leaderboard uses the Firebase token and sorts database points", async () => {
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({ rankings: [
-        { uid: "two", username: "Second", rank: 2, elo: 1200 },
-        { uid: "one", username: "First", rank: 1, elo: 1400 },
+        { uid: "two", username: "Second", rank: 2, points: 120, rankedSessions: 2, averageScore: 60, elo: null },
+        { uid: "one", username: "First", rank: 1, points: 180, rankedSessions: 2, averageScore: 90, elo: null },
       ] }),
     });
     const result = await leaderboardService.getGlobalLeaderboard();
     expect(result.map((r) => r.username)).toEqual(["First", "Second"]);
+    expect(result[0]).toMatchObject({ points: 180, rankedSessions: 2, averageScore: 90, elo: null });
     expect(global.fetch).toHaveBeenCalledWith(
       "http://localhost:5001/api/leaderboard/global",
       { headers: { Authorization: "Bearer test-id-token" } }
@@ -628,7 +629,30 @@ describe("leaderboardService", () => {
 
   test("missing Elo and rank stay unknown rather than appearing as zero", async () => {
     global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ rankings: [{ uid: "a", username: "Alex", rank: null, elo: null }] }) });
-    expect(await leaderboardService.getGlobalLeaderboard()).toEqual([{ uid: "a", username: "Alex", rank: null, elo: null }]);
+    expect(await leaderboardService.getGlobalLeaderboard()).toEqual([{
+      uid: "a", username: "Alex", rank: null, elo: null,
+      points: null, rankedSessions: null, averageScore: null,
+    }]);
+  });
+
+  test("personal rank preserves legitimate zero points without assigning ELO", async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({
+      ranking: { uid: "u", username: "Zero", rank: 1, points: 0, rankedSessions: 1, averageScore: 0, elo: null },
+    }) });
+    await expect(leaderboardService.getUserRanking()).resolves.toEqual({
+      uid: "u", username: "Zero", rank: 1,
+      points: 0, rankedSessions: 1, averageScore: 0, elo: null,
+    });
+  });
+
+  test("friends rankings retain future ELO data without inventing points", async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({
+      rankings: [{ uid: "friend", username: "Friend", rank: 4, elo: 1600 }],
+    }) });
+    expect(await leaderboardService.getFriendsLeaderboard()).toEqual([{
+      uid: "friend", username: "Friend", rank: 4, elo: 1600,
+      points: null, rankedSessions: null, averageScore: null,
+    }]);
   });
 
   test("friend requests use authenticated POST and no local-only mutation", async () => {

@@ -5,7 +5,7 @@ import { leaderboardService } from "../services/leaderboardService";
 import { getEloRankBadge } from "../utils/eloRankBadge";
 
 const PAGE_SIZE = 5;
-const eloFormatter = new Intl.NumberFormat("en-US");
+const scoreFormatter = new Intl.NumberFormat("en-US");
 const initialCollection = { status: "loading", data: [], error: "" };
 const initialRanking = { status: "loading", data: null, error: "" };
 
@@ -34,7 +34,7 @@ function RankingMessage({ title = "Loading rankings", children, type = "status" 
   );
 }
 
-function RankingTable({ data, currentUserId, currentUsername, onRemove, saving = false }) {
+function RankingTable({ data, currentUserId, currentUsername, onRemove, saving = false, scoreType = "elo" }) {
   const { status, error, data: users } = data;
   if (status === "loading") {
     return <RankingMessage>Loading rankings from the server...</RankingMessage>;
@@ -56,7 +56,7 @@ function RankingTable({ data, currentUserId, currentUsername, onRemove, saving =
           <tr>
             <th scope="col">Rank</th>
             <th scope="col">User</th>
-            <th scope="col">ELO Score</th>
+            <th scope="col">{scoreType === "points" ? "Points" : "ELO Score"}</th>
             {onRemove && <th scope="col" className="ibRankingActionHeading">Action</th>}
           </tr>
         </thead>
@@ -74,7 +74,9 @@ function RankingTable({ data, currentUserId, currentUsername, onRemove, saving =
                     {isCurrentUser && <span className="ibRankingYou">You</span>}
                   </div>
                 </td>
-                <td className="ibRankingScore">{entry.elo == null ? "—" : eloFormatter.format(entry.elo)}</td>
+                <td className="ibRankingScore">{(scoreType === "points" ? entry.points : entry.elo) == null
+                  ? "—"
+                  : scoreFormatter.format(scoreType === "points" ? entry.points : entry.elo)}</td>
                 {onRemove && (
                   <td className="ibRankingActionCell">
                     <button
@@ -213,7 +215,7 @@ function LeaderboardPage({ currentPage, onNavigate }) {
 
           {activeTab === "global" ? (
             <section className="ibRankingPanel" role="tabpanel" id="ib-global-panel" aria-labelledby="ib-global-tab">
-              <RankingTable data={{ ...global, data: global.data.slice(0, visibleGlobal) }} currentUserId={user?.uid} currentUsername={currentUser?.username} />
+              <RankingTable data={{ ...global, data: global.data.slice(0, visibleGlobal) }} currentUserId={user?.uid} currentUsername={currentUser?.username} scoreType="points" />
               {global.status === "success" && visibleGlobal < global.data.length && (
                 <button type="button" className="ibRankingLoadMore" onClick={() => setVisibleGlobal((count) => count + PAGE_SIZE)}>Load More Rankings</button>
               )}
@@ -249,7 +251,7 @@ function LeaderboardPage({ currentPage, onNavigate }) {
               </section>
             </div>
           )}
-          <p className="ibRankingFootnote">Ranking and friendship information is requested from the authenticated backend. No sample rankings are displayed. The required backend endpoints are not implemented yet.</p>
+          <p className="ibRankingFootnote">Global rankings use cumulative points earned from completed interviews, not ELO. Friends features and ELO progression are separate upcoming work. No sample rankings are displayed.</p>
         </div>
 
         <aside className="ibRankingAside" aria-label="Ranking summary">
@@ -273,7 +275,7 @@ function LeaderboardPage({ currentPage, onNavigate }) {
               <span>Global Rank</span>
             </div>
             <div className="ibRankingStandingStats">
-              <div><span>Current ELO</span><strong>{currentUser?.elo != null ? eloFormatter.format(currentUser.elo) : "—"}</strong></div>
+              <div><span>Total Points</span><strong>{currentUser?.points != null ? scoreFormatter.format(currentUser.points) : "—"}</strong></div>
               <div><span>Friends</span><strong>{friendCount == null ? "—" : friendCount}</strong></div>
             </div>
             {standing.status === "loading" && <p className="ibRankingStandingHint">Loading your standing...</p>}
@@ -291,7 +293,7 @@ function LeaderboardPage({ currentPage, onNavigate }) {
                   {friendRankings.slice(0, 3).map((friend, index) => (
                     <div className="ibRankingPreviewRow" key={friend.uid ?? `${friend.username}-${index}`}>
                       <div><strong>{friend.username}</strong><span>{friend.rank == null ? "Rank unavailable" : `Rank #${friend.rank}`}</span></div>
-                      <span className="ibRankingPreviewScore">{friend.elo == null ? "—" : eloFormatter.format(friend.elo)} ELO</span>
+                      <span className="ibRankingPreviewScore">{friend.elo == null ? "—" : scoreFormatter.format(friend.elo)} ELO</span>
                     </div>
                   ))}
                 </div>
