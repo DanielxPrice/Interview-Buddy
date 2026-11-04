@@ -1967,5 +1967,180 @@ describe(
         ).toBeInTheDocument();
       }
     );
+
+    // SCRUM-185: keyboard and state-transition coverage.
+
+    test("Enter selects the first filtered job role from the keyboard", async () => {
+      renderPage();
+      await waitForSetupOptions();
+
+      const roleInput = screen.getByLabelText("Job Role");
+      userEvent.type(roleInput, "front");
+
+      expect(
+        screen.getByRole("option", { name: "Frontend Developer" })
+      ).toBeInTheDocument();
+
+      userEvent.type(roleInput, "{enter}");
+
+      expect(roleInput).toHaveValue("Frontend Developer");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      await waitFor(() => {
+        expect(interviewService.getSetupOptions).toHaveBeenCalledWith(
+          "Quiz Style",
+          { jobRole: "Frontend Developer", experienceLevel: "" }
+        );
+      });
+    });
+
+    test("Escape closes the job-role menu without selecting a role", async () => {
+      renderPage();
+      await waitForSetupOptions();
+
+      const roleInput = screen.getByLabelText("Job Role");
+      userEvent.click(roleInput);
+
+      expect(
+        screen.getByRole("listbox", { name: "Available job roles" })
+      ).toBeInTheDocument();
+
+      userEvent.type(roleInput, "{esc}");
+
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(roleInput).toHaveValue("");
+      expect(interviewService.startSession).not.toHaveBeenCalled();
+    });
+
+    
+    test("changing the job role clears dependent experience and practice goals", async () => {
+      renderPage();
+      await fillValidSetup();
+
+      expect(screen.getByLabelText("Experience Level"))
+        .toHaveValue("Intermediate");
+
+      expect(
+        screen.getByRole("button", { name: "Data Structures" })
+      ).toHaveAttribute("aria-pressed", "true");
+
+      const roleInput = screen.getByLabelText("Job Role");
+
+      // Clear the previous selection.
+      userEvent.clear(roleInput);
+
+      // Changing the role triggers an asynchronous options reload.
+      // Wait until the input is available again.
+      await waitForSetupOptions();
+
+      // Reopen the dropdown and select a different valid role.
+      userEvent.click(roleInput);
+
+      const backendOption = await screen.findByRole("option", {
+        name: "Backend Developer",
+      });
+
+      userEvent.click(backendOption);
+
+      // Verify that dependent selections were reset.
+      
+      await waitFor(() => {
+        expect(roleInput).toHaveValue("Backend Developer");
+      });
+
+      expect(screen.getByLabelText("Experience Level"))
+        .toHaveValue("");
+
+      expect(
+        screen.queryByRole("button", { name: "Data Structures" })
+      ).not.toBeInTheDocument();
+
+
+      // Changing roles must not automatically create a session.
+      expect(interviewService.startSession).not.toHaveBeenCalled();
+    });
+
+
+    test("a failed session start shows an error and can be retried", async () => {
+      const recoveredSession = { id: "recovered-session", status: "active" };
+
+      interviewService.startSession
+        .mockRejectedValueOnce(new Error("Session creation failed."))
+        .mockResolvedValueOnce(recoveredSession);
+
+      renderPage();
+      await fillValidSetup();
+
+      userEvent.click(screen.getByRole("button", { name: "Start Session" }));
+
+      expect(await screen.findByText("Session creation failed."))
+        .toBeInTheDocument();
+      expect(onStartInterview).not.toHaveBeenCalled();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start Session" }))
+          .toBeEnabled();
+      });
+
+      userEvent.click(screen.getByRole("button", { name: "Start Session" }));
+
+      
+      await waitFor(() => {
+        expect(onStartInterview).toHaveBeenCalledWith(recoveredSession);
+      });
+
+      expect(interviewService.startSession).toHaveBeenCalledTimes(2);
+      expect(onStartInterview).toHaveBeenCalledTimes(1);
+
+    });
+
+    test("a pending session start disables further starts and cancellation", async () => {
+      let resolveStart;
+      const pendingStart = new Promise((resolve) => {
+        resolveStart = resolve;
+      });
+
+      interviewService.startSession.mockReturnValue(pendingStart);
+
+      renderPage();
+      await fillValidSetup();
+
+      userEvent.click(screen.getByRole("button", { name: "Start Session" }));
+
+      await waitFor(() => {
+        expect(interviewService.startSession).toHaveBeenCalledTimes(1);
+      });
+
+      const startButton = screen.getByRole("button", {
+        name: "Starting Session..."
+      });
+
+      expect(startButton).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Cancel" }))
+        .toBeDisabled();
+
+      userEvent.click(startButton);
+
+      expect(interviewService.startSession).toHaveBeenCalledTimes(1);
+      expect(onStartInterview).not.toHaveBeenCalled();
+
+      const startedSession = { id: "pending-session", status: "active" };
+      resolveStart(startedSession);
+
+      await waitFor(() => {
+        expect(onStartInterview).toHaveBeenCalledWith(startedSession);
+      });
+    });
+
+    test("Change Mode returns to dashboard without starting a session", async () => {
+      renderPage();
+      await waitForSetupOptions();
+
+      userEvent.click(screen.getByRole("button", { name: "Change Mode" }));
+
+      expect(onNavigate).toHaveBeenCalledWith(PAGES.DASHBOARD);
+      expect(interviewService.startSession).not.toHaveBeenCalled();
+    });
+    // END OF SCRUM-185 tests
   }
 );
