@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
@@ -218,4 +218,27 @@ describe("Interview Buddy application routing", () => {
       await screen.findByText("Selected Mode: Theoretical Style"),
     ).toBeInTheDocument();
   });
+
+  test("Dashboard quick access opens History and Home returns to Dashboard", async () => {
+    renderAtRoute("/dashboard");
+
+    const quickAccess = screen.getByRole("region", {
+      name: "Quick access"
+    });
+
+    userEvent.click(
+      within(quickAccess).getByRole("button", { name: "History" })
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Interview History" })
+    ).toBeInTheDocument();
+
+    userEvent.click(screen.getByRole("button", { name: "Home" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Dashboard" })
+    ).toBeInTheDocument();
+  });
+
 });
