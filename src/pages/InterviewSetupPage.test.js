@@ -2043,16 +2043,18 @@ describe(
       userEvent.click(backendOption);
 
       // Verify that dependent selections were reset.
+      
       await waitFor(() => {
         expect(roleInput).toHaveValue("Backend Developer");
-
-        expect(screen.getByLabelText("Experience Level"))
-          .toHaveValue("");
-
-        expect(
-          screen.queryByRole("button", { name: "Data Structures" })
-        ).not.toBeInTheDocument();
       });
+
+      expect(screen.getByLabelText("Experience Level"))
+        .toHaveValue("");
+
+      expect(
+        screen.queryByRole("button", { name: "Data Structures" })
+      ).not.toBeInTheDocument();
+
 
       // Changing roles must not automatically create a session.
       expect(interviewService.startSession).not.toHaveBeenCalled();
@@ -2082,11 +2084,14 @@ describe(
 
       userEvent.click(screen.getByRole("button", { name: "Start Session" }));
 
+      
       await waitFor(() => {
-        expect(interviewService.startSession).toHaveBeenCalledTimes(2);
-        expect(onStartInterview).toHaveBeenCalledTimes(1);
         expect(onStartInterview).toHaveBeenCalledWith(recoveredSession);
       });
+
+      expect(interviewService.startSession).toHaveBeenCalledTimes(2);
+      expect(onStartInterview).toHaveBeenCalledTimes(1);
+
     });
 
     test("a pending session start disables further starts and cancellation", async () => {
