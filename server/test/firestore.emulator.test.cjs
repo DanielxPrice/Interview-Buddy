@@ -1,7 +1,7 @@
 "use strict";
 
 // SCRUM-215 + SCRUM-190: real Firestore SDK integration, not mocked SDK calls.
-// Run ONLY through Firebase emulators:exec using a demo project.
+// Run ONLY through Firebase emulators:exec (auth,firestore) using a demo project.
 const { test, before, beforeEach, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
@@ -24,9 +24,25 @@ for (const name of ["GCLOUD_PROJECT", "FIREBASE_PROJECT_ID"]) {
   process.env[name] = PROJECT_ID;
 }
 
-// The Web SDK is intentionally unauthenticated: unlike Admin, it must obey
-// firestore.rules. The root React app already depends on firebase.
+// Authenticated and simulated-claim testing requires the LOCAL Auth Emulator.
+// A missing or non-local endpoint must fail before creating any test users.
+const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+if (!authHost || authHost.includes("/") || authHost.includes("@") || authHost.includes("?")) {
+  throw new Error("A local FIREBASE_AUTH_EMULATOR_HOST is required. Production Auth is forbidden.");
+}
+const authEmulator = new URL(`http://${authHost}`);
+if (!["localhost", "127.0.0.1", "[::1]"].includes(authEmulator.hostname) ||
+    !authEmulator.port || authEmulator.username || authEmulator.password) {
+  throw new Error("Refusing non-local Firebase Auth Emulator endpoint.");
+}
+
+// Anonymous and authenticated Web SDK requests must obey firestore.rules.
+// Admin SDK fixtures bypass client rules. The React app already depends on firebase.
 const { initializeApp: initializeClientApp, deleteApp: deleteClientApp } = require("firebase/app");
+const {
+  getAuth: getClientAuth, connectAuthEmulator, signInWithEmailAndPassword,
+  getIdTokenResult, signOut,
+} = require("firebase/auth");
 const {
   getFirestore: getClientFirestore, connectFirestoreEmulator,
   doc: clientDoc, collection: clientCollection,
@@ -47,12 +63,13 @@ const seed = require("../seed/questions.json");
 
 const app = admin.initializeApp({ projectId: PROJECT_ID }, `emulator-test-${randomUUID()}`);
 // A separate, non-Admin client proves the actual Firestore rule decisions.
-const clientApp = initializeClientApp({
+const clientConfig = {
   apiKey: "emulator-test-only-key",
   authDomain: "demo-interview-buddy-tests.firebaseapp.com",
   projectId: PROJECT_ID,
   appId: "1:1234567890:web:emulator-only",
-}, `unauthenticated-firestore-client-${randomUUID()}`);
+};
+const clientApp = initializeClientApp(clientConfig, `unauthenticated-firestore-client-${randomUUID()}`);
 const clientDb = getClientFirestore(clientApp);
 connectFirestoreEmulator(clientDb, emulator.hostname.replaceAll("[", "").replaceAll("]", ""), Number(emulator.port));
 
@@ -72,6 +89,51 @@ function sample(mode) {
 const quiz = sample("Quiz Style");
 const theory = sample("Theoretical Style");
 const code = sample("Code Style");
+
+// Task 1 / H-SOC-03,04,06: Real Firebase Auth SDK identities, including claims,
+// using only local Auth + Firestore emulators. No production credentials are used.
+async function createAuthenticatedContext(t, { role } = {}) {
+  const uid = `soc-user-${randomUUID()}`;
+  const email = `${uid}@example.invalid`;
+  const password = `Emulator-only-${randomUUID()}`;
+  const authAdmin = admin.auth(app);
+  await authAdmin.createUser({ uid, email, password });
+  if (role) {
+    await authAdmin.setCustomUserClaims(uid, { role });
+  }
+
+  const webApp = initializeClientApp(clientConfig, `authenticated-firestore-client-${uid}`);
+  const webAuth = getClientAuth(webApp);
+  connectAuthEmulator(webAuth, authEmulator.origin, { disableWarnings: true });
+  const webDb = getClientFirestore(webApp);
+  connectFirestoreEmulator(webDb,
+    emulator.hostname.replaceAll("[", "").replaceAll("]", ""), Number(emulator.port));
+
+  // Clean up both client connections and emulator-created accounts even if an
+  // assertion fails. Unique UIDs keep cases isolated from each other.
+  t.after(async () => {
+    try {
+      if (webAuth.currentUser) await signOut(webAuth);
+    } finally {
+      try {
+        await terminateClientFirestore(webDb);
+        await deleteClientApp(webApp);
+      } finally {
+        await authAdmin.deleteUser(uid);
+      }
+    }
+  });
+
+  const credential = await signInWithEmailAndPassword(webAuth, email, password);
+  assert.equal(credential.user.uid, uid);
+  const token = await getIdTokenResult(credential.user, true);
+  if (role) assert.equal(token.claims.role, role);
+  return { uid, db: webDb, claims: token.claims };
+}
+
+async function expectDenied(operation) {
+  await assert.rejects(operation, (error) => error.code === "permission-denied");
+}
 
 async function resetFixtures() {
   // DELETE /emulator/... exists only in the Firebase Firestore Emulator.
@@ -259,17 +321,21 @@ test("H-E06: clearing emulator fixtures removes subcollections and enables repea
 // Do not confuse these direct-client tests with Admin SDK authorization: Admin
 // bypasses firestore.rules. Bryan owns HTTP/API session authorization tests.
 
-test("H-S01: unauthenticated Firestore Web SDK cannot read or list persisted documents", async () => {
+test("H-SOC-01 (H-S01): anonymous Web SDK reads and collection queries are denied", async () => {
   const { session } = await makeAssignedSession(theory, "emulator-user-A");
   await questions.upsertMany([theory]);
+  await db.collection("users").doc("testUserA").set({
+    displayName: "Test User A", sensitiveMarker: "synthetic-private-marker",
+  });
   // Prove that the documents exist through the Admin SDK before a client denial.
+  assert.ok((await db.collection("users").doc("testUserA").get()).exists);
   assert.ok((await db.collection("sessions").doc(session.id).get()).exists);
   assert.ok((await db.collection("questions").doc(theory.id).get()).exists);
 
   for (const ref of [
     clientDoc(clientDb, "sessions", session.id),
     clientDoc(clientDb, "questions", theory.id),
-    clientDoc(clientDb, "users", "emulator-user-A"),
+    clientDoc(clientDb, "users", "testUserA"),
   ]) {
     await assert.rejects(getDoc(ref), (error) => error.code === "permission-denied");
   }
@@ -277,11 +343,15 @@ test("H-S01: unauthenticated Firestore Web SDK cannot read or list persisted doc
     (error) => error.code === "permission-denied");
   await assert.rejects(getDocs(clientCollection(clientDb, "questions")),
     (error) => error.code === "permission-denied");
+  await expectDenied(getDocs(clientCollection(clientDb, "users")));
 });
 
-test("H-S02: unauthenticated Web SDK create, update, and delete cannot change Admin data", async () => {
+test("H-SOC-02 (H-S02): anonymous creates, updates and deletes preserve Admin data", async () => {
   const { session } = await makeAssignedSession(quiz, "emulator-user-A");
   const savedRef = db.collection("sessions").doc(session.id);
+  const protectedUser = db.collection("users").doc("testUserA");
+  await protectedUser.set({ displayName: "Test User A", testOnly: true });
+  const beforeUser = (await protectedUser.get()).data();
   const before = (await savedRef.get()).data();
   const clientSession = clientDoc(clientDb, "sessions", session.id);
   const clientNew = clientDoc(clientDb, "sessions", "client-denied-create");
@@ -292,9 +362,80 @@ test("H-S02: unauthenticated Web SDK create, update, and delete cannot change Ad
     (error) => error.code === "permission-denied");
   await assert.rejects(deleteDoc(clientSession),
     (error) => error.code === "permission-denied");
+  await expectDenied(setDoc(clientDoc(clientDb, "users", "client-denied-create"), { admin: true }));
+  await expectDenied(updateDoc(clientDoc(clientDb, "users", "testUserA"), { admin: true }));
+  await expectDenied(deleteDoc(clientDoc(clientDb, "users", "testUserA")));
 
   assert.equal((await db.collection("sessions").doc("client-denied-create").get()).exists, false);
+  assert.equal((await db.collection("users").doc("client-denied-create").get()).exists, false);
   assert.deepEqual((await savedRef.get()).data(), before);
+  assert.deepEqual((await protectedUser.get()).data(), beforeUser);
+});
+
+// Task 3 security tests deliberately use the CLIENT SDK; Admin fixture success
+// does not prove a Firestore security-rule decision.
+test("H-SOC-03: signed-in users cannot directly read their own or another user's profile", async (t) => {
+  const userA = await createAuthenticatedContext(t);
+  const userB = await createAuthenticatedContext(t);
+  const aRef = db.collection("users").doc(userA.uid);
+  const bRef = db.collection("users").doc(userB.uid);
+  await aRef.set({ ownerUid: userA.uid, syntheticSecret: "A-only" });
+  await bRef.set({ ownerUid: userB.uid, syntheticSecret: "B-only" });
+  const aBefore = (await aRef.get()).data();
+  const bBefore = (await bRef.get()).data();
+
+  await expectDenied(getDoc(clientDoc(userA.db, "users", userA.uid)));
+  await expectDenied(getDoc(clientDoc(userA.db, "users", userB.uid)));
+  await expectDenied(getDoc(clientDoc(userB.db, "users", userB.uid)));
+  await expectDenied(getDoc(clientDoc(userB.db, "users", userA.uid)));
+
+  assert.deepEqual((await aRef.get()).data(), aBefore);
+  assert.deepEqual((await bRef.get()).data(), bBefore);
+});
+
+test("H-SOC-04: signed-in owner cannot directly update their own interview session", async (t) => {
+  const owner = await createAuthenticatedContext(t);
+  const { session } = await makeAssignedSession(quiz, owner.uid);
+  const sessionRef = db.collection("sessions").doc(session.id);
+  const before = (await sessionRef.get()).data();
+  assert.equal(before.userId, owner.uid);
+
+  await expectDenied(updateDoc(clientDoc(owner.db, "sessions", session.id), {
+    userId: "attacker", status: "completed", rankEligible: true,
+  }));
+  assert.deepEqual((await sessionRef.get()).data(), before);
+});
+
+test("H-SOC-06: signed-in client with simulated admin claim cannot read or write", async (t) => {
+  const pretendAdmin = await createAuthenticatedContext(t, { role: "admin" });
+  const normalUser = await createAuthenticatedContext(t);
+  assert.equal(pretendAdmin.claims.role, "admin");
+  assert.equal(normalUser.claims.role, undefined);
+  const profileRef = db.collection("users").doc(pretendAdmin.uid);
+  await profileRef.set({ ownerUid: pretendAdmin.uid, access: "protected" });
+  const { session } = await makeAssignedSession(quiz, pretendAdmin.uid);
+  const sessionRef = db.collection("sessions").doc(session.id);
+  const before = (await profileRef.get()).data();
+  const beforeSession = (await sessionRef.get()).data();
+  const clientProfile = clientDoc(pretendAdmin.db, "users", pretendAdmin.uid);
+  const clientSession = clientDoc(pretendAdmin.db, "sessions", session.id);
+  const clientNew = clientDoc(pretendAdmin.db, "users", "forged-admin-create");
+
+  // Compare the simulated privileged token against a normal signed-in token.
+  await expectDenied(getDoc(clientDoc(normalUser.db, "users", pretendAdmin.uid)));
+  await expectDenied(getDoc(clientProfile));
+  await expectDenied(getDoc(clientSession));
+  await expectDenied(getDocs(clientCollection(pretendAdmin.db, "users")));
+  await expectDenied(setDoc(clientDoc(normalUser.db, "users", "normal-denied-create"), { bypass: true }));
+  await expectDenied(setDoc(clientNew, { role: "admin", bypass: true }));
+  await expectDenied(updateDoc(clientProfile, { access: "compromised" }));
+  await expectDenied(updateDoc(clientSession, { status: "completed" }));
+  await expectDenied(deleteDoc(clientProfile));
+
+  assert.equal((await db.collection("users").doc("normal-denied-create").get()).exists, false);
+  assert.equal((await db.collection("users").doc("forged-admin-create").get()).exists, false);
+  assert.deepEqual((await profileRef.get()).data(), before);
+  assert.deepEqual((await sessionRef.get()).data(), beforeSession);
 });
 
 test("H-S03: separate users retain their immutable session owner after assignments and answers", async () => {
