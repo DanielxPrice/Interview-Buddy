@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -48,146 +49,63 @@ export function AuthProvider({
   const [loading, setLoading] =
     useState(true);
 
-  const loadCurrentProfile =
-    useCallback(async () => {
-      setProfileError("");
+  // Auth callbacks and manual refreshes share a revision. A slow "missing"
+  // response from sign-in must never replace a completed setup's profile.
+  const revision = useRef(0);
+  const active = useRef(true);
 
-      try {
-        const currentProfile =
-          await authService
-            .getCurrentUserProfile();
-
-        setProfile(
-          currentProfile || null
-        );
-
-        return (
-          currentProfile ||
-          null
-        );
-      } catch (error) {
-        setProfile(null);
-
-        setProfileError(
-          error?.message ||
-            "Your user profile could not be loaded."
-        );
-
-        throw error;
-      }
-    }, []);
-
-  const refreshProfile =
-    useCallback(async () => {
-      const currentUser =
-        authService
-          .getCurrentUser();
-
-      if (!currentUser) {
-        setUser(null);
-        setProfile(null);
-        setProfileError("");
-
-        return null;
-      }
-
-      setUser(
-        currentUser
-      );
-
-      setLoading(true);
-
-      try {
-        return await loadCurrentProfile();
-      } finally {
-        setLoading(false);
-      }
-    }, [loadCurrentProfile]);
-
-  
-  const updateProfileCache = useCallback((updates) => {
-    setProfile((currentProfile) => {
-      if (!currentProfile) {
-        return currentProfile;
-      }
-
-      return {
-        ...currentProfile,
-        ...updates,
-      };
-    });
+  const loadProfile = useCallback(async (currentUser) => {
+    const request = ++revision.current;
+    setUser(currentUser);
+    setProfileError("");
+    if (!currentUser) {
+      setProfile(null);
+      setLoading(false);
+      return null;
+    }
+    setLoading(true);
+    try {
+      const currentProfile = await authService.getCurrentUserProfile();
+      if (!active.current || request !== revision.current) return null;
+      setProfile(currentProfile || null);
+      const latestUser = authService.getCurrentUser();
+      const resolvedUser = latestUser?.uid === currentUser.uid ? latestUser : currentUser;
+      setUser({ ...resolvedUser, username: currentProfile?.username || resolvedUser.username });
+      return currentProfile || null;
+    } catch (error) {
+      if (!active.current || request !== revision.current) return null;
+      setProfile(null);
+      setProfileError(error?.message || "Your user profile could not be loaded.");
+      throw error;
+    } finally {
+      if (active.current && request === revision.current) setLoading(false);
+    }
   }, []);
 
-  
+  const refreshProfile = useCallback(
+    () => loadProfile(authService.getCurrentUser()), [loadProfile]
+  );
+
+  const updateProfileCache = useCallback((updates) => {
+    setProfile((current) => current ? { ...current, ...updates } : current);
+    if (updates.username) setUser((current) => current ? { ...current, username: updates.username } : current);
+  }, []);
+
   useEffect(() => {
-    let active = true;
-    let authRevision = 0;
-
-    const unsubscribe =
-      authService
-        .subscribeToAuthState(
-          async (
-            currentUser
-          ) => {
-            const revision = ++authRevision;
-            if (!active) {
-              return;
-            }
-
-            setUser(
-              currentUser
-            );
-
-            setProfileError("");
-
-            if (!currentUser) {
-              setProfile(null);
-              setLoading(false);
-
-              return;
-            }
-
-            setLoading(true);
-
-            try {
-              const currentProfile =
-                await authService
-                  .getCurrentUserProfile();
-
-              if (!active || revision !== authRevision) {
-                return;
-              }
-
-              setProfile(
-                currentProfile ||
-                  null
-              );
-            } catch (error) {
-              if (!active || revision !== authRevision) {
-                return;
-              }
-
-              setProfile(null);
-
-              setProfileError(
-                error?.message ||
-                  "Your user profile could not be loaded."
-              );
-            } finally {
-              if (active && revision === authRevision) {
-                setLoading(
-                  false
-                );
-              }
-            }
-          }
-        );
-
+    active.current = true;
+    const unsubscribe = authService.subscribeToAuthState(async (currentUser) => {
+      try {
+        await loadProfile(currentUser);
+      } catch {
+        // loadProfile exposes the error through context for retry UI.
+      }
+    });
     return () => {
-      active = false;
+      active.current = false;
+      revision.current += 1;
       unsubscribe();
     };
-  }, []);
+  }, [loadProfile]);
 
   const passwordLinked =
     hasPasswordProvider(

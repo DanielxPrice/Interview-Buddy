@@ -1262,3 +1262,19 @@ test("blocked Google setup can send verification, check it, and resume completio
   fireEvent.click(screen.getByRole("button", { name: /finish account setup/i }));
   await waitFor(() => expect(onLogin).toHaveBeenCalledTimes(1));
 });
+
+
+test("a saved profile arriving after the username form removes stale onboarding", async () => {
+  const context = {
+    user: { uid: "google-user-123", email: "saved@example.com", username: "OldAuthName", emailVerified: true },
+    profile: null, profileComplete: false, profileError: "", loading: false,
+    refreshProfile: jest.fn(),
+  };
+  useAuth.mockReturnValue(context);
+  const view = render(<MemoryRouter><LoginPage onLogin={jest.fn()} /></MemoryRouter>);
+  expect(await screen.findByPlaceholderText("Choose a username")).toBeInTheDocument();
+  useAuth.mockReturnValue({ ...context, profile: makeProfile(), profileComplete: true });
+  view.rerender(<MemoryRouter><LoginPage onLogin={jest.fn()} /></MemoryRouter>);
+  await waitFor(() => expect(screen.queryByPlaceholderText("Choose a username")).not.toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: /finish account setup/i })).not.toBeInTheDocument();
+});

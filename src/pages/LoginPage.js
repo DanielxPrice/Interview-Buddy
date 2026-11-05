@@ -106,6 +106,23 @@ function LoginPage({
   ] = useState(false);
 
   useEffect(() => {
+    if (authLoading || profileError) return;
+    if (authenticatedUser && profileComplete) {
+      setGoogleStep(GOOGLE_STEPS.NONE);
+      setGoogleUsername(profile?.username || "");
+      setSelectedGoogleUsername("");
+      setGooglePassword("");
+      setGoogleConfirmPassword("");
+      return;
+    }
+    // A profile that arrived after onboarding started takes precedence over
+    // its username draft. An existing account may only need password linking.
+    if (authenticatedUser && profile && googleStep === GOOGLE_STEPS.USERNAME) {
+      setGoogleHasExistingProfile(true);
+      setSelectedGoogleUsername(profile.username || "");
+      setGoogleStep(GOOGLE_STEPS.PASSWORD);
+      return;
+    }
     if (
       authLoading ||
       !authenticatedUser ||

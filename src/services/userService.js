@@ -51,6 +51,7 @@ export const userService = {
     const response = await fetch(
       `${API_BASE_URL}/users/profile`,
       {
+        cache: "no-store",
         headers: {
           Authorization: `Bearer ${idToken}`,
         },
