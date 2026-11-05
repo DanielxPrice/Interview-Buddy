@@ -9,6 +9,7 @@ function setup() {
       .mockResolvedValue({ empty: true, docs: [] }),
   };
   const profile = {
+    set: jest.fn().mockResolvedValue(),
     listCollections: jest.fn().mockResolvedValue([
       { path: "users/u1/usage" },
       { path: "users/u1/questionReservations" },
@@ -17,7 +18,8 @@ function setup() {
   const sessions = { where: jest.fn(() => sessionQuery) };
   const users = { doc: jest.fn(() => profile) };
   const db = {
-    collection: jest.fn((name) => (name === "sessions" ? sessions : users)),
+    collection: jest.fn((name) => name === "sessions" ? sessions : name === "usernames"
+      ? { where: () => ({ get: async () => ({ docs: [] }) }) } : users),
     recursiveDelete: jest.fn().mockResolvedValue(),
   };
   const authClient = { deleteUser: jest.fn().mockResolvedValue() };
@@ -67,4 +69,22 @@ test("rejects empty authenticated identity", async () => {
   const { service, authClient } = setup();
   await expect(service.deleteAccount("")).rejects.toThrow("authenticated user ID");
   expect(authClient.deleteUser).not.toHaveBeenCalled();
+});
+
+test("continues cleanup when the Auth identity is already absent", async () => {
+  const { service, authClient, db, profile } = setup();
+  authClient.deleteUser.mockRejectedValueOnce({ code: "auth/user-not-found" });
+  await expect(service.deleteAccount("u1")).resolves.toMatchObject({ deleted: true });
+  expect(db.recursiveDelete).toHaveBeenLastCalledWith(profile);
+});
+
+test("marks the profile before removing owned data", async () => {
+  const { service, profile, db } = setup();
+  await service.deleteAccount("u1");
+  expect(profile.set).toHaveBeenCalledWith(
+    { deleting: true, status: "deleting" }, { merge: true }
+  );
+  expect(profile.set.mock.invocationCallOrder[0]).toBeLessThan(
+    db.recursiveDelete.mock.invocationCallOrder[0]
+  );
 });

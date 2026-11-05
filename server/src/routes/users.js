@@ -47,6 +47,13 @@ function createUserRouter({ userRepository }) {
         return;
       }
 
+      if (req.user.emailVerified === false) {
+        return res.status(403).json({
+          error: "Verify your email before creating a profile.",
+          code: "email-verification-required",
+        });
+      }
+
       const username = String(
         req.body?.username || ""
       ).trim();
@@ -57,12 +64,21 @@ function createUserRouter({ userRepository }) {
         });
       }
 
+      const currentProfile = await userRepository.findById(req.user.uid);
+      if (currentProfile?.deleting || currentProfile?.status === "deleting") {
+        return res.status(403).json({
+          error: "This account is being deleted.",
+          code: "account-deletion-in-progress",
+        });
+      }
+      if (currentProfile) return res.status(200).json({ profile: currentProfile });
+
       const existingUser =
         await userRepository.findByUsername(username);
 
       if (
         existingUser &&
-        existingUser.uid !== req.user.uid
+        (existingUser.uid || existingUser.id) !== req.user.uid
       ) {
         return res.status(409).json({
           error: "That username is already in use.",

@@ -3,6 +3,7 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   deleteUser,
+  getAdditionalUserInfo,
   linkWithCredential,
   onAuthStateChanged,
   reauthenticateWithCredential,
@@ -21,6 +22,7 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 
 let pendingGoogleUser = null;
+let pendingGoogleIsNewUser = false;
 let pendingGoogleCredential = null;
 let pendingGoogleEmail = "";
 let pendingGoogleUsername = "";
@@ -58,6 +60,7 @@ function mapFirebaseUser(user) {
 
 function clearPendingGoogleState() {
   pendingGoogleUser = null;
+  pendingGoogleIsNewUser = false;
   pendingGoogleCredential = null;
   pendingGoogleEmail = "";
   pendingGoogleUsername = "";
@@ -65,7 +68,7 @@ function clearPendingGoogleState() {
 }
 
 async function createUserProfile(user, username) {
-  const idToken = await user.getIdToken();
+  const idToken = await user.getIdToken(true);
 
   const response = await fetch(`${API_BASE_URL}/users/profile`, {
     method: "POST",
@@ -433,7 +436,11 @@ export const authService = {
     }
 
     try {
-      await createUserProfile(userCredential.user, normalizedUsername);
+      // Unverified signups live only in Firebase Auth. Reserve the username
+      // and create the application profile after email verification.
+      if (userCredential.user.emailVerified) {
+        await createUserProfile(userCredential.user, normalizedUsername);
+      }
     } catch (error) {
       const rolledBack = await rollbackRegistration(userCredential.user);
 
@@ -509,6 +516,7 @@ export const authService = {
     const firebaseUser = userCredential.user;
 
     pendingGoogleUser = firebaseUser;
+    pendingGoogleIsNewUser = getAdditionalUserInfo?.(userCredential)?.isNewUser === true;
 
     const profile = await getUserProfile(firebaseUser);
 
@@ -832,7 +840,7 @@ export const authService = {
       throw cancelError;
     }
 
-    if (!profile) {
+    if (!profile && pendingGoogleIsNewUser) {
       try {
         await deleteUser(user);
       } catch (error) {
@@ -900,7 +908,20 @@ export const authService = {
       return null;
     }
 
-    return getUserProfile(user);
+    const profile = await getUserProfile(user);
+    if (!profile && user.emailVerified && user.displayName &&
+        hasProvider(user, EmailAuthProvider.PROVIDER_ID) &&
+        !hasProvider(user, GoogleAuthProvider.PROVIDER_ID)) {
+      try {
+        return await createUserProfile(user, user.displayName);
+      } catch (error) {
+        // A username can be claimed while the email is being verified.
+        // Let onboarding offer another username rather than blocking login.
+        if (error.code === "username-already-exists") return null;
+        throw error;
+      }
+    }
+    return profile;
   },
 
   subscribeToAuthState(callback) {
