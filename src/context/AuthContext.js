@@ -121,6 +121,7 @@ export function AuthProvider({
   
   useEffect(() => {
     let active = true;
+    let authRevision = 0;
 
     const unsubscribe =
       authService
@@ -128,6 +129,7 @@ export function AuthProvider({
           async (
             currentUser
           ) => {
+            const revision = ++authRevision;
             if (!active) {
               return;
             }
@@ -152,7 +154,7 @@ export function AuthProvider({
                 await authService
                   .getCurrentUserProfile();
 
-              if (!active) {
+              if (!active || revision !== authRevision) {
                 return;
               }
 
@@ -161,7 +163,7 @@ export function AuthProvider({
                   null
               );
             } catch (error) {
-              if (!active) {
+              if (!active || revision !== authRevision) {
                 return;
               }
 
@@ -172,7 +174,7 @@ export function AuthProvider({
                   "Your user profile could not be loaded."
               );
             } finally {
-              if (active) {
+              if (active && revision === authRevision) {
                 setLoading(
                   false
                 );

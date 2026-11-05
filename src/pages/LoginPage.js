@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 
 import AuthShell from "../components/auth/AuthShell";
+import EmailVerificationNotice from "../components/auth/EmailVerificationNotice";
 
 import {
   useAuth,
@@ -97,6 +98,8 @@ function LoginPage({
     setGoogleConfirmPassword,
   ] = useState("");
 
+  const [verificationRequired, setVerificationRequired] = useState(false);
+
   const [
     googleHasExistingProfile,
     setGoogleHasExistingProfile,
@@ -107,6 +110,8 @@ function LoginPage({
       authLoading ||
       !authenticatedUser ||
       profileComplete ||
+      googleStep !== GOOGLE_STEPS.NONE ||
+      authenticatedUser.emailVerified === false ||
       profileError
     ) {
       return;
@@ -132,12 +137,14 @@ function LoginPage({
     setGoogleHasExistingProfile(
       false
     );
+    setGoogleUsername((current) => current || authenticatedUser.username || "");
 
     setGoogleStep(
       GOOGLE_STEPS.USERNAME
     );
   }, [
     authLoading,
+    googleStep,
     authenticatedUser,
     profile,
     profileComplete,
@@ -170,6 +177,7 @@ function LoginPage({
         false
       );
 
+      setVerificationRequired(false);
       setError("");
     };
 
@@ -468,6 +476,10 @@ function LoginPage({
           await verifyProfileAndLogin();
         }
       } catch (setupError) {
+        if (setupError.code === "email-verification-required") {
+          setVerificationRequired(true);
+          return;
+        }
         if (
           setupError.code ===
           "username-already-exists"
@@ -582,6 +594,20 @@ function LoginPage({
         setLoading(false);
       }
     };
+
+  if (verificationRequired) {
+    return (
+      <EmailVerificationNotice
+        email={googleAccountEmail || authenticatedUser?.email}
+        onSignedOut={resetGoogleSetupUi}
+        refreshProfile={async () => {
+          await refreshProfile();
+          setVerificationRequired(false);
+          setError("");
+        }}
+      />
+    );
+  }
 
   if (
     googleStep ===

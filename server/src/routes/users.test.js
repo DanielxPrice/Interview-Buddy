@@ -1419,3 +1419,12 @@ describe("users routes", () => {
     });
   });
 });
+test("unverified users cannot persist a profile", async () => {
+  const userRepository = { createProfile: jest.fn(), findById: jest.fn() };
+  const router = createUserRouter({ userRepository });
+  const handler = getRouteHandler(router, "/profile", "post");
+  const res = createResponse();
+  await handler({ user: { uid: "u1", emailVerified: false }, body: { username: "test" } }, res, jest.fn());
+  expect(res.statusCode).toBe(403);
+  expect(userRepository.createProfile).not.toHaveBeenCalled();
+});

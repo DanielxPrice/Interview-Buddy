@@ -239,6 +239,14 @@ async function syncAuthUsersToFirestore({
     // ---------------------------------------------------
     // User has no Firestore profile at all.
     // ---------------------------------------------------
+    if (!existingData && (!user.emailVerified || user.disabled)) {
+      actions.push({ uid, action: "skipped", reason: "Account is not verified and enabled." });
+      continue;
+    }
+    if (existingData?.deleting || existingData?.status === "deleting") {
+      actions.push({ uid, action: "skipped", reason: "Account deletion is in progress." });
+      continue;
+    }
     if (!existingData) {
       summary.missingProfiles += 1;
 
