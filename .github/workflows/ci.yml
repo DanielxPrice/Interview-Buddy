@@ -226,8 +226,9 @@ jobs:
         working-directory: ./server
         run: npm test -- --watchAll=false
 
-      # SCRUM-190 / SCRUM-215: real Firestore transactions and queries,
-      # isolated from production using a local emulator and demo project.
+      # SCRUM-190 / SCRUM-215 + H-SOC: Firestore integration and direct-client
+      # access tests (anonymous, authenticated, simulated admin claims),
+      # isolated from production using local emulators and a demo project.
       # These tests are separate from the fast, mock-based Jest suite.
       - name: Set up Java for Firestore Emulator
         uses: actions/setup-java@v4
@@ -238,7 +239,7 @@ jobs:
       - name: Run Firestore Emulator integration tests
         run: >-
           npx --yes firebase-tools@14.12.0 emulators:exec
-          --only firestore
+          --only auth,firestore
           --project demo-interview-buddy-tests
           --non-interactive
           "npm --prefix server run test:emulator"
