@@ -81,8 +81,8 @@ jobs:
           npm run generate:metadata
           git diff --exit-code -- src/data/questionMetadata.json
 
-      - name: Test metadata generation and cache consistency
-        run: node --test scripts/questionMetadata.test.cjs
+      - name: Test metadata generation and Firestore client boundary
+        run: node --test scripts/questionMetadata.test.cjs scripts/clientFirestoreBoundary.test.cjs
 
       - name: Run frontend lint
         run: npm run lint
@@ -215,8 +215,8 @@ jobs:
           echo "Full vulnerability details:"
           npm audit --audit-level=high || true
 
-      - name: Test Firestore metadata invalidation logic
-        run: node --test functions/relevantMetadata.test.cjs
+      - name: Test Firestore metadata Cloud Function and invalidation logic
+        run: node --test functions/relevantMetadata.test.cjs functions/metadataInvalidationHandler.test.cjs functions/index.test.cjs
 
       - name: Run server lint
         working-directory: ./server

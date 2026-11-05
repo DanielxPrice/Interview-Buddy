@@ -24,6 +24,17 @@ for (const name of ["GCLOUD_PROJECT", "FIREBASE_PROJECT_ID"]) {
   process.env[name] = PROJECT_ID;
 }
 
+// The Web SDK is intentionally unauthenticated: unlike Admin, it must obey
+// firestore.rules. The root React app already depends on firebase.
+const { initializeApp: initializeClientApp, deleteApp: deleteClientApp } = require("firebase/app");
+const {
+  getFirestore: getClientFirestore, connectFirestoreEmulator,
+  doc: clientDoc, collection: clientCollection,
+  getDoc, getDocs, setDoc, updateDoc, deleteDoc,
+  terminate: terminateClientFirestore,
+} = require("firebase/firestore");
+const { assertOwnedActiveSession } = require("../src/services/sessionAssignmentPolicy");
+
 const admin = require("firebase-admin");
 const { getFirestore } = require("firebase-admin/firestore");
 const QuestionRepository = require("../src/repositories/firestore/FirestoreQuestionRepository");
@@ -35,6 +46,16 @@ const { validateQuestion } = require("../scripts/validateQuestionSeed");
 const seed = require("../seed/questions.json");
 
 const app = admin.initializeApp({ projectId: PROJECT_ID }, `emulator-test-${randomUUID()}`);
+// A separate, non-Admin client proves the actual Firestore rule decisions.
+const clientApp = initializeClientApp({
+  apiKey: "emulator-test-only-key",
+  authDomain: "demo-interview-buddy-tests.firebaseapp.com",
+  projectId: PROJECT_ID,
+  appId: "1:1234567890:web:emulator-only",
+}, `unauthenticated-firestore-client-${randomUUID()}`);
+const clientDb = getClientFirestore(clientApp);
+connectFirestoreEmulator(clientDb, emulator.hostname.replaceAll("[", "").replaceAll("]", ""), Number(emulator.port));
+
 const db = getFirestore(app);
 db.settings({ ignoreUndefinedProperties: true });
 const questions = new QuestionRepository({ db, admin });
@@ -84,6 +105,8 @@ after(async () => {
   try {
     await resetFixtures();
   } finally {
+    await terminateClientFirestore(clientDb);
+    await deleteClientApp(clientApp);
     await db.terminate();
     await app.delete();
   }
@@ -230,4 +253,141 @@ test("H-E06: clearing emulator fixtures removes subcollections and enables repea
   const recreated = await makeAssignedSession(quiz);
   assert.ok(recreated.session.id);
   assert.equal((await sessions.listByUser("emulator-user-A")).length, 1);
+});
+
+// H-03: Direct-client Firestore rules and server repository ownership integrity.
+// Do not confuse these direct-client tests with Admin SDK authorization: Admin
+// bypasses firestore.rules. Bryan owns HTTP/API session authorization tests.
+
+test("H-S01: unauthenticated Firestore Web SDK cannot read or list persisted documents", async () => {
+  const { session } = await makeAssignedSession(theory, "emulator-user-A");
+  await questions.upsertMany([theory]);
+  // Prove that the documents exist through the Admin SDK before a client denial.
+  assert.ok((await db.collection("sessions").doc(session.id).get()).exists);
+  assert.ok((await db.collection("questions").doc(theory.id).get()).exists);
+
+  for (const ref of [
+    clientDoc(clientDb, "sessions", session.id),
+    clientDoc(clientDb, "questions", theory.id),
+    clientDoc(clientDb, "users", "emulator-user-A"),
+  ]) {
+    await assert.rejects(getDoc(ref), (error) => error.code === "permission-denied");
+  }
+  await assert.rejects(getDocs(clientCollection(clientDb, "sessions")),
+    (error) => error.code === "permission-denied");
+  await assert.rejects(getDocs(clientCollection(clientDb, "questions")),
+    (error) => error.code === "permission-denied");
+});
+
+test("H-S02: unauthenticated Web SDK create, update, and delete cannot change Admin data", async () => {
+  const { session } = await makeAssignedSession(quiz, "emulator-user-A");
+  const savedRef = db.collection("sessions").doc(session.id);
+  const before = (await savedRef.get()).data();
+  const clientSession = clientDoc(clientDb, "sessions", session.id);
+  const clientNew = clientDoc(clientDb, "sessions", "client-denied-create");
+
+  await assert.rejects(setDoc(clientNew, { userId: "emulator-user-A" }),
+    (error) => error.code === "permission-denied");
+  await assert.rejects(updateDoc(clientSession, { userId: "attacker" }),
+    (error) => error.code === "permission-denied");
+  await assert.rejects(deleteDoc(clientSession),
+    (error) => error.code === "permission-denied");
+
+  assert.equal((await db.collection("sessions").doc("client-denied-create").get()).exists, false);
+  assert.deepEqual((await savedRef.get()).data(), before);
+});
+
+test("H-S03: separate users retain their immutable session owner after assignments and answers", async () => {
+  const first = await makeAssignedSession(quiz, "emulator-user-A");
+  const second = await makeAssignedSession(quiz, "emulator-user-B");
+  const aBefore = await sessions.findById(first.session.id);
+  const bBefore = await sessions.findById(second.session.id);
+
+  await sessions.saveQuizAnswer({
+    userId: "emulator-user-A", sessionId: first.session.id,
+    question: quiz, answer: quiz.correctAnswer,
+  });
+  const aAfter = await sessions.findById(first.session.id);
+  const bAfter = await sessions.findById(second.session.id);
+  assert.equal(aAfter.userId, "emulator-user-A");
+  assert.equal(bAfter.userId, "emulator-user-B");
+  assert.deepEqual(aAfter.createdAt, aBefore.createdAt);
+  assert.deepEqual(bAfter.createdAt, bBefore.createdAt);
+  assert.deepEqual(aAfter.assignedQuestionIds, [quiz.id]);
+  assert.deepEqual(bAfter.assignedQuestionIds, [quiz.id]);
+  assert.equal((await sessions.listResponses(first.session.id)).length, 1);
+  assert.deepEqual(await sessions.listResponses(second.session.id), []);
+});
+
+test("H-S04: user-specific history, completed history, and cursor reject another owner", async () => {
+  const a = await makeAssignedSession(quiz, "emulator-user-A");
+  const b = await makeAssignedSession(quiz, "emulator-user-B");
+  // Admin directly marks completed records for a repository query fixture.
+  // Do not invoke legacy completeSession(), which has a different scope.
+  const completedAt = admin.firestore.Timestamp.now();
+  await db.collection("sessions").doc(a.session.id).update({
+    status: "completed", completedAt,
+  });
+  await db.collection("sessions").doc(b.session.id).update({
+    status: "completed", completedAt,
+  });
+
+  for (const [userId, expectedId, otherId] of [
+    ["emulator-user-A", a.session.id, b.session.id],
+    ["emulator-user-B", b.session.id, a.session.id],
+  ]) {
+    assert.deepEqual((await sessions.listByUser(userId)).map((item) => item.id), [expectedId]);
+    assert.deepEqual((await sessions.listCompletedByUser(userId)).map((item) => item.id), [expectedId]);
+    const page = await sessions.getSessionPage({ userId, pageSize: 10, status: "completed" });
+    assert.deepEqual(page.sessions.map((item) => item.id), [expectedId]);
+    assert.equal(page.nextCursor, null);
+    await assert.rejects(sessions.getSessionPage({ userId, pageSize: 10, cursor: otherId }),
+      (error) => error.statusCode === 400 && error.code === "SESSION_CURSOR_INVALID");
+  }
+});
+
+test("H-S05: missing owner fails closed and inconsistent active-slot owner is detected", async () => {
+  const sessionRef = db.collection("sessions").doc("missing-owner-fixture");
+  await sessionRef.set({ mode: "Quiz Style", status: "active", createdAt: admin.firestore.Timestamp.now() });
+  const unowned = await sessions.findById(sessionRef.id);
+  assert.equal(Object.hasOwn(unowned, "userId"), false);
+  for (const userId of ["emulator-user-A", "emulator-user-B"]) {
+    assert.throws(() => assertOwnedActiveSession(unowned, userId),
+      (error) => error.code === "SESSION_FORBIDDEN" && error.statusCode === 403);
+    assert.deepEqual((await sessions.listByUser(userId)).map((item) => item.id), []);
+  }
+
+  const created = await makeAssignedSession(quiz, "emulator-user-A");
+  const originalId = created.session.id;
+  // Simulate a corrupted database with a user A slot pointing to a session
+  // whose owner field has been switched to user B by privileged code.
+  await db.collection("sessions").doc(originalId).update({ userId: "emulator-user-B" });
+  await db.collection("users").doc("emulator-user-A")
+    .collection("activeSessionSlots").doc(created.session.activeSlotId)
+    .update({ expiresAtMs: 0 });
+  const limitedSessions = new SessionRepository({ db, admin, activeSessionLimit: 1 });
+  await assert.rejects(limitedSessions.createSession({ userId: "emulator-user-A", mode: "Quiz Style" }),
+    (error) => error.statusCode === 503 && /ownership is inconsistent/.test(error.message));
+  assert.equal((await db.collection("sessions").get()).size, 2);
+  assert.equal((await sessions.findById(originalId)).userId, "emulator-user-B");
+});
+
+test("H-S06: cross-user repository writes are denied without altering session or answers", async () => {
+  const { session, setup } = await makeAssignedSession(quiz, "emulator-user-A");
+  const ref = db.collection("sessions").doc(session.id);
+  const before = (await ref.get()).data();
+
+  await assert.rejects(sessions.assignQuestions({
+    sessionId: session.id, userId: "emulator-user-B", setup, questions: [quiz],
+  }), (error) => error.statusCode === 403 && error.code === "SESSION_FORBIDDEN");
+  await assert.rejects(sessions.saveQuizAnswer({
+    sessionId: session.id, userId: "emulator-user-B", question: quiz,
+    answer: quiz.correctAnswer,
+  }), (error) => error.statusCode === 403);
+  await assert.rejects(evaluations.saveEvaluation({
+    sessionId: session.id, userId: "emulator-user-B", questionId: quiz.id,
+    mode: "Quiz Style", candidateResponse: "attack", evaluation: { score: 100 },
+  }), (error) => error.statusCode === 403 && error.code === "SESSION_FORBIDDEN");
+  assert.deepEqual((await ref.get()).data(), before);
+  assert.deepEqual(await sessions.listResponses(session.id), []);
 });
