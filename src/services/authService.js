@@ -99,7 +99,12 @@ async function createUserProfile(user, username) {
     throw error;
   }
 
-  return payload?.profile || null;
+  if (!payload?.profile) {
+    const error = new Error("The server did not return the saved profile. Please retry.");
+    error.code = "profile-response-invalid";
+    throw error;
+  }
+  return payload.profile;
 }
 
 async function getUserProfile(user) {
@@ -111,6 +116,7 @@ async function getUserProfile(user) {
 
   const response = await fetch(`${API_BASE_URL}/users/profile`, {
     method: "GET",
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${idToken}`,
     },
@@ -138,7 +144,22 @@ async function getUserProfile(user) {
     throw error;
   }
 
-  return payload?.profile || null;
+  if (!payload?.profile) {
+    const error = new Error("The server returned an invalid user profile. Please retry.");
+    error.code = "profile-response-invalid";
+    throw error;
+  }
+  return payload.profile;
+}
+
+async function syncProfileUsername(user, profile) {
+  if (!profile?.username || user.displayName === profile.username) return;
+  try {
+    await updateProfile(user, { displayName: profile.username });
+  } catch {
+    // The application continues to use the Firestore username if this
+    // cosmetic Auth mirror cannot be updated during a network failure.
+  }
 }
 
 function getGeneratedUsernameCandidates(user) {
@@ -356,6 +377,7 @@ export const authService = {
       throw new Error("Login credentials are required.");
     }
 
+    clearPendingGoogleState();
     const { email, password } = credentials;
 
     const normalizedEmail = email?.trim();
@@ -519,6 +541,7 @@ export const authService = {
     pendingGoogleIsNewUser = getAdditionalUserInfo?.(userCredential)?.isNewUser === true;
 
     const profile = await getUserProfile(firebaseUser);
+    await syncProfileUsername(firebaseUser, profile);
 
     const passwordLinked = hasProvider(
       firebaseUser,
@@ -653,15 +676,6 @@ export const authService = {
 
     pendingGoogleUser = user;
 
-    try {
-      await updateProfile(user, {
-        displayName: pendingGoogleUsername,
-      });
-    } catch {
-      // Firestore remains the Interview Buddy
-      // source of truth for the username.
-    }
-
     let profile;
 
     try {
@@ -670,6 +684,14 @@ export const authService = {
       // Keep the Firebase user signed in so the
       // user can correct a username collision.
       throw error;
+    }
+
+    // The server may return an existing profile. Its username wins over
+    // any stale draft left in the onboarding form or Google display name.
+    try {
+      await updateProfile(user, { displayName: profile.username });
+    } catch {
+      // Auth displayName is cosmetic; the persisted profile is authoritative.
     }
 
     const completedUser = {
@@ -909,6 +931,7 @@ export const authService = {
     }
 
     const profile = await getUserProfile(user);
+    await syncProfileUsername(user, profile);
     if (!profile && user.emailVerified && user.displayName &&
         hasProvider(user, EmailAuthProvider.PROVIDER_ID) &&
         !hasProvider(user, GoogleAuthProvider.PROVIDER_ID)) {

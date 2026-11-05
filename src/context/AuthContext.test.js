@@ -2,6 +2,7 @@ import React from "react";
 
 import {
   act,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -37,10 +38,12 @@ function TestConsumer() {
     passwordLinked,
     profileComplete,
     loading,
+    refreshProfile,
   } = useAuth();
 
   return (
     <div>
+      <button onClick={() => refreshProfile()}>Refresh profile</button>
       <div
         data-testid="loading"
       >
@@ -441,5 +444,19 @@ describe(
         );
       }
     );
+
+    test("a slow initial missing profile cannot overwrite a completed setup refresh", async () => {
+      let finishInitial;
+      authService.getCurrentUserProfile
+        .mockImplementationOnce(() => new Promise((resolve) => { finishInitial = resolve; }))
+        .mockResolvedValueOnce({ uid: "test-user", username: "SavedName" });
+      render(<AuthProvider><TestConsumer /></AuthProvider>);
+      act(() => { authCallback(authService.getCurrentUser()); });
+      fireEvent.click(screen.getByRole("button", { name: "Refresh profile" }));
+      await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("SavedName"));
+      await act(async () => { finishInitial(null); });
+      expect(screen.getByTestId("profile")).toHaveTextContent("SavedName");
+      expect(screen.getByTestId("profile-complete")).toHaveTextContent("yes");
+    });
   }
 );

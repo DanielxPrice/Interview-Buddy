@@ -1423,5 +1423,31 @@ describe(
       expect(signOut).toHaveBeenCalled();
     });
 
+
+    test("existing profile wins over a stale setup username and repairs Auth displayName", async () => {
+      const user = makeUser({ providerIds: ["google.com", "password"] });
+      signInWithPopup.mockResolvedValueOnce({ user });
+      mockProfileMissing();
+      await authService.loginWithGoogle();
+      await authService.prepareGoogleUsername("StaleDraft");
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ profile: makeProfile({ username: "SavedName" }) }) });
+      const result = await authService.completeGoogleRegistration();
+      expect(result.user.username).toBe("SavedName");
+      expect(user.displayName).toBe("SavedName");
+      expect(updateProfile).not.toHaveBeenCalledWith(user, { displayName: "StaleDraft" });
+    });
+
+    test("profile loading bypasses cached missing-profile responses", async () => {
+      auth.currentUser = makeUser();
+      mockProfileFound();
+      await authService.getCurrentUserProfile();
+      expect(global.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cache: "no-store" }));
+    });
+
+    test("a malformed successful profile response cannot trigger username onboarding", async () => {
+      auth.currentUser = makeUser();
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      await expect(authService.getCurrentUserProfile()).rejects.toMatchObject({ code: "profile-response-invalid" });
+    });
   }
 );

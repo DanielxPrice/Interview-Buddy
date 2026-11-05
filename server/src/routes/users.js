@@ -30,6 +30,12 @@ function createUserRouter({ userRepository }) {
     return true;
   }
 
+  // Missing profiles must not be cached: onboarding can create one next.
+  router.use((_req, res, next) => {
+    res.set("Cache-Control", "private, no-store");
+    next();
+  });
+
   // ---------------------------------------------------------
   // POST /api/users/profile
   //
