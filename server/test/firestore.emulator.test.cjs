@@ -406,6 +406,63 @@ test("H-SOC-04: signed-in owner cannot directly update their own interview sessi
   assert.deepEqual((await sessionRef.get()).data(), before);
 });
 
+// SCRUM-251 / H-SOC-05: 4 collections x 2 real client auth states x
+// 2 operation categories = 16 independently reported permission decisions.
+// Fixtures use the Admin SDK ONLY for setup and verification; every access
+// attempt below is made through the ordinary Firestore Web SDK.
+test("H-SOC-05: 16-case sensitive-collection least-privilege matrix", async (t) => {
+  const protectedDocs = [
+    ["users", "testUserA"],
+    ["sessions", "testSessionA"],
+    ["questions", "testQuestionA"],
+    ["serverConfig", "ai"],
+  ];
+  const synthetic = {
+    classification: "synthetic-test-only",
+    privateMarker: "synthetic-private-marker",
+    owner: "testUserA",
+    accessLevel: "backend-only",
+  };
+  // The global beforeEach(resetFixtures) hook also runs before nested t.test()
+  // cases. Each matrix case must create its own Admin fixture *after* that reset.
+  const signedIn = await createAuthenticatedContext(t);
+  const contexts = [
+    ["anonymous", clientDb],
+    ["authenticated", signedIn.db],
+  ];
+  let checked = 0;
+  for (const [authState, webDb] of contexts) {
+    for (const [collectionName, documentId] of protectedDocs) {
+      const path = `${collectionName}/${documentId}`;
+      const adminRef = db.doc(path);
+      const clientRef = clientDoc(webDb, collectionName, documentId);
+      for (const operation of ["read", "write"]) {
+        await t.test(`H-SOC-05 ${authState} ${operation} ${path}: DENIED`, async () => {
+          // Seed this synthetic document after the inherited per-test reset.
+          // The privileged Admin SDK write is NOT a client access grant.
+          await adminRef.set(structuredClone(synthetic));
+          const before = (await adminRef.get()).data();
+          assert.deepEqual(before, synthetic, "Admin fixture must exist before the denial");
+          if (operation === "read") {
+            await expectDenied(getDoc(clientRef));
+          } else {
+            // An existing document makes setDoc an overwrite attempt, so both
+            // the permission boundary and unchanged persisted data are checked.
+            await expectDenied(setDoc(clientRef, {
+              ...synthetic, privateMarker: "unapproved-client-modification",
+            }));
+          }
+          assert.deepEqual((await adminRef.get()).data(), before,
+            "Denied client operation must not change persisted data");
+          checked += 1;
+          console.log(`H-SOC-05 MATRIX ${authState} ${operation} ${path}: DENIED (expected)`);
+        });
+      }
+    }
+  }
+  assert.equal(checked, 16, "All sixteen combinations must complete");
+});
+
 test("H-SOC-06: signed-in client with simulated admin claim cannot read or write", async (t) => {
   const pretendAdmin = await createAuthenticatedContext(t, { role: "admin" });
   const normalUser = await createAuthenticatedContext(t);

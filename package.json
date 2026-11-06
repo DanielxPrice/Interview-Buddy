@@ -27,7 +27,11 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "lint": "eslint src",
-    "generate:metadata": "node scripts/generateQuestionMetadata.js"
+    "generate:metadata": "node scripts/generateQuestionMetadata.js",
+    "test:soc:config": "node --test scripts/firestoreRulesConfig.test.cjs scripts/verify-deployed-firestore-rules.test.mjs",
+    "test:soc": "node scripts/run-h-soc-01-06.mjs",
+    "test:soc:deployed": "node scripts/run-h-soc-07.mjs",
+    "test:soc:all": "npm run test:soc && npm run test:soc:deployed"
   },
   "eslintConfig": {
     "extends": [

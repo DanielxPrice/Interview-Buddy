@@ -84,6 +84,28 @@ jobs:
       - name: Test metadata generation and Firestore client boundary
         run: node --test scripts/questionMetadata.test.cjs scripts/clientFirestoreBoundary.test.cjs
 
+      # SCRUM-253: quick deny-all policy check and verified failing-assertion gate.
+      - name: Check Firestore rules configuration and deployed-rule verifier
+        run: npm run test:soc:config
+
+      - name: Verify Firestore security assertions can fail CI
+        shell: bash
+        run: |
+          set +e
+          H_SOC_FORCE_FAIL=1 node --test scripts/firestoreRulesConfig.test.cjs > firestore-security-gate-probe.txt 2>&1
+          probe_status=$?
+          set -e
+          if [ "$probe_status" -eq 0 ]; then
+            echo "::error::Deliberately failing CC6.3 policy assertion did not fail the test runner"
+            exit 1
+          fi
+          if ! grep -q 'not ok' firestore-security-gate-probe.txt; then
+            echo "::error::Failure probe did not produce a failed test assertion"
+            exit 1
+          fi
+          echo "Expected failure detected (exit $probe_status); normal assertion remains enabled."
+          echo "### CC6.3 CI gate: deliberately failing assertion returned exit $probe_status (expected)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run frontend lint
         run: npm run lint
 
@@ -236,13 +258,19 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Run Firestore Emulator integration tests
-        run: >-
-          npx --yes firebase-tools@14.12.0 emulators:exec
-          --only auth,firestore
-          --project demo-interview-buddy-tests
-          --non-interactive
-          "npm --prefix server run test:emulator"
+      - name: Run Firestore Emulator integration and SOC 2 security matrix
+        run: npm run test:soc
+
+      - name: Upload SOC 2 CC6.3 security test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-soc2-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            docs/testing/H-SOC/
+            firestore-security-gate-probe.txt
+          if-no-files-found: warn
+          retention-days: 30
 
       # Only passing main-branch CI runs publish an artifact. CD downloads
       # this exact frontend output instead of building it a second time.
