@@ -1,6 +1,7 @@
 import React from "react";
 
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -2549,5 +2550,266 @@ test(
         ).toBeInTheDocument();
       }
     );
+
+    /* ========================================================
+       SCRUM-186 / CI/CD-19 — SUBMISSION AND ASYNC STATE
+       ======================================================== */
+
+    test("blocks Quiz completion and duplicate grading while an answer check is pending", async () => {
+      const pending = createDeferredPromise();
+      interviewService.checkQuizAnswer.mockReturnValue(pending.promise);
+
+      await loadQuizSession();
+      await selectQueueAnswer();
+      userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+      await waitFor(() => {
+        expect(interviewService.checkQuizAnswer).toHaveBeenCalledTimes(1);
+      });
+
+      const endButton = screen.getByRole("button", { name: "End Interview" });
+
+      expect(endButton).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Checking answer..." }))
+        .toBeDisabled();
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "0");
+
+      userEvent.click(endButton);
+      expect(interviewService.endSession).not.toHaveBeenCalled();
+
+      await act(async () => {
+        pending.resolve({
+          isCorrect: true,
+          explanation: "Queue uses FIFO ordering.",
+          correctAnswer: "Queue",
+        });
+        await pending.promise;
+      });
+
+      expect(await screen.findByRole("heading", { name: "Correct Answer" }))
+        .toBeInTheDocument();
+      expect(interviewService.checkQuizAnswer).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "100");
+    });
+
+    test("retries failed Quiz grading without counting an unsuccessful attempt", async () => {
+      interviewService.checkQuizAnswer
+        .mockRejectedValueOnce(new Error("Quiz grading temporarily unavailable."))
+        .mockResolvedValueOnce({
+          isCorrect: true,
+          explanation: "Queue uses FIFO ordering.",
+          correctAnswer: "Queue",
+        });
+
+      await loadQuizSession();
+      await selectQueueAnswer();
+      userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+      expect(await screen.findByText("Quiz grading temporarily unavailable."))
+        .toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: /queue/i })).toBeChecked();
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "0");
+      expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
+
+      userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+      expect(await screen.findByRole("heading", { name: "Correct Answer" }))
+        .toBeInTheDocument();
+      expect(interviewService.checkQuizAnswer).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "100");
+      expect(screen.queryByText("Quiz grading temporarily unavailable."))
+        .not.toBeInTheDocument();
+    });
+
+    test("retries failed Code evaluation with the original trimmed response", async () => {
+      aiService.evaluateAnswer
+        .mockRejectedValueOnce(new Error("Code evaluation temporarily unavailable."))
+        .mockResolvedValueOnce({
+          score: 92,
+          feedback: "Code evaluated after retry.",
+          strengths: [],
+          weaknesses: [],
+          suggestions: [],
+          criterionResults: [],
+        });
+
+      renderPage({ selectedMode: "Code Style" });
+      await screen.findByText("Write a function that reverses an array.");
+
+      const response = "  return input.reverse();  ";
+
+      fireEvent.change(screen.getByLabelText("Your Response"), {
+        target: { value: response },
+      });
+
+      userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+      expect(await screen.findByText("Code evaluation temporarily unavailable."))
+        .toBeInTheDocument();
+      expect(screen.getByLabelText("Your Response")).toHaveValue(response);
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "0");
+
+      userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+      expect(await screen.findByText(/Score:\s*92\/100/i))
+        .toBeInTheDocument();
+      expect(aiService.evaluateAnswer).toHaveBeenCalledTimes(2);
+      expect(aiService.evaluateAnswer).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          userAnswer: "return input.reverse();",
+        })
+      );
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "100");
+    });
+
+    test("retries failed Theoretical evaluation without losing the response", async () => {
+      interviewService.getQuestions.mockResolvedValue([theoreticalQuestion]);
+
+      aiService.evaluateAnswer
+        .mockRejectedValueOnce(new Error("Theoretical evaluation temporarily unavailable."))
+        .mockResolvedValueOnce({
+          score: 75,
+          feedback: "Response evaluated after retry.",
+          strengths: [],
+          weaknesses: [],
+          suggestions: [],
+          criterionResults: [],
+        });
+
+      renderPage({ selectedMode: "Theoretical Style" });
+
+      await screen.findByText(
+        "Explain the difference between authentication and authorization."
+      );
+
+      const response =
+        "Authentication checks identity; authorization checks permissions.";
+
+      userEvent.type(screen.getByLabelText("Your Response"), response);
+      userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+      expect(await screen.findByText("Theoretical evaluation temporarily unavailable."))
+        .toBeInTheDocument();
+      expect(screen.getByLabelText("Your Response")).toHaveValue(response);
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "0");
+
+      userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+      expect(await screen.findByText(/Score:\s*75\/100/i))
+        .toBeInTheDocument();
+      expect(aiService.evaluateAnswer).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "100");
+    });
+
+    test("blocks ending a Theoretical session while AI evaluation is pending", async () => {
+      const pending = createDeferredPromise();
+
+      interviewService.getQuestions.mockResolvedValue([theoreticalQuestion]);
+      aiService.evaluateAnswer.mockReturnValue(pending.promise);
+
+      renderPage({ selectedMode: "Theoretical Style" });
+
+      await screen.findByText(
+        "Explain the difference between authentication and authorization."
+      );
+
+      userEvent.type(
+        screen.getByLabelText("Your Response"),
+        "Identity versus permissions."
+      );
+      userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+      await waitFor(() => {
+        expect(aiService.evaluateAnswer).toHaveBeenCalledTimes(1);
+      });
+
+      const endButton = screen.getByRole("button", { name: "End Interview" });
+
+      expect(endButton).toBeDisabled();
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "0");
+
+      userEvent.click(endButton);
+      expect(interviewService.endSession).not.toHaveBeenCalled();
+
+      await act(async () => {
+        pending.resolve({
+          score: 81,
+          feedback: "Evaluation complete.",
+          strengths: [],
+          weaknesses: [],
+          suggestions: [],
+          criterionResults: [],
+        });
+        await pending.promise;
+      });
+
+      expect(await screen.findByText(/Score:\s*81\/100/i))
+        .toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Finish Session" }))
+        .toBeEnabled();
+      expect(screen.getByRole("progressbar", { name: "Interview progress" }))
+        .toHaveAttribute("aria-valuenow", "100");
+    });
+
+    test("prevents duplicate finalization while the end-session request is pending", async () => {
+      const pending = createDeferredPromise();
+      interviewService.endSession.mockReturnValue(pending.promise);
+
+      await loadQuizSession();
+      await selectQueueAnswer();
+      await submitQuizAnswer();
+
+      await screen.findByRole("heading", { name: "Correct Answer" });
+
+      userEvent.click(screen.getByRole("button", { name: "Finish Session" }));
+
+      await waitFor(() => {
+        expect(interviewService.endSession).toHaveBeenCalledTimes(1);
+      });
+
+      const pendingButtons = screen.getAllByRole("button", {
+        name: "Ending Session...",
+      });
+
+      expect(pendingButtons).toHaveLength(2);
+
+      pendingButtons.forEach((button) => {
+        expect(button).toBeDisabled();
+        userEvent.click(button);
+      });
+
+      expect(interviewService.endSession).toHaveBeenCalledTimes(1);
+      expect(onEndInterview).not.toHaveBeenCalled();
+
+      await act(async () => {
+        pending.resolve({
+          id: "mock-session-1",
+          status: "completed",
+          result: {
+            score: 100,
+            questionsAnswered: 1,
+            totalScore: 100,
+          },
+          breakdown: [],
+        });
+        await pending.promise;
+      });
+
+      await waitFor(() => {
+        expect(onEndInterview).toHaveBeenCalledTimes(1);
+      });
+
+      expect(interviewService.endSession).toHaveBeenCalledTimes(1);
+    });
   }
 );

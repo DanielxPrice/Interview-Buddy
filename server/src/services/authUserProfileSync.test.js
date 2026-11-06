@@ -27,7 +27,7 @@ function createAdmin() {
 function createAuth(users) {
   return {
     listUsers: jest.fn().mockResolvedValue({
-      users,
+      users: users.map((user) => ({ emailVerified: true, ...user })),
       pageToken: undefined,
     }),
   };
@@ -459,5 +459,16 @@ describe(
         ).toBe("would-create");
       }
     );
+
+    test("does not bootstrap unverified or deleting accounts", async () => {
+      const auth = createAuth([
+        { uid: "unverified", email: "u@example.com", emailVerified: false },
+        { uid: "deleting", email: "d@example.com" },
+      ]);
+      const { db, documents } = createDb({ deleting: { deleting: true } });
+      const result = await syncAuthUsersToFirestore({ auth, db, admin: createAdmin() });
+      expect(documents.has("unverified")).toBe(false);
+      expect(result.summary.profilesWritten).toBe(0);
+    });
   }
 );

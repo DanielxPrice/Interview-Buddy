@@ -3,6 +3,7 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   deleteUser,
+  getAdditionalUserInfo,
   linkWithCredential,
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -66,6 +67,7 @@ jest.mock(
 
       deleteUser:
         jest.fn(),
+      getAdditionalUserInfo: jest.fn(() => ({ isNewUser: false })),
 
       linkWithCredential:
         jest.fn(),
@@ -336,7 +338,7 @@ describe(
     );
 
     test(
-      "register creates Firebase user, profile, and signs out",
+      "register keeps an unverified account out of Firestore and signs out",
       async () => {
         const user =
           makeUser({
@@ -390,21 +392,7 @@ describe(
           "password123"
         );
 
-        expect(
-          global.fetch
-        ).toHaveBeenCalledWith(
-          "http://localhost:5001/api/users/profile",
-
-          expect.objectContaining({
-            method: "POST",
-
-            body:
-              JSON.stringify({
-                username:
-                  "TestUser",
-              }),
-          })
-        );
+        expect(global.fetch).not.toHaveBeenCalled();
 
         expect(
           signOut
@@ -1118,6 +1106,7 @@ describe(
     test(
       "cancel incomplete Google account deletes Auth user",
       async () => {
+        getAdditionalUserInfo.mockReturnValueOnce({ isNewUser: true });
         const user =
           makeUser({
             uid:
@@ -1405,5 +1394,60 @@ describe(
       );
     });
 
+
+    test("verified password signup creates its deferred profile", async () => {
+      auth.currentUser = makeUser();
+      mockProfileMissing();
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ profile: makeProfile() }) });
+      await expect(authService.getCurrentUserProfile()).resolves.toEqual(makeProfile());
+      expect(global.fetch).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ method: "POST" }));
+    });
+
+    test("username collision after verification returns to onboarding", async () => {
+      auth.currentUser = makeUser();
+      mockProfileMissing();
+      global.fetch.mockResolvedValueOnce({ ok: false, json: async () => ({ code: "username-already-exists" }) });
+      await expect(authService.getCurrentUserProfile()).resolves.toBeNull();
+      expect(deleteUser).not.toHaveBeenCalled();
+    });
+
+    test("canceling an existing Google login with no profile only signs out", async () => {
+      const user = makeUser({ providerIds: ["google.com"] });
+      getAdditionalUserInfo.mockReturnValueOnce({ isNewUser: false });
+      signInWithPopup.mockResolvedValueOnce({ user });
+      mockProfileMissing();
+      await authService.loginWithGoogle();
+      mockProfileMissing();
+      await expect(authService.cancelGoogleSetup()).resolves.toMatchObject({ deletedIncompleteAccount: false });
+      expect(deleteUser).not.toHaveBeenCalled();
+      expect(signOut).toHaveBeenCalled();
+    });
+
+
+    test("existing profile wins over a stale setup username and repairs Auth displayName", async () => {
+      const user = makeUser({ providerIds: ["google.com", "password"] });
+      signInWithPopup.mockResolvedValueOnce({ user });
+      mockProfileMissing();
+      await authService.loginWithGoogle();
+      await authService.prepareGoogleUsername("StaleDraft");
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ profile: makeProfile({ username: "SavedName" }) }) });
+      const result = await authService.completeGoogleRegistration();
+      expect(result.user.username).toBe("SavedName");
+      expect(user.displayName).toBe("SavedName");
+      expect(updateProfile).not.toHaveBeenCalledWith(user, { displayName: "StaleDraft" });
+    });
+
+    test("profile loading bypasses cached missing-profile responses", async () => {
+      auth.currentUser = makeUser();
+      mockProfileFound();
+      await authService.getCurrentUserProfile();
+      expect(global.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cache: "no-store" }));
+    });
+
+    test("a malformed successful profile response cannot trigger username onboarding", async () => {
+      auth.currentUser = makeUser();
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      await expect(authService.getCurrentUserProfile()).rejects.toMatchObject({ code: "profile-response-invalid" });
+    });
   }
 );

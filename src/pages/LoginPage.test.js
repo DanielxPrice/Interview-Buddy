@@ -1,3 +1,4 @@
+import { emailVerificationService } from "../services/emailVerificationService";
 import React from "react";
 
 import {
@@ -21,6 +22,10 @@ import {
 import {
   useAuth,
 } from "../context/AuthContext";
+
+jest.mock("../services/emailVerificationService", () => ({
+  emailVerificationService: { send: jest.fn(), check: jest.fn(), signOut: jest.fn() },
+}));
 
 jest.mock(
   "../context/AuthContext",
@@ -1227,3 +1232,49 @@ test(
     );
   }
 );
+
+test("blocked Google setup can send verification, check it, and resume completion", async () => {
+  authService.loginWithGoogle.mockResolvedValue({ authenticated: true, needsUsernameSetup: true,
+    needsPasswordSetup: true, user: { email: "newgoogle@gmail.com" } });
+  authService.prepareGoogleUsername.mockResolvedValue({ username: "ChosenName" });
+  authService.completeGoogleRegistration
+    .mockRejectedValueOnce(Object.assign(new Error("Verify your email before creating a profile."), {
+      code: "email-verification-required",
+    }))
+    .mockResolvedValueOnce({ authenticated: true, profile: makeProfile() });
+  emailVerificationService.send.mockResolvedValue();
+  emailVerificationService.check.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const { onLogin } = renderLoginPage();
+  fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+  fireEvent.change(await screen.findByPlaceholderText("Choose a username"), { target: { value: "ChosenName" } });
+  fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+  fireEvent.change(await screen.findByPlaceholderText("Create a password"), { target: { value: "password123" } });
+  fireEvent.change(screen.getByPlaceholderText("Confirm password"), { target: { value: "password123" } });
+  fireEvent.click(screen.getByRole("button", { name: /finish account setup/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /send verification email/i }));
+  await screen.findByText(/verification email sent/i);
+  expect(emailVerificationService.send).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: /I've verified my email/i }));
+  await screen.findByText(/email not verified yet/i);
+  expect(screen.queryByRole("button", { name: /finish account setup/i })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /I've verified my email/i }));
+  expect(await screen.findByPlaceholderText("Create a password")).toHaveValue("password123");
+  fireEvent.click(screen.getByRole("button", { name: /finish account setup/i }));
+  await waitFor(() => expect(onLogin).toHaveBeenCalledTimes(1));
+});
+
+
+test("a saved profile arriving after the username form removes stale onboarding", async () => {
+  const context = {
+    user: { uid: "google-user-123", email: "saved@example.com", username: "OldAuthName", emailVerified: true },
+    profile: null, profileComplete: false, profileError: "", loading: false,
+    refreshProfile: jest.fn(),
+  };
+  useAuth.mockReturnValue(context);
+  const view = render(<MemoryRouter><LoginPage onLogin={jest.fn()} /></MemoryRouter>);
+  expect(await screen.findByPlaceholderText("Choose a username")).toBeInTheDocument();
+  useAuth.mockReturnValue({ ...context, profile: makeProfile(), profileComplete: true });
+  view.rerender(<MemoryRouter><LoginPage onLogin={jest.fn()} /></MemoryRouter>);
+  await waitFor(() => expect(screen.queryByPlaceholderText("Choose a username")).not.toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: /finish account setup/i })).not.toBeInTheDocument();
+});

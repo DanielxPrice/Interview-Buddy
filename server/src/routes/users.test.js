@@ -446,6 +446,11 @@ describe("users routes", () => {
         displayName: "New Name",
       });
 
+      //Zero-unauthorized-operations, confirm no additional update calls
+      expect(
+        userRepository.updateProfile
+      ).toHaveBeenCalledTimes(1);
+
       expect(res.statusCode).toBe(200);
       expect(next).not.toHaveBeenCalled();
     });
@@ -1165,14 +1170,15 @@ describe("users routes", () => {
         "patch"
       );
 
+      //Updated settings to be different, so if the backend improperly updates B, the test will detect.
       const settings = {
         "user-a": {
           theme: "light",
           notifications: true,
         },
         "user-b": {
-          theme: "dark",
-          notifications: false,
+          theme: "light",
+          notifications: true,
         },
       };
 
@@ -1217,8 +1223,8 @@ describe("users routes", () => {
 
       // User B's settings remain unchanged.
       expect(settings["user-b"]).toEqual({
-        theme: "dark",
-        notifications: false,
+        theme: "light",
+        notifications: true,
       });
 
       expect(
@@ -1327,8 +1333,8 @@ describe("users routes", () => {
           notifications: true,
         },
         "user-b": {
-          theme: "dark",
-          notifications: false,
+          theme: "light",
+          notifications: true,
         },
       };
 
@@ -1400,8 +1406,8 @@ describe("users routes", () => {
       expect(otherUserRes.statusCode).toBe(200);
 
       expect(otherUserRes.payload.settings).toEqual({
-        theme: "dark",
-        notifications: false,
+        theme: "light",
+        notifications: true,
       });
 
       expect(userRepository.updateSettings).toHaveBeenCalledWith(
@@ -1418,4 +1424,13 @@ describe("users routes", () => {
       );
     });
   });
+});
+test("unverified users cannot persist a profile", async () => {
+  const userRepository = { createProfile: jest.fn(), findById: jest.fn() };
+  const router = createUserRouter({ userRepository });
+  const handler = getRouteHandler(router, "/profile", "post");
+  const res = createResponse();
+  await handler({ user: { uid: "u1", emailVerified: false }, body: { username: "test" } }, res, jest.fn());
+  expect(res.statusCode).toBe(403);
+  expect(userRepository.createProfile).not.toHaveBeenCalled();
 });

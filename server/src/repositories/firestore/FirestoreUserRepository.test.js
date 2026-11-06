@@ -25,10 +25,15 @@ describe("FirestoreUserRepository", () => {
     getMock = jest.fn();
     updateMock = jest.fn();
 
+    let lastUserRead;
     docMock = jest.fn(() => ({
       set: setMock,
       create: createMock,
-      get: getMock,
+      get: async () => {
+        const result = await getMock();
+        lastUserRead = result;
+        return result;
+      },
       update: updateMock,
     }));
 
@@ -38,13 +43,24 @@ describe("FirestoreUserRepository", () => {
       limit: limitMock,
     }));
 
-    collectionMock = jest.fn(() => ({
-      doc: docMock,
-      where: whereMock,
-    }));
+    collectionMock = jest.fn((name) => name === "usernames" ? {
+      doc: (id) => ({ path: `usernames/${id}`, claim: true }),
+    } : { doc: docMock, where: whereMock });
 
     db = {
       collection: collectionMock,
+      runTransaction: async (callback) => {
+        const writes = [];
+        const result = await callback({
+          get: async (ref) => ref.claim ? { exists: false } : (lastUserRead || await ref.get()),
+          set: () => {},
+          delete: () => {},
+          create: (_ref, data) => writes.push(() => createMock(data)),
+          update: (_ref, data) => writes.push(() => updateMock(data)),
+        });
+        for (const write of writes) await write();
+        return result;
+      },
     };
 
     admin = {
@@ -161,7 +177,7 @@ describe("FirestoreUserRepository", () => {
       });
 
       expect(result.role).toBe("admin");
-      expect(createMock).toHaveBeenCalledTimes(1);
+      expect(createMock).not.toHaveBeenCalled();
       expect(setMock).not.toHaveBeenCalled();
     });
 

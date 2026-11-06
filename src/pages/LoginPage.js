@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 
 import AuthShell from "../components/auth/AuthShell";
+import EmailVerificationNotice from "../components/auth/EmailVerificationNotice";
 
 import {
   useAuth,
@@ -97,16 +98,37 @@ function LoginPage({
     setGoogleConfirmPassword,
   ] = useState("");
 
+  const [verificationRequired, setVerificationRequired] = useState(false);
+
   const [
     googleHasExistingProfile,
     setGoogleHasExistingProfile,
   ] = useState(false);
 
   useEffect(() => {
+    if (authLoading || profileError) return;
+    if (authenticatedUser && profileComplete) {
+      setGoogleStep(GOOGLE_STEPS.NONE);
+      setGoogleUsername(profile?.username || "");
+      setSelectedGoogleUsername("");
+      setGooglePassword("");
+      setGoogleConfirmPassword("");
+      return;
+    }
+    // A profile that arrived after onboarding started takes precedence over
+    // its username draft. An existing account may only need password linking.
+    if (authenticatedUser && profile && googleStep === GOOGLE_STEPS.USERNAME) {
+      setGoogleHasExistingProfile(true);
+      setSelectedGoogleUsername(profile.username || "");
+      setGoogleStep(GOOGLE_STEPS.PASSWORD);
+      return;
+    }
     if (
       authLoading ||
       !authenticatedUser ||
       profileComplete ||
+      googleStep !== GOOGLE_STEPS.NONE ||
+      authenticatedUser.emailVerified === false ||
       profileError
     ) {
       return;
@@ -132,12 +154,14 @@ function LoginPage({
     setGoogleHasExistingProfile(
       false
     );
+    setGoogleUsername((current) => current || authenticatedUser.username || "");
 
     setGoogleStep(
       GOOGLE_STEPS.USERNAME
     );
   }, [
     authLoading,
+    googleStep,
     authenticatedUser,
     profile,
     profileComplete,
@@ -170,6 +194,7 @@ function LoginPage({
         false
       );
 
+      setVerificationRequired(false);
       setError("");
     };
 
@@ -468,6 +493,10 @@ function LoginPage({
           await verifyProfileAndLogin();
         }
       } catch (setupError) {
+        if (setupError.code === "email-verification-required") {
+          setVerificationRequired(true);
+          return;
+        }
         if (
           setupError.code ===
           "username-already-exists"
@@ -582,6 +611,20 @@ function LoginPage({
         setLoading(false);
       }
     };
+
+  if (verificationRequired) {
+    return (
+      <EmailVerificationNotice
+        email={googleAccountEmail || authenticatedUser?.email}
+        onSignedOut={resetGoogleSetupUi}
+        refreshProfile={async () => {
+          await refreshProfile();
+          setVerificationRequired(false);
+          setError("");
+        }}
+      />
+    );
+  }
 
   if (
     googleStep ===

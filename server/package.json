@@ -12,6 +12,7 @@
     "seed": "node scripts/seedQuestions.js",
     "set-role": "node scripts/setUserRole.js",
     "backfill-user-roles": "node scripts/backfillUserRoles.js",
+    "cleanup-orphaned-users": "node scripts/cleanupOrphanedUsers.js",
     "sync-auth-users": "node scripts/syncAuthUsersToFirestore.js",
     "audit-user-fields": "node scripts/auditUserFields.js",
     "reset-google-test-accounts": "node scripts/resetGoogleTestAccounts.js",
