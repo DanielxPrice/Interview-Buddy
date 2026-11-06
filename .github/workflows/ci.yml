@@ -92,15 +92,18 @@ jobs:
         shell: bash
         run: |
           set +e
-          H_SOC_FORCE_FAIL=1 node --test scripts/firestoreRulesConfig.test.cjs > firestore-security-gate-probe.txt 2>&1
+          # Force TAP output so the failure assertion check does not depend on
+          # the Node.js default test reporter or CI terminal formatting.
+          H_SOC_FORCE_FAIL=1 node --test --test-reporter=tap scripts/firestoreRulesConfig.test.cjs > firestore-security-gate-probe.txt 2>&1
           probe_status=$?
           set -e
           if [ "$probe_status" -eq 0 ]; then
             echo "::error::Deliberately failing CC6.3 policy assertion did not fail the test runner"
             exit 1
           fi
-          if ! grep -q 'not ok' firestore-security-gate-probe.txt; then
-            echo "::error::Failure probe did not produce a failed test assertion"
+          if ! grep -Eq '^not ok [0-9]+ - H-SOC / CC6.3: repository policy has no direct-client permission exceptions' firestore-security-gate-probe.txt; then
+            echo "::error::Failure probe did not produce the expected failed policy assertion"
+            cat firestore-security-gate-probe.txt
             exit 1
           fi
           echo "Expected failure detected (exit $probe_status); normal assertion remains enabled."
