@@ -106,6 +106,7 @@ describe("SEC-02 Firebase authentication admission", () => {
   });
 
   test.each([
+    ["invalid", "auth/invalid-id-token"],
     ["expired", "auth/id-token-expired"],
     ["revoked", "auth/id-token-revoked"],
     ["disabled", "auth/user-disabled"],
@@ -128,6 +129,14 @@ describe("SEC-02 Firebase authentication admission", () => {
 
     expect(res.statusCode).toBe(401);
     expect(next).not.toHaveBeenCalled();
+
+    //Explicity clovers invalid tokens and verifies that the error response does not include UID or email
+    expect(res.payload.code).toBe(
+      "invalid-auth-token"
+    );
+
+    expect(res.payload).not.toHaveProperty("uid");
+    expect(res.payload).not.toHaveProperty("email");
 
     expect(verifyIdToken).toHaveBeenCalledWith(
       "test-token",
