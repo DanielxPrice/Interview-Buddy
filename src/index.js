@@ -15,6 +15,7 @@ import "./styles/settings.css";
 import "./styles/sidebar.css";
 import "./styles/history.css";
 import "./styles/leaderboard.css";
+import "./styles/sessionResults.css";
 
 import App from "./App";
 
