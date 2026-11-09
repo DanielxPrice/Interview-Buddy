@@ -1,0 +1,100 @@
+
+    
+  
+/*
+ * Interview Buddy - Session Results visual refresh
+ * Presentation only: no session data, scoring, or navigation changes.
+ * Imported AFTER history.css so existing History styling remains untouched.
+ */
+
+.ibResultsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ibResultsPage > * {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 1. Completed interview + overall score */
+.ibResultsHero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px;
+  align-items: center;
+  gap: 24px;
+  padding: 26px 28px;
+  overflow: hidden;
+  background: var(--ib-surface);
+  border: 1px solid var(--ib-border);
+  border-radius: 12px;
+  box-shadow: var(--ib-shadow-sm);
+}
+
+.ibResultsHero::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--ib-accent);
+}
+
+.ibResultsHeroMain {
+  min-width: 0;
+}
+
+.ibResultsEyebrow {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--ib-accent-700);
+  font-size: 0.73rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ibResultsHeroMain h2 {
+  margin: 0 0 7px;
+  color: var(--ib-text);
+  font-size: clamp(1.45rem, 2vw, 1.9rem);
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.ibResultsHeroMain p {
+  margin: 0;
+  color: var(--ib-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.ibResultsDate {
+  display: inline-block;
+  margin-top: 14px;
+  color: var(--ib-text-muted);
+  font-size: 0.79rem;
+}
+
+.ibResultsScoreBubble {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 125px;
+  padding: 16px;
+  border: 1px solid var(--ib-accent-border);
+  border-radius: 10px;
+  background: var(--ib-accent-soft);
+  text-align: center;
+}
+
+.ibResultsScoreBubble span {
+  color: var(--ib-text-secondary);
+  font-size: 0.69rem;
+}
