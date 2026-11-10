@@ -75,10 +75,30 @@ function normalizeEvaluation(rawEvaluation, gradingCriteria) {
 
   const criterionResults = gradingCriteria.map((criterion, index) => {
     const result = rawEvaluation.criterionResults[index] || {};
-    const awardedPoints = Number(result.awardedPoints);
+
+    //Verify the AI returned the correct grading criterion
+    //Results must match the rubric order and names
+    //Previously we just used array position alone
+    const expectedName = String(criterion.name).trim();
+    const returnedName = String(result.name || "").trim();
+
+    if (returnedName !== expectedName) {
+      throw new Error(
+        `AI evaluation criterion name mismatch at index ${index}: ` +
+        `expected "${expectedName}", received "${returnedName}".`
+      );
+    }
+
+    // CC6.6: accept only real JSON numbers. Number() coercion previously let
+    // null, "", " ", true, [60] and "0x3C" through as valid point values, so a
+    // malformed response could silently award 0, 1 or full points.
+    const awardedPoints = result.awardedPoints;
     const maxPoints = Number(criterion.weight);
 
-    if (!Number.isFinite(awardedPoints)) {
+    if (
+      typeof awardedPoints !== "number" ||
+      !Number.isFinite(awardedPoints)
+    ) {
       throw new Error(
         `AI result for ${criterion.name} is missing awardedPoints.`
       );
@@ -124,7 +144,96 @@ function normalizeEvaluation(rawEvaluation, gradingCriteria) {
   };
 }
 
+// CC6.6 / B-SOC-04: server-side guard against reference-answer leakage.
+// The private reference answer has to be sent to the model, so the prompt
+// alone cannot guarantee it stays private. Any run of LEAK_MIN_WORDS or more
+// consecutive words copied from the reference answer into user-facing feedback
+// is replaced with "[redacted]" before the evaluation leaves the server.
+const LEAK_MIN_WORDS = 8;
+const REDACTED = "[redacted]";
+
+function wordTokens(text) {
+  return [...String(text || "").matchAll(/[A-Za-z0-9_]+/g)].map((match) => ({
+    word: match[0].toLowerCase(),
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+}
+
+function redactLeaksInText(text, shingles, size) {
+  const tokens = wordTokens(text);
+  const covered = new Array(tokens.length).fill(false);
+
+  for (let i = 0; i + size <= tokens.length; i++) {
+    const window = tokens.slice(i, i + size).map((t) => t.word).join(" ");
+    if (shingles.has(window)) {
+      covered.fill(true, i, i + size);
+    }
+  }
+
+  if (!covered.includes(true)) {
+    return { text, changed: false };
+  }
+
+  let output = "";
+  let cursor = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    if (!covered[i]) continue;
+    let j = i;
+    while (j + 1 < tokens.length && covered[j + 1]) j++;
+    output += text.slice(cursor, tokens[i].start) + REDACTED;
+    cursor = tokens[j].end;
+    i = j;
+  }
+  output += text.slice(cursor);
+
+  return { text: output, changed: true };
+}
+
+function redactReferenceLeaks(evaluation, referenceAnswer) {
+  const referenceWords = wordTokens(referenceAnswer).map((t) => t.word);
+  if (!evaluation || referenceWords.length === 0) {
+    return { evaluation, redactedFields: 0 };
+  }
+
+  // Short reference answers are matched as a whole.
+  const size = Math.min(LEAK_MIN_WORDS, referenceWords.length);
+  const shingles = new Set();
+  for (let i = 0; i + size <= referenceWords.length; i++) {
+    shingles.add(referenceWords.slice(i, i + size).join(" "));
+  }
+
+  let redactedFields = 0;
+  const clean = (value) => {
+    if (typeof value !== "string") return value;
+    const result = redactLeaksInText(value, shingles, size);
+    if (result.changed) redactedFields++;
+    return result.text;
+  };
+  const cleanList = (list) => (Array.isArray(list) ? list.map(clean) : list);
+
+  const redacted = {
+    ...evaluation,
+    feedback: clean(evaluation.feedback),
+    strengths: cleanList(evaluation.strengths),
+    weaknesses: cleanList(evaluation.weaknesses),
+    suggestions: cleanList(evaluation.suggestions),
+    criterionResults: Array.isArray(evaluation.criterionResults)
+      ? evaluation.criterionResults.map((result) => ({
+          ...result,
+          feedback: clean(result.feedback),
+        }))
+      : evaluation.criterionResults,
+  };
+
+  return redactedFields > 0
+    ? { evaluation: redacted, redactedFields }
+    : { evaluation, redactedFields: 0 };
+}
+
 module.exports = {
+  LEAK_MIN_WORDS,
+  redactReferenceLeaks,
   AI_GRADABLE_MODES,
   validateRubric,
   formatRubric,

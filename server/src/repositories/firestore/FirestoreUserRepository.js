@@ -1,3 +1,4 @@
+const { createHash } = require("node:crypto");
 const UserRepository = require("../contracts/UserRepository");
 const { initialRanking } = require("../../services/rankingScore");
 const {
@@ -24,6 +25,18 @@ class FirestoreUserRepository extends UserRepository {
       : fallbackValue || new Date().toISOString();
   }
 
+  usernameRef(username) {
+    // Hashing permits existing usernames containing slashes and Unicode.
+    const key = createHash("sha256").update(username.trim().toLowerCase()).digest("hex");
+    return this.db.collection("usernames").doc(key);
+  }
+
+  usernameConflict() {
+    const error = new Error("That username is already in use.");
+    error.code = "username-already-exists";
+    return error;
+  }
+
   async createProfile({
     uid,
     username,
@@ -47,7 +60,7 @@ class FirestoreUserRepository extends UserRepository {
     const existingUser =
       await this.findByUsername(normalizedUsername);
 
-    if (existingUser && existingUser.uid !== normalizedUid) {
+    if (existingUser && (existingUser.uid || existingUser.id) !== normalizedUid) {
       const error = new Error(
         "That username is already in use."
       );
@@ -72,20 +85,18 @@ class FirestoreUserRepository extends UserRepository {
     };
 
     const userRef = this.db.collection("users").doc(normalizedUid);
-    try {
-      // Create-only protects existing ranking points, settings and roles.
-      // POST /profile must never reset a user's earned points.
-      await userRef.create(profile);
-      return profile;
-    } catch (error) {
-      // A repeated or parallel profile creation is idempotent.
-      // Never overwrite an existing profile.
-      const existing = await userRef.get();
-      if (existing?.exists) {
-        return { id: existing.id, ...existing.data() };
+    return this.db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(userRef);
+      if (existing?.exists) return { id: existing.id, ...existing.data() };
+      const claimRef = this.usernameRef(normalizedUsername);
+      const claim = await transaction.get(claimRef);
+      if (claim?.exists && claim.data().uid !== normalizedUid) {
+        throw this.usernameConflict();
       }
-      throw error;
-    }
+      transaction.set(claimRef, { uid: normalizedUid });
+      transaction.create(userRef, profile);
+      return profile;
+    });
   }
 
   async findById(userId) {
@@ -143,6 +154,21 @@ class FirestoreUserRepository extends UserRepository {
     };
   }
 
+  // Read only the public ranking fields needed for the global leaderboard.
+  // This first implementation reads all profiles to calculate accurate /me ranks;
+  // SCRUM-86 should replace the full scan with an indexed scalable query.
+  async listRankingProfiles() {
+    const snapshot = await this.db
+      .collection("users")
+      .select("username", "ranking", "deleting", "status")
+      .get();
+
+    return snapshot.docs.map((document) => ({
+      ...document.data(),
+      uid: document.id,
+    }));
+  }
+
   async updateProfile(uid, updates = {}) {
     const normalizedUid = String(uid || "").trim();
 
@@ -179,7 +205,7 @@ class FirestoreUserRepository extends UserRepository {
 
       if (
         existingUser &&
-        existingUser.uid !== normalizedUid
+        (existingUser.uid || existingUser.id) !== normalizedUid
       ) {
         const error = new Error(
           "That username is already in use."
@@ -208,7 +234,28 @@ class FirestoreUserRepository extends UserRepository {
     allowedUpdates.updatedAt =
       this.getTimestamp();
 
-    await userRef.update(allowedUpdates);
+    await this.db.runTransaction(async (transaction) => {
+      const current = await transaction.get(userRef);
+      if (!current?.exists) throw new Error("User profile no longer exists.");
+      if (current.data().deleting || current.data().status === "deleting") {
+        throw new Error("This account is being deleted.");
+      }
+      if (allowedUpdates.username) {
+        const claimRef = this.usernameRef(allowedUpdates.username);
+        const claim = await transaction.get(claimRef);
+        const oldUsername = current.data().username;
+        const oldRef = oldUsername ? this.usernameRef(oldUsername) : null;
+        const oldClaim = oldRef ? await transaction.get(oldRef) : null;
+        if (claim?.exists && claim.data().uid !== normalizedUid) {
+          throw this.usernameConflict();
+        }
+        transaction.set(claimRef, { uid: normalizedUid });
+        if (oldRef && oldRef.path !== claimRef.path && oldClaim?.exists && oldClaim.data().uid === normalizedUid) {
+          transaction.delete(oldRef);
+        }
+      }
+      transaction.update(userRef, allowedUpdates);
+    });
 
     return this.findById(normalizedUid);
   }

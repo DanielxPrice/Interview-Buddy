@@ -34,6 +34,9 @@ function createAccountDeletionService({ db, authClient }) {
 
     // Keep the profile document until Auth deletion for retriable cleanup.
     const profile = db.collection("users").doc(uid);
+    // Block new practice writes while cleanup runs. Keep this marker on
+    // failure so a retry can finish without reopening the account.
+    await profile.set({ deleting: true, status: "deleting" }, { merge: true });
     const deletedSessions = await removeSessions(uid);
     const subcollections = await profile.listCollections();
 
@@ -42,10 +45,22 @@ function createAccountDeletionService({ db, authClient }) {
     }
 
     // Never delete the authentication identity if preliminary cleanup fails.
-    await authClient.deleteUser(uid);
+    try {
+      await authClient.deleteUser(uid);
+    } catch (error) {
+      // The Auth deletion trigger and administrative retries are idempotent.
+      if (error.code !== "auth/user-not-found") throw error;
+    }
 
     // Firebase Auth and Firestore are not a single atomic transaction.
     try {
+      const claims = await db.collection("usernames").where("uid", "==", uid).get();
+      for (const document of claims.docs) {
+        await db.runTransaction(async (transaction) => {
+          const current = await transaction.get(document.ref);
+          if (current.exists && current.data().uid === uid) transaction.delete(document.ref);
+        });
+      }
       await db.recursiveDelete(profile);
     } catch (cause) {
       const error = new Error(

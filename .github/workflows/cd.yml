@@ -74,6 +74,38 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
+      # SCRUM-252 / H-SOC-07: protect the approved client permission boundary
+      # in production, then independently read back the active ruleset.
+      # The WIF deployer must have Firebase Rules release/ruleset permissions.
+      - name: Deploy approved Firestore security rules
+        env:
+          FIREBASE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          npx --yes firebase-tools@14.12.0 deploy \
+            --only firestore:rules \
+            --project "$FIREBASE_PROJECT" \
+            --non-interactive
+
+      - name: Set up gcloud for read-only deployed rules verification
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Verify deployed Firestore rules match reviewed repository source
+        env:
+          FIREBASE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          # Runner obtains a token from gcloud in memory; never log the token.
+          npm run test:soc:deployed -- --project "$FIREBASE_PROJECT" --output docs/testing/H-SOC/deployed-rules.json
+          echo "### H-SOC-07: Active Firestore rules matched checked-out repository source" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload H-SOC-07 deployed rules verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-firestore-rules-${{ github.run_id }}-${{ github.run_attempt }}
+          path: docs/testing/H-SOC/deployed-rules.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Deploy API to Cloud Run
         id: deploy-api
         uses: google-github-actions/deploy-cloudrun@v3

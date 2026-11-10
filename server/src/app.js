@@ -6,6 +6,7 @@ const createQuestionRouter = require("./routes/questions");
 const createEvaluateRouter = require("./routes/evaluate");
 const createUserRouter = require("./routes/users");
 const createSessionRouter = require("./routes/sessions");
+const createLeaderboardRouter = require("./routes/leaderboard");
 const createAccountDeletionRouter = require("./routes/accountDeletion");
 
 const requireAuth = require("./middleware/requireAuth");
@@ -125,6 +126,15 @@ app.use(
     sessionRepository,
     questionRepository,
   })
+);
+
+// SCRUM-85: Authenticated, points-based global and personal rankings.
+app.use(
+  "/api/leaderboard",
+  requireAuth,
+  apiRateLimiter,
+  requireAccountReady,
+  createLeaderboardRouter({ userRepository })
 );
 
 // Preserve SEC-01 parser error handling.

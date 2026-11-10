@@ -428,6 +428,92 @@ describe("anthropicProvider.generateEvaluation", () => {
     );
   });
 
+  describe("AI feedback usefulness requirements", () => {
+    // New tests here for improved usefulness (prompt changes)
+    // Prioritization, ensure prompt directs Claude to identify the most consequential weakness
+    // Actionable recoms, ensure instructions require corrections and examples
+    // Accuracy and relevance, ensure prompt distinguishes factual errors from omissions and respects the rubric
+    it("instructs the AI to prioritize the most important feedback", async () => {
+      mockSuccessfulEvaluation();
+
+      await generateEvaluation({
+        question,
+        candidateResponse: "A partially correct solution.",
+        gradingCriteria: question.gradingCriteria,
+      });
+
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content;
+
+      expect(prompt).toContain("FEEDBACK QUALITY REQUIREMENTS");
+      expect(prompt).toContain(
+        "Prioritize the most consequential weaknesses"
+      );
+      expect(prompt).toContain(
+        "Keep the overall feedback concise and focused"
+      );
+      expect(prompt).toContain(
+        "Avoid unnecessary repetition"
+      );
+    });
+
+    it("requires actionable suggestions and specific technical corrections", async () => {
+      mockSuccessfulEvaluation();
+
+      await generateEvaluation({
+        question,
+        candidateResponse: "An incomplete implementation.",
+        gradingCriteria: question.gradingCriteria,
+      });
+
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content;
+
+      expect(prompt).toContain(
+        "Identify strengths and weaknesses using specific details"
+      );
+      expect(prompt).toContain("Make suggestions actionable");
+      expect(prompt).toContain(
+        "provide a concise correction or concrete example"
+      );
+      expect(prompt).toContain(
+        "suggestions to explain how to improve"
+      );
+    });
+
+    it("requires accurate, rubric-aligned feedback without duplicate penalties", async () => {
+      mockSuccessfulEvaluation();
+
+      await generateEvaluation({
+        question,
+        candidateResponse: "A response with missing details.",
+        gradingCriteria: question.gradingCriteria,
+      });
+
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content;
+
+      expect(prompt).toContain(
+        "Distinguish incorrect statements from missing information"
+      );
+      expect(prompt).toContain(
+        "Avoid penalizing the same weakness under multiple criteria"
+      );
+      expect(prompt).toContain(
+        "Match feedback expectations to the question's stated difficulty and rubric"
+      );
+      expect(prompt).toContain(
+        "For code responses, prioritize executable correctness"
+      );
+      expect(prompt).toContain(
+        "For theoretical responses, prioritize accuracy"
+      );
+    });
+  });
+
   it("sends the evaluation package using the configured Anthropic request structure", async () => {
     mockSuccessfulEvaluation();
 

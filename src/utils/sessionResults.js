@@ -71,8 +71,16 @@ function calculateEloChange(score) {
   return "-2";
 }
 
-function averageScore(answers) {
-  if (!answers.length) {
+// Returns the average score of the provided answers, rounded to the nearest integer.
+function averageScore(answers, assignedCount = null) {
+  const count =
+    Number.isInteger(assignedCount) &&
+    assignedCount >= answers.length &&
+    assignedCount > 0
+      ? assignedCount
+      : answers.length;
+
+  if (!count) {
     return 0;
   }
 
@@ -82,7 +90,7 @@ function averageScore(answers) {
     0
   );
 
-  return Math.round(total / answers.length);
+  return Math.round(total / count);
 }
 
 function formatCompletedDate(isoString) {
@@ -166,9 +174,17 @@ function buildSessionResult({
   const hasServerScore =
     Number.isFinite(serverScore);
 
+  //Makes local fallback (no server) consistent with backend scoring rules, mainly the denominator of average
+  //Server provides score, we use it.
+  //Server doesnt provide score, we use count for local estimate
+  //When neither is available, we preserver the existing average behavior.
+  //No longer use potentially state config to calc fallback score.
   const score = hasServerScore
     ? serverScore
-    : averageScore(answeredQuestions);
+    : averageScore(
+        answeredQuestions,
+        savedSession?.result?.questionsAssigned
+      );
 
   const serverBreakdown =
     Array.isArray(savedSession?.breakdown)

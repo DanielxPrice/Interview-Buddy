@@ -26,6 +26,10 @@ class UserRepository {
     throw new Error("findByUsername() must be implemented.");
   }
 
+  async listRankingProfiles() {
+    throw new Error("listRankingProfiles() must be implemented.");
+  }
+
   //Profile & Settings
   async updateProfile(uid, updates) {
     throw new Error("updateProfile(uid, updates) must be implemented.");

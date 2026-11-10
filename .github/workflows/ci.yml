@@ -40,13 +40,74 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Report frontend dependency vulnerabilities without blocking CI.
+      - name: Audit frontend dependencies
+        shell: bash
+        run: |
+          echo "### Frontend dependency audit" >> "$GITHUB_STEP_SUMMARY"
+
+          npm audit --json > audit-frontend.json || true
+
+          node -e '
+            const fs = require("fs");
+            let report;
+            try {
+              report = JSON.parse(fs.readFileSync("audit-frontend.json", "utf8"));
+            } catch (error) {
+              console.log("Audit report could not be parsed:", error.message);
+              fs.appendFileSync(
+                process.env.GITHUB_STEP_SUMMARY,
+                "Audit scan unavailable or invalid; manual review required.\n"
+              );
+              process.exit(0);
+            }
+            const v = report?.metadata?.vulnerabilities;
+            if (!v) {
+              console.log("Audit report unavailable");
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "Audit report unavailable\n");
+              process.exit(0);
+            }
+            const summary = `Low: ${v.low} | Moderate: ${v.moderate} | High: ${v.high} | Critical: ${v.critical}`;
+            console.log(summary);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+          '
+
+          echo "Full vulnerability details:"
+          npm audit --audit-level=high || true
+      # || true keeps it from failing the CI run, counts displayed in GitHub Actions summary, detailed in step logs
+
       - name: Verify bundled setup metadata matches the seed data
         run: |
           npm run generate:metadata
           git diff --exit-code -- src/data/questionMetadata.json
 
-      - name: Test metadata generation and cache consistency
-        run: node --test scripts/questionMetadata.test.cjs
+      - name: Test metadata generation and Firestore client boundary
+        run: node --test scripts/questionMetadata.test.cjs scripts/clientFirestoreBoundary.test.cjs
+
+      # SCRUM-253: quick deny-all policy check and verified failing-assertion gate.
+      - name: Check Firestore rules configuration and deployed-rule verifier
+        run: npm run test:soc:config
+
+      - name: Verify Firestore security assertions can fail CI
+        shell: bash
+        run: |
+          set +e
+          # Force TAP output so the failure assertion check does not depend on
+          # the Node.js default test reporter or CI terminal formatting.
+          H_SOC_FORCE_FAIL=1 node --test --test-reporter=tap scripts/firestoreRulesConfig.test.cjs > firestore-security-gate-probe.txt 2>&1
+          probe_status=$?
+          set -e
+          if [ "$probe_status" -eq 0 ]; then
+            echo "::error::Deliberately failing CC6.3 policy assertion did not fail the test runner"
+            exit 1
+          fi
+          if ! grep -Eq '^not ok [0-9]+ - H-SOC / CC6.3: repository policy has no direct-client permission exceptions' firestore-security-gate-probe.txt; then
+            echo "::error::Failure probe did not produce the expected failed policy assertion"
+            cat firestore-security-gate-probe.txt
+            exit 1
+          fi
+          echo "Expected failure detected (exit $probe_status); normal assertion remains enabled."
+          echo "### CC6.3 CI gate: deliberately failing assertion returned exit $probe_status (expected)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run frontend lint
         run: npm run lint
@@ -99,6 +160,42 @@ jobs:
         working-directory: ./server
         run: npm ci
 
+      # Report backend dependency vulnerabilities without blocking CI.
+      - name: Audit backend dependencies
+        working-directory: ./server
+        shell: bash
+        run: |
+          echo "### Backend dependency audit" >> "$GITHUB_STEP_SUMMARY"
+
+          npm audit --json > audit-backend.json || true
+
+          node -e '
+            const fs = require("fs");
+            let report;
+            try {
+              report = JSON.parse(fs.readFileSync("audit-backend.json", "utf8"));
+            } catch (error) {
+              console.log("Audit report could not be parsed:", error.message);
+              fs.appendFileSync(
+                process.env.GITHUB_STEP_SUMMARY,
+                "Audit scan unavailable or invalid; manual review required.\n"
+              );
+              process.exit(0);
+            }
+            const v = report?.metadata?.vulnerabilities;
+            if (!v) {
+              console.log("Audit report unavailable");
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "Audit report unavailable\n");
+              process.exit(0);
+            }
+            const summary = `Low: ${v.low} | Moderate: ${v.moderate} | High: ${v.high} | Critical: ${v.critical}`;
+            console.log(summary);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+          '
+
+          echo "Full vulnerability details:"
+          npm audit --audit-level=high || true
+
       # Validate all production seed questions before deployment.
       - name: Validate production question seed data
         run: node server/scripts/validateQuestionSeed.js
@@ -107,8 +204,44 @@ jobs:
         working-directory: ./functions
         run: npm install --no-audit --no-fund
 
-      - name: Test Firestore metadata invalidation logic
-        run: node --test functions/relevantMetadata.test.cjs
+      # Report Cloud Functions dependency vulnerabilities without blocking CI.
+      - name: Audit Cloud Functions dependencies
+        working-directory: ./functions
+        shell: bash
+        run: |
+          echo "### Cloud Functions dependency audit" >> "$GITHUB_STEP_SUMMARY"
+
+          npm audit --json > audit-functions.json || true
+
+          node -e '
+            const fs = require("fs");
+            let report;
+            try {
+              report = JSON.parse(fs.readFileSync("audit-functions.json", "utf8"));
+            } catch (error) {
+              console.log("Audit report could not be parsed:", error.message);
+              fs.appendFileSync(
+                process.env.GITHUB_STEP_SUMMARY,
+                "Audit scan unavailable or invalid; manual review required.\n"
+              );
+              process.exit(0);
+            }
+            const v = report?.metadata?.vulnerabilities;
+            if (!v) {
+              console.log("Audit report unavailable");
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "Audit report unavailable\n");
+              process.exit(0);
+            }
+            const summary = `Low: ${v.low} | Moderate: ${v.moderate} | High: ${v.high} | Critical: ${v.critical}`;
+            console.log(summary);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+          '
+
+          echo "Full vulnerability details:"
+          npm audit --audit-level=high || true
+
+      - name: Test Firestore metadata Cloud Function and invalidation logic
+        run: node --test functions/relevantMetadata.test.cjs functions/metadataInvalidationHandler.test.cjs functions/index.test.cjs
 
       - name: Run server lint
         working-directory: ./server
@@ -117,6 +250,30 @@ jobs:
       - name: Run server tests
         working-directory: ./server
         run: npm test -- --watchAll=false
+
+      # SCRUM-190 / SCRUM-215 + H-SOC: Firestore integration and direct-client
+      # access tests (anonymous, authenticated, simulated admin claims),
+      # isolated from production using local emulators and a demo project.
+      # These tests are separate from the fast, mock-based Jest suite.
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Run Firestore Emulator integration and SOC 2 security matrix
+        run: npm run test:soc
+
+      - name: Upload SOC 2 CC6.3 security test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-soc2-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            docs/testing/H-SOC/
+            firestore-security-gate-probe.txt
+          if-no-files-found: warn
+          retention-days: 30
 
       # Only passing main-branch CI runs publish an artifact. CD downloads
       # this exact frontend output instead of building it a second time.

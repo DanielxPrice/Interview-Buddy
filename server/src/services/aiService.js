@@ -1,7 +1,10 @@
 // server/src/services/aiService.js
 
 const anthropicProvider = require("./providers/anthropicProvider");
-const { validateRubric } = require("./evaluationContract");
+const {
+  validateRubric,
+  redactReferenceLeaks,
+} = require("./evaluationContract");
 
 const PROVIDERS = {
   anthropic: anthropicProvider,
@@ -71,13 +74,28 @@ async function generateEvaluation({
   const provider = getActiveProvider();
 
   // ONE provider invocation. No retry loop.
-  return provider.generateEvaluation({
+  const evaluation = await provider.generateEvaluation({
     question,
     candidateResponse: String(
       candidateResponse
     ).trim(),
     gradingCriteria: question.gradingCriteria,
   });
+
+  // CC6.6 / B-SOC-04: never let copied reference-answer text reach the
+  // candidate, even if the model ignores the prompt's non-disclosure rule.
+  const { evaluation: safeEvaluation, redactedFields } =
+    redactReferenceLeaks(evaluation, question.referenceAnswer);
+
+  if (redactedFields > 0) {
+    console.warn(
+      `[CC6.6] Redacted reference-answer text from ${redactedFields} feedback field(s) for question ${
+        question.id || "unknown"
+      }.`
+    );
+  }
+
+  return safeEvaluation;
 }
 
 module.exports = {
