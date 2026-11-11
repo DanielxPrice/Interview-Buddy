@@ -1,5 +1,41 @@
 const AI_GRADABLE_MODES = new Set(["Code Style", "Theoretical Style"]);
 
+
+// Grading consistency: each criterion may only score one of these fractions
+// of its weight. The model's raw points are snapped to the nearest band so
+// similar answers land on the same score. See GRADING_CONSISTENCY.md.
+const SCORE_BANDS = Object.freeze([
+  0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1,
+]);
+
+// Treat values this close as equal, so float noise (e.g. 0.35 stored as
+// 0.34999999) cannot change which band wins a tie.
+const BAND_EPSILON = 1e-9;
+
+/**
+ * Snap a criterion's awarded points to the nearest score band.
+ * Exact ties between two bands go to the higher band.
+ * Assumes 0 <= awardedPoints <= maxPoints (validated by the caller).
+ */
+function snapToBand(awardedPoints, maxPoints) {
+  const fraction = awardedPoints / maxPoints;
+  let closest = SCORE_BANDS[0];
+
+  for (const band of SCORE_BANDS) {
+    const distance = Math.abs(fraction - band);
+    const closestDistance = Math.abs(fraction - closest);
+
+    if (
+      distance < closestDistance - BAND_EPSILON ||
+      (Math.abs(distance - closestDistance) <= BAND_EPSILON && band > closest)
+    ) {
+      closest = band;
+    }
+  }
+
+  return Math.round(closest * maxPoints * 10) / 10;
+}
+
 function validateRubric(question) {
   if (!question || !question.prompt || !String(question.prompt).trim()) {
     return "AI-graded questions require a prompt.";
