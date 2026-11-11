@@ -78,11 +78,18 @@ function validateRubric(question) {
   return null;
 }
 
+// The point values a criterion may receive, e.g. weight 60 -> 0, 6, ..., 60.
+function allowedPoints(weight) {
+  const maxPoints = Number(weight);
+  return SCORE_BANDS.map((band) => Math.round(band * maxPoints * 10) / 10);
+}
+
 function formatRubric(criteria) {
   return criteria
     .map(
       (criterion, index) =>
-        `${index + 1}. ${criterion.name} (${criterion.weight} points): ${criterion.description}`
+        `${index + 1}. ${criterion.name} (${criterion.weight} points; allowed: ` +
+        `${allowedPoints(criterion.weight).join(", ")}): ${criterion.description}`
     )
     .join("\n");
 }
@@ -155,7 +162,7 @@ function normalizeEvaluation(rawEvaluation, gradingCriteria) {
 
     return {
       name: criterion.name,
-      awardedPoints: Math.round(awardedPoints * 10) / 10,
+      awardedPoints: snapToBand(awardedPoints, maxPoints),
       maxPoints,
       feedback,
     };
@@ -268,6 +275,9 @@ function redactReferenceLeaks(evaluation, referenceAnswer) {
 }
 
 module.exports = {
+  SCORE_BANDS,
+  snapToBand,
+  allowedPoints,
   LEAK_MIN_WORDS,
   redactReferenceLeaks,
   AI_GRADABLE_MODES,

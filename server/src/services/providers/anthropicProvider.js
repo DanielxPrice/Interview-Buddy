@@ -98,7 +98,14 @@ QUESTION-SPECIFIC EVALUATION INSTRUCTIONS
 ${evaluationInstructions}
 
 GRADING REQUIREMENTS
-- Grade each criterion independently and award between 0 and that criterion's point value.
+- Grade each criterion independently. Award ONLY one of the allowed values listed for that criterion in the rubric.
+- Choose the value by how well the response meets that criterion:
+  - 100% of the points: fully meets the criterion with no meaningful gaps.
+  - 80-90%: meets the criterion with minor gaps or imprecision.
+  - 50-70%: partly meets the criterion; some key points are missing or incorrect.
+  - 10-40%: shows only minimal relevant understanding for this criterion.
+  - 0%: missing, irrelevant, or incorrect for this criterion.
+- Responses with the same technical substance must receive the same points, regardless of length, wording, tone, or formatting. Do not reward length or penalize brevity on its own.
 - The final total score is calculated by server code from the awarded criterion points.
 - Accept equivalent correct solutions, terminology, examples, or algorithms when they satisfy the rubric.
 - Do not invent requirements that are not present in the question or rubric.

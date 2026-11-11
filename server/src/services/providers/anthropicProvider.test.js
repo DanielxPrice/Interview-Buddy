@@ -126,19 +126,19 @@ describe("anthropicProvider.generateEvaluation", () => {
       gradingCriteria: question.gradingCriteria,
     });
 
-    expect(result.score).toBe(85);
+    expect(result.score).toBe(86);
     expect(result.feedback).toBe("Good answer.");
 
     expect(result.criterionResults).toEqual([
       {
         name: "Correctness",
-        awardedPoints: 55,
+        awardedPoints: 54,
         maxPoints: 60,
         feedback: "Mostly correct.",
       },
       {
         name: "Explanation",
-        awardedPoints: 30,
+        awardedPoints: 32,
         maxPoints: 40,
         feedback: "Clear but brief.",
       },
@@ -162,7 +162,7 @@ describe("anthropicProvider.generateEvaluation", () => {
       gradingCriteria: question.gradingCriteria,
     });
 
-    expect(result.score).toBe(60);
+    expect(result.score).toBe(62);
   });
 
   it("throws when a criterion award exceeds its configured weight", async () => {
