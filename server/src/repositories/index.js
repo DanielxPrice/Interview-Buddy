@@ -21,6 +21,10 @@ const FirestoreUserRepository = require(
   "./firestore/FirestoreUserRepository"
 );
 
+const FirestoreFriendshipRepository = require(
+  "./firestore/FirestoreFriendshipRepository"
+);
+
 const FirestoreQuestionUsageRepository = require(
   "./firestore/FirestoreQuestionUsageRepository"
 );
@@ -67,6 +71,10 @@ const userRepository =
     admin,
   });
 
+// Sprint 5 friendship persistence. Application routes are owned separately.
+const friendshipRepository =
+  new FirestoreFriendshipRepository({ db, admin });
+
 // Daily question usage repository.
 const questionUsageRepository =
   new FirestoreQuestionUsageRepository({
@@ -92,6 +100,7 @@ module.exports = {
   questionCatalogRepository,
   evaluationRepository,
   userRepository,
+  friendshipRepository,
   questionUsageRepository,
   sessionRepository,
   accountDeletionService,
