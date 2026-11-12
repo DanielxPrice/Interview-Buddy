@@ -9,26 +9,37 @@ const profile = (uid, points, username = uid) => ({
   role: "admin",
 });
 
-function buildApp(userRepository, uid = "viewer") {
+function buildApp(userRepository, uid = "viewer", friendshipRepository = null) {
   const app = express();
+
   app.use("/api/leaderboard", (req, _res, next) => {
     if (uid) req.user = { uid };
     next();
-  }, createLeaderboardRouter({ userRepository }));
+  }, createLeaderboardRouter({ userRepository, friendshipRepository }));
+
   app.use((_error, _req, res, _next) => {
     res.status(500).json({ error: "Internal server error." });
   });
+
   return app;
 }
 
 describe("SCRUM-85 leaderboard API contract", () => {
   const rows = [profile("viewer", 70), profile("top", 90), profile("low", 35)];
   let userRepository;
+  let friendshipRepository;
   let app;
 
   beforeEach(() => {
-    userRepository = { listRankingProfiles: jest.fn().mockResolvedValue(rows) };
-    app = buildApp(userRepository);
+    userRepository = {
+      listRankingProfiles: jest.fn().mockResolvedValue(rows),
+    };
+
+    friendshipRepository = {
+      listFriendsLeaderboard: jest.fn().mockResolvedValue([]),
+    };
+
+    app = buildApp(userRepository, "viewer", friendshipRepository);
   });
 
   test("GET /global returns rank-sorted public data", async () => {
@@ -80,6 +91,111 @@ describe("SCRUM-85 leaderboard API contract", () => {
     const response = await request(app).get("/api/leaderboard/me");
     expect(response.status).toBe(200);
     expect(response.body.ranking.rank).toBe(52);
+  });
+
+  //Test Friends endpoints
+  test("GET /friends returns only public accepted-friend rankings", async () => {
+    friendshipRepository.listFriendsLeaderboard.mockResolvedValue([
+      {
+        uid: "bob",
+        username: "Bob",
+        rank: 1,
+        points: 80,
+        rankedSessions: 1,
+        averageScore: 80,
+        elo: 1200,
+        email: "private@example.test",
+        role: "admin",
+      },
+      {
+        uid: "carol",
+        username: "Carol",
+        rank: 2,
+        points: 65,
+        rankedSessions: 1,
+        averageScore: 65,
+        elo: null,
+      },
+    ]);
+
+    const response = await request(app)
+      .get("/api/leaderboard/friends?uid=someone-else");
+
+    expect(response.status).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+
+    expect(friendshipRepository.listFriendsLeaderboard)
+      .toHaveBeenCalledWith("viewer");
+
+    expect(userRepository.listRankingProfiles).not.toHaveBeenCalled();
+
+    expect(response.body).toEqual({
+      rankings: [
+        {
+          uid: "bob",
+          username: "Bob",
+          rank: 1,
+          points: 80,
+          rankedSessions: 1,
+          averageScore: 80,
+          elo: 1200,
+        },
+        {
+          uid: "carol",
+          username: "Carol",
+          rank: 2,
+          points: 65,
+          rankedSessions: 1,
+          averageScore: 65,
+          elo: null,
+        },
+      ],
+    });
+
+    expect(JSON.stringify(response.body)).not.toContain("private@example.test");
+    expect(JSON.stringify(response.body)).not.toContain('"role"');
+  });
+
+  test("GET /friends returns an empty list when there are no ranked friends", async () => {
+    const response = await request(app)
+      .get("/api/leaderboard/friends");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ rankings: [] });
+  });
+
+  test("GET /friends requires an authenticated UID", async () => {
+    const response = await request(
+      buildApp(userRepository, null, friendshipRepository)
+    ).get("/api/leaderboard/friends");
+
+    expect(response.status).toBe(401);
+    expect(friendshipRepository.listFriendsLeaderboard)
+      .not.toHaveBeenCalled();
+  });
+
+  test("GET /friends handles repository failures without leaking details", async () => {
+    friendshipRepository.listFriendsLeaderboard.mockRejectedValue(
+      new Error("Private Firestore detail")
+    );
+
+    const response = await request(app)
+      .get("/api/leaderboard/friends");
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe("Internal server error.");
+    expect(JSON.stringify(response.body))
+      .not.toContain("Private Firestore detail");
+  });
+
+  test("GET /friends rejects malformed repository responses", async () => {
+    friendshipRepository.listFriendsLeaderboard.mockResolvedValue(null);
+
+    const response = await request(app)
+      .get("/api/leaderboard/friends");
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe("Internal server error.");
   });
 
   test("requires an authenticated UID", async () => {

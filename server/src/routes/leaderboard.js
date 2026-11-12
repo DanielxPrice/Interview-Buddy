@@ -3,7 +3,8 @@
 const express = require("express");
 const { GLOBAL_LEADERBOARD_LIMIT, rankProfiles } = require("../services/leaderboardRanking");
 
-function createLeaderboardRouter({ userRepository }) {
+//Give leaderboard router access to friendship repo
+function createLeaderboardRouter({ userRepository, friendshipRepository }) {
   const router = express.Router();
 
   // Parent app applies Firebase auth, API rate limits, and account-readiness checks.
@@ -33,6 +34,46 @@ function createLeaderboardRouter({ userRepository }) {
       return next(error);
     }
   }
+
+  // Return rankings for accepted friends of the authenticated user.
+  router.get("/friends", async (req, res, next) => {
+    if (!req.user?.uid) {
+      return res.status(401).json({
+        code: "auth-token-required",
+        error: "Authentication is required.",
+      });
+    }
+
+    try {
+      if (typeof friendshipRepository?.listFriendsLeaderboard !== "function") {
+        throw new Error("Friends ranking repository is unavailable.");
+      }
+
+      const rankings = await friendshipRepository.listFriendsLeaderboard(req.user.uid);
+
+      if (!Array.isArray(rankings)) {
+        throw new Error("Friends ranking repository returned invalid data.");
+      }
+
+      res.set("Cache-Control", "private, no-store");
+
+      return res.json({
+        rankings: rankings.map(({
+          uid, username, rank, points, rankedSessions, averageScore, elo,
+        }) => ({
+          uid,
+          username,
+          rank,
+          points,
+          rankedSessions,
+          averageScore,
+          elo,
+        })),
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   router.get("/global", (req, res, next) => getRankings(req, res, next, "global"));
   router.get("/me", (req, res, next) => getRankings(req, res, next, "me"));

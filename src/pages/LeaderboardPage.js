@@ -3,11 +3,20 @@ import PageLayout from "../components/layout/PageLayout";
 import { useAuth } from "../context/AuthContext";
 import { leaderboardService } from "../services/leaderboardService";
 import { getEloRankBadge } from "../utils/eloRankBadge";
+import StateRenderer from "../components/state/StateRenderer";
 
 const PAGE_SIZE = 5;
 const scoreFormatter = new Intl.NumberFormat("en-US");
 const initialCollection = { status: "loading", data: [], error: "" };
 const initialRanking = { status: "loading", data: null, error: "" };
+
+const emptyRequests = { incoming: [], outgoing: [] };
+
+const initialRequests = {
+  status: "loading",
+  data: emptyRequests,
+  error: "",
+};
 
 function resolveResult(result, fallback) {
   if (result.status === "fulfilled") {
@@ -100,11 +109,159 @@ function RankingTable({ data, currentUserId, currentUsername, onRemove, saving =
   );
 }
 
+function FriendRequestsPanel({
+  title,
+  direction,
+  requests,
+  emptyMessage,
+  onAccept,
+  onDecline,
+  saving = false,
+}) {
+  const { status, error, data } = requests;
+  const entries = Array.isArray(data?.[direction])
+    ? data[direction]
+    : [];
+
+  const renderStatus =
+    status === "unavailable" ? "error" : status;
+
+  return (
+    <section className="ibRankingPanel" aria-label={title}>
+      <div className="ibRankingPanelTitle">
+        <h2>{title}</h2>
+        <span>
+          {status === "success"
+            ? `${entries.length} pending`
+            : "—"}
+        </span>
+      </div>
+
+      <div className="ibRankingRequestBody">
+        <StateRenderer
+          status={renderStatus}
+          data={entries}
+          error={error || "Unable to load friend requests."}
+          empty
+          emptyTitle={`No ${direction} requests`}
+          emptyDescription={emptyMessage}
+        >
+          <ul className="ibRankingRequestList">
+            {entries.map((entry) => (
+              <li
+                className="ibRankingRequestRow"
+                key={entry.id}
+              >
+                <strong>
+                  {entry.user?.username || "Account unavailable"}
+                </strong>
+
+                <div className="ibRankingRequestActions">
+                  <span className="ibRankingPendingLabel">
+                    Pending
+                  </span>
+
+                  {direction === "incoming" && (
+                    <>
+                      <button
+                        type="button"
+                        className="ibRankingAcceptButton"
+                        disabled={saving || !entry.requesterUid}
+                        onClick={() => onAccept(entry)}
+                        aria-label={`Accept friend request from ${entry.user?.username || "unknown user"}`}
+                      >
+                        Accept
+                      </button>
+
+                      <button
+                        type="button"
+                        className="ibRankingDeclineButton"
+                        disabled={saving || !entry.requesterUid}
+                        onClick={() => onDecline(entry)}
+                        aria-label={`Decline friend request from ${entry.user?.username || "unknown user"}`}
+                      >
+                        Decline
+                      </button>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </StateRenderer>
+      </div>
+    </section>
+  );
+}
+
+//Panel for all accepted friends
+function AcceptedFriendsPanel({
+  friends,
+  onRemove,
+  saving = false,
+}) {
+  const { status, error, data } = friends;
+  const entries = Array.isArray(data) ? data : [];
+
+  const renderStatus =
+    status === "unavailable" ? "error" : status;
+
+  return (
+    <section
+      className="ibRankingPanel"
+      aria-label="Accepted Friends"
+    >
+      <div className="ibRankingPanelTitle">
+        <h2>Accepted Friends</h2>
+        <span>
+          {status === "success"
+            ? `${entries.length} accepted`
+            : "—"}
+        </span>
+      </div>
+
+      <div className="ibRankingRequestBody">
+        <StateRenderer
+          status={renderStatus}
+          data={entries}
+          error={error || "Unable to load accepted friends."}
+          empty
+          emptyTitle="No accepted friends"
+          emptyDescription="Accepted friends will appear here after they approve your request."
+        >
+          <ul className="ibRankingRequestList">
+            {entries.map((friend) => (
+              <li
+                className="ibRankingRequestRow"
+                key={friend.uid}
+              >
+                <strong>{friend.username}</strong>
+
+                <button
+                  type="button"
+                  className="ibRankingRemoveButton"
+                  disabled={saving}
+                  onClick={() => onRemove(friend)}
+                  aria-label={`Remove ${friend.username} from accepted friends`}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </StateRenderer>
+      </div>
+    </section>
+  );
+}
+
 function LeaderboardPage({ currentPage, onNavigate }) {
   const { user } = useAuth();
   const [global, setGlobal] = useState(initialCollection);
   const [friends, setFriends] = useState(initialCollection);
+  const [acceptedFriends, setAcceptedFriends] = useState(initialCollection);
   const [standing, setStanding] = useState(initialRanking);
+  const [requests, setRequests] = useState(initialRequests);
   const [activeTab, setActiveTab] = useState("global");
   const [visibleGlobal, setVisibleGlobal] = useState(PAGE_SIZE);
   const [visibleFriends, setVisibleFriends] = useState(PAGE_SIZE);
@@ -117,30 +274,54 @@ function LeaderboardPage({ currentPage, onNavigate }) {
     let active = true;
     setGlobal(initialCollection);
     setFriends(initialCollection);
+    setAcceptedFriends(initialCollection);
     setStanding(initialRanking);
+    setRequests(initialRequests);
 
     // Fetch each dataset independently: a missing endpoint must not hide
     // another endpoint's valid response if the backend is implemented in stages.
+    // Load rankings and friend requests independently.
     Promise.allSettled([
       leaderboardService.getGlobalLeaderboard(),
       leaderboardService.getFriendsLeaderboard(),
       leaderboardService.getUserRanking(),
-    ]).then(([globalResult, friendsResult, standingResult]) => {
+      leaderboardService.getFriendRequests(),
+      leaderboardService.getAcceptedFriends(),
+    ]).then(([
+      globalResult,
+      friendsResult,
+      standingResult,
+      requestsResult,
+      acceptedResult,
+    ]) => {
       if (!active) return;
+
       setGlobal(resolveResult(globalResult, []));
       setFriends(resolveResult(friendsResult, []));
       setStanding(resolveResult(standingResult, null));
+      setRequests(resolveResult(requestsResult, emptyRequests));
+      setAcceptedFriends(resolveResult(acceptedResult, []));
     });
 
+    //Cleanup
     return () => { active = false; };
   }, [user?.uid, refreshKey]);
 
   const friendRankings = useMemo(() => friends.data, [friends.data]);
   const currentUser = standing.status === "success" ? standing.data : null;
   const rankBadge = getEloRankBadge(currentUser?.elo);
-  const hasFriends = friends.status === "success";
-  const friendCount = hasFriends ? friends.data.length : null;
-  const canRefresh = [global, friends, standing].every((item) => item.status !== "loading");
+  const hasFriends = acceptedFriends.status === "success";
+  const friendCount = hasFriends ? acceptedFriends.data.length : null;
+  const rankedFriendCount = friends.status === "success" ? friendRankings.length : null;
+
+  //Make sure no items are loading
+  const canRefresh = [
+    global,
+    friends,
+    standing,
+    requests,
+    acceptedFriends,
+  ].every((item) => item.status !== "loading");
 
   function refresh() {
     setVisibleGlobal(PAGE_SIZE);
@@ -158,6 +339,92 @@ function LeaderboardPage({ currentPage, onNavigate }) {
     }
   }
 
+  async function reloadRequests() {
+    try {
+      const records = await leaderboardService.getFriendRequests();
+
+      setRequests({
+        status: "success",
+        data: records,
+        error: "",
+      });
+    } catch (error) {
+      setRequests(
+        resolveResult(
+          { status: "rejected", reason: error },
+          emptyRequests
+        )
+      );
+    }
+  }
+
+  async function reloadAcceptedFriends() {
+    try {
+      const records = await leaderboardService.getAcceptedFriends();
+
+      setAcceptedFriends({
+        status: "success",
+        data: records,
+        error: "",
+      });
+    } catch (error) {
+      setAcceptedFriends(
+        resolveResult(
+          { status: "rejected", reason: error },
+          []
+        )
+      );
+    }
+  }
+
+  //Only update display after BE performs action successfully, then reload BE
+  async function handleRespondToRequest(entry, action) {
+    if (saving || !entry?.requesterUid) return;
+
+    setSaving(true);
+    setAddStatus(null);
+
+    const username = entry.user?.username || "this user";
+
+    try {
+      if (action === "accept") {
+        await leaderboardService.acceptFriendRequest(
+          entry.requesterUid
+        );
+      } else if (action === "decline") {
+        await leaderboardService.declineFriendRequest(
+          entry.requesterUid
+        );
+      } else {
+        throw new Error("Invalid friend request action.");
+      }
+
+      // Get the authoritative state from the backend.
+      await Promise.all([
+        reloadRequests(),
+        reloadFriends(),
+        reloadAcceptedFriends(),
+      ]);
+
+      setAddStatus({
+        type: "success",
+        message:
+          action === "accept"
+            ? `Friend request from "${username}" accepted.`
+            : `Friend request from "${username}" declined.`,
+      });
+    } catch (error) {
+      setAddStatus({
+        type: "error",
+        message:
+          error.message ||
+          "Unable to update the friend request.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleAddFriend(event) {
     event.preventDefault();
     const name = searchInput.trim();
@@ -168,7 +435,10 @@ function LeaderboardPage({ currentPage, onNavigate }) {
       await leaderboardService.sendFriendRequest(name);
       setAddStatus({ type: "success", message: `Friend request sent to "${name}". They will appear after accepting.` });
       setSearchInput("");
-      await reloadFriends();
+      await Promise.all([
+        reloadFriends(),
+        reloadRequests(),
+      ]);
     } catch (error) {
       setAddStatus({ type: "error", message: error.message || "Unable to send the friend request." });
     } finally {
@@ -182,7 +452,10 @@ function LeaderboardPage({ currentPage, onNavigate }) {
     setAddStatus(null);
     try {
       await leaderboardService.removeFriend(friend.uid);
-      await reloadFriends();
+      await Promise.all([
+        reloadFriends(),
+        reloadAcceptedFriends(),
+      ]);
       setAddStatus({ type: "success", message: `Removed "${friend.username}" from your friends.` });
     } catch (error) {
       setAddStatus({ type: "error", message: error.message || "Unable to remove the friend." });
@@ -239,10 +512,39 @@ function LeaderboardPage({ currentPage, onNavigate }) {
                 {addStatus && <p className={`ibRankingFormStatus ibRankingFormStatus--${addStatus.type}`} role="status">{addStatus.message}</p>}
               </section>
 
+              <FriendRequestsPanel
+                title="Incoming Friend Requests"
+                direction="incoming"
+                requests={requests}
+                emptyMessage="No incoming friend requests."
+                onAccept={(entry) => handleRespondToRequest(entry, "accept")}
+                onDecline={(entry) => handleRespondToRequest(entry, "decline")}
+                saving={saving}
+              />
+
+              <FriendRequestsPanel
+                title="Sent Friend Requests"
+                direction="outgoing"
+                requests={requests}
+                emptyMessage="No outgoing friend requests."
+              />
+
+              <AcceptedFriendsPanel
+                friends={acceptedFriends}
+                onRemove={handleRemoveFriend}
+                saving={saving}
+              />
+
               <section className="ibRankingPanel" aria-label="Friends leaderboard">
                 <div className="ibRankingPanelTitle">
                   <h2>Friends Rankings</h2>
-                  <span>{friendCount == null ? "No available data" : `${friendCount} ${friendCount === 1 ? "friend" : "friends"}`}</span>
+                  <span>
+                    {rankedFriendCount == null
+                      ? "No available data"
+                      : `${rankedFriendCount} ranked ${
+                          rankedFriendCount === 1 ? "friend" : "friends"
+                        }`}
+                  </span>
                 </div>
                 <RankingTable data={{ ...friends, data: friends.data.slice(0, visibleFriends) }} currentUserId={user?.uid} currentUsername={currentUser?.username} onRemove={hasFriends ? handleRemoveFriend : undefined} saving={saving} />
                 {friends.status === "success" && visibleFriends < friends.data.length && (
@@ -286,18 +588,46 @@ function LeaderboardPage({ currentPage, onNavigate }) {
 
           <section className="ibRankingSideCard" aria-labelledby="ib-friends-overview">
             <div className="ibRankingSideTitle"><h2 id="ib-friends-overview">Your Friends</h2><span className="ibRankingCount">{friendCount == null ? "—" : friendCount}</span></div>
-            {friends.status === "loading" ? <p className="ibRankingNoFriends">Loading friends...</p>
-              : friends.status !== "success" ? <p className="ibRankingNoFriends">Friends data is not available yet.</p>
-              : friendRankings.length > 0 ? (
-                <div className="ibRankingFriendPreview">
-                  {friendRankings.slice(0, 3).map((friend, index) => (
-                    <div className="ibRankingPreviewRow" key={friend.uid ?? `${friend.username}-${index}`}>
-                      <div><strong>{friend.username}</strong><span>{friend.rank == null ? "Rank unavailable" : `Rank #${friend.rank}`}</span></div>
-                      <span className="ibRankingPreviewScore">{friend.elo == null ? "—" : scoreFormatter.format(friend.elo)} ELO</span>
+            {acceptedFriends.status === "loading" ? (
+              <p className="ibRankingNoFriends">
+                Loading friends...
+              </p>
+            ) : acceptedFriends.status !== "success" ? (
+              <p className="ibRankingNoFriends">
+                Friends data is not available yet.
+              </p>
+            ) : acceptedFriends.data.length > 0 ? (
+              <div className="ibRankingFriendPreview">
+                {acceptedFriends.data.slice(0, 3).map((friend) => {
+                  const ranking = friendRankings.find(
+                    (entry) => entry.uid === friend.uid
+                  );
+
+                  return (
+                    <div className="ibRankingPreviewRow" key={friend.uid}>
+                      <div>
+                        <strong>{friend.username}</strong>
+                        <span>
+                          {ranking?.rank == null
+                            ? "Not ranked yet"
+                            : `Rank #${ranking.rank}`}
+                        </span>
+                      </div>
+
+                      <span className="ibRankingPreviewScore">
+                        {ranking?.elo == null
+                          ? "ELO unavailable"
+                          : `${scoreFormatter.format(ranking.elo)} ELO`}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              ) : <p className="ibRankingNoFriends">No friends available yet.</p>}
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="ibRankingNoFriends">
+                No friends available yet.
+              </p>
+            )}
             {activeTab !== "friends" && <button type="button" className="ibRankingViewFriends" onClick={() => setActiveTab("friends")}>View Friends</button>}
           </section>
         </aside>

@@ -141,13 +141,13 @@ app.use(
   })
 );
 
-// SCRUM-85: Global and personal rankings.
+// Global, personal, and accepted-friends rankings.
 app.use(
   "/api/leaderboard",
   requireAuth,
   apiRateLimiter,
   requireAccountReady,
-  createLeaderboardRouter({ userRepository })
+  createLeaderboardRouter({ userRepository, friendshipRepository })
 );
 
 // SCRUM-109: Friendship application endpoints.
