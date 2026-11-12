@@ -69,6 +69,7 @@ describe("SCRUM-82 results endpoints", () => {
 
             completionStatus: "completed",
             rankEligible: true,
+            eloChange: "+11",
           },
         }),
 
@@ -281,7 +282,7 @@ describe("SCRUM-82 results endpoints", () => {
       );
 
     expect(response.status).toBe(200);
-    expect(response.body.eloChange).toBe("+2");
+    expect(response.body.eloChange).toBe("+11");
     expect(response.body.breakdownAvailable).toBe(
       true
     );
