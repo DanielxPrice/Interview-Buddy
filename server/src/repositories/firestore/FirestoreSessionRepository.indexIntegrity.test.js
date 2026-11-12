@@ -107,8 +107,13 @@ describe("SCRUM-86 Firestore index configuration and query integrity", () => {
 
       for (const field of index.fields) {
         expect(typeof field.fieldPath).toBe("string");
-        expect(["ASCENDING", "DESCENDING"])
-          .toContain(field.order);
+        if (field.arrayConfig !== undefined) {
+          expect(field.arrayConfig).toBe("CONTAINS");
+          expect(field.order).toBeUndefined();
+        } else {
+          expect(["ASCENDING", "DESCENDING"])
+            .toContain(field.order);
+        }
       }
 
       return JSON.stringify([
