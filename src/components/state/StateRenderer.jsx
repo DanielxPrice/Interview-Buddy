@@ -1,3 +1,4 @@
+
 import EmptyState from "./EmptyState";
 import ErrorState from "./ErrorState";
 import LoadingState from "./LoadingState";
@@ -9,6 +10,8 @@ function StateRenderer({
   error,
   children,
   empty,
+  emptyTitle = "No results",
+  emptyDescription,
 }) {
   if (status === "submitting") {
     return <SubmittingState />;
@@ -22,8 +25,14 @@ function StateRenderer({
     return <ErrorState message={error} />;
   }
 
+  //Backwards compatible change, existing components wont need to be updated for custom empty states
   if (empty && data.length === 0) {
-    return <EmptyState />;
+    return (
+      <EmptyState
+        title={emptyTitle}
+        description={emptyDescription}
+      />
+    );
   }
 
   return children;

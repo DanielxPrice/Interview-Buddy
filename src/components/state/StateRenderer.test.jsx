@@ -58,4 +58,26 @@ describe("StateRenderer", () => {
       screen.getByText("Dashboard")
     ).toBeInTheDocument();
   });
+
+  //Since we added empty state customization, we need to test that as well
+  //Test in the context of friend requests
+  test("renders a customized empty state", () => {
+    render(
+      <StateRenderer
+        status="success"
+        data={[]}
+        empty
+        emptyTitle="No incoming requests"
+        emptyDescription="You have no pending friend requests."
+      />
+    );
+
+    expect(
+      screen.getByText("No incoming requests")
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText("You have no pending friend requests.")
+    ).toBeInTheDocument();
+  });
 });
