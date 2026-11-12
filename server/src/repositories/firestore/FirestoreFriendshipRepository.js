@@ -16,9 +16,21 @@ function friendshipError(code, message, statusCode = 409) {
 }
 
 function normalizedUid(value) {
-  if (typeof value !== "string" || !value.trim() || value.trim().length > 128 ||
-      value.includes("/") || /[\u0000-\u001f\u007f]/u.test(value)) {
-    throw friendshipError("invalid-friend-uid", "A valid Firebase user ID is required.", 400);
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.trim().length > 128 ||
+    value.includes("/") ||
+    value.split("").some((char) => {
+      const code = char.charCodeAt(0);
+      return code <= 31 || code === 127;
+    })
+  ) {
+    throw friendshipError(
+      "invalid-friend-uid",
+      "A valid Firebase user ID is required.",
+      400
+    );
   }
   // Firebase UIDs are case sensitive. Never lowercase or hash the UID itself.
   return value.trim();
