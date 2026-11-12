@@ -358,7 +358,9 @@ test("accepting a request updates the pending list and friends rankings", async 
     expect(
       leaderboardService.acceptFriendRequest
     ).toHaveBeenCalledWith("alice");
+  });
 
+  await waitFor(() => {
     expect(
       within(incoming).queryByText("Alice")
     ).not.toBeInTheDocument();
@@ -428,7 +430,9 @@ test("declining a request removes it from pending requests", async () => {
     expect(
       leaderboardService.declineFriendRequest
     ).toHaveBeenCalledWith("bob");
+  });
 
+  await waitFor(() => {
     expect(
       within(incoming).queryByText("Bob")
     ).not.toBeInTheDocument();
@@ -533,7 +537,9 @@ test("removing an accepted friend refreshes the friends list", async () => {
     expect(
       leaderboardService.removeFriend
     ).toHaveBeenCalledWith("friend-1");
+  });
 
+  await waitFor(() => {
     expect(
       leaderboardService.getAcceptedFriends
     ).toHaveBeenCalledTimes(2);
