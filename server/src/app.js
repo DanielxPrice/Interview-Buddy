@@ -7,6 +7,7 @@ const createEvaluateRouter = require("./routes/evaluate");
 const createUserRouter = require("./routes/users");
 const createSessionRouter = require("./routes/sessions");
 const createLeaderboardRouter = require("./routes/leaderboard");
+const createFriendsRouter = require("./routes/friends");
 const createAccountDeletionRouter = require("./routes/accountDeletion");
 
 const requireAuth = require("./middleware/requireAuth");
@@ -28,6 +29,7 @@ const {
   questionCatalogRepository,
   evaluationRepository,
   userRepository,
+  friendshipRepository,
   questionUsageRepository,
   sessionRepository,
   accountDeletionService,
@@ -50,7 +52,9 @@ const requireAccountReady =
     userRepository,
   });
 
-const apiRateLimiter = createApiRateLimiter({ rateLimitRepository: apiRateLimitRepository });
+const apiRateLimiter = createApiRateLimiter({
+  rateLimitRepository: apiRateLimitRepository,
+});
 
 const app = express();
 
@@ -62,7 +66,7 @@ app.use(
   })
 );
 
-// Preserve SEC-01 request-parser protections.
+// SEC-01 request-parser protections.
 app.use(
   express.json({
     limit: "1mb",
@@ -75,8 +79,7 @@ app.get("/api/health", (req, res) => {
   res.json(getHealthPayload());
 });
 
-// SEC-02 checks remain active for questions.
-// SEC-03 additionally injects sessionRepository.
+// Protected question routes.
 app.use(
   "/api/questions",
   requireAuth,
@@ -103,18 +106,28 @@ app.use(
   })
 );
 
-// Mount authentication and rate limiting once for both user routers.
-// A request such as DELETE /api/users/account must not be counted twice.
-app.use("/api/users", requireAuth, apiRateLimiter, requireAccountReady);
+// Authentication and rate limiting are mounted once for user routes.
+app.use(
+  "/api/users",
+  requireAuth,
+  apiRateLimiter,
+  requireAccountReady
+);
 
-// Protected profile/settings routes.
-app.use("/api/users", createUserRouter({ userRepository }));
+// Protected profile and settings routes.
+app.use(
+  "/api/users",
+  createUserRouter({ userRepository })
+);
 
 // Secure account deletion.
-app.use("/api/users", createAccountDeletionRouter({
-  accountDeletionService,
-  authClient,
-}));
+app.use(
+  "/api/users",
+  createAccountDeletionRouter({
+    accountDeletionService,
+    authClient,
+  })
+);
 
 // Protected interview session routes.
 app.use(
@@ -128,7 +141,7 @@ app.use(
   })
 );
 
-// SCRUM-85: Authenticated, points-based global and personal rankings.
+// SCRUM-85: Global and personal rankings.
 app.use(
   "/api/leaderboard",
   requireAuth,
@@ -137,7 +150,20 @@ app.use(
   createLeaderboardRouter({ userRepository })
 );
 
-// Preserve SEC-01 parser error handling.
+// SCRUM-109: Friendship application endpoints.
+// Storage and relationship integrity remain in Hoonam's repository.
+app.use(
+  "/api/friends",
+  requireAuth,
+  apiRateLimiter,
+  requireAccountReady,
+  createFriendsRouter({
+    userRepository,
+    friendshipRepository,
+  })
+);
+
+// SEC-01 parser error handling.
 app.use((error, req, res, _next) => {
   if (
     error &&
