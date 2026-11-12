@@ -1,5 +1,6 @@
 const SessionRepository = require("../contracts/SessionRepository");
 const { nextRanking } = require("../../services/rankingScore");
+const { calculateEloUpdate } = require("../../services/eloRating");
 const { getDateKey } = require("../../services/questionQuotaService");
 const {
   SESSION_DAILY_CREATE_LIMIT,
@@ -704,9 +705,9 @@ class FirestoreSessionRepository extends SessionRepository {
           session.activeExpiresAtMs <= this.now().getTime();
         if (expired) result.rankEligible = false;
 
-        // SCRUM-84: Include the user's ranking in this SAME transaction.
-        // An already-completed session returned above cannot award points again.
-        // Partial, abandoned, and expired sessions never affect ranking.
+        // SCRUM-84 + SCRUM-112: Award ranking points and ELO atomically with
+        // the session completion. Repeated, partial, abandoned, and expired
+        // completions do not award either kind of ranking credit.
         let userRef = null;
         let updatedRanking = null;
         if (result.rankEligible === true && result.completionStatus === "completed") {
@@ -715,7 +716,36 @@ class FirestoreSessionRepository extends SessionRepository {
           if (!userSnapshot.exists) {
             throw sessionError("User profile required for ranked completion.", 503);
           }
-          updatedRanking = nextRanking(userSnapshot.data()?.ranking, result.score);
+
+          const savedRanking = userSnapshot.data()?.ranking;
+          const pointsUpdate = nextRanking(savedRanking, result.score);
+          let eloUpdate;
+          try {
+            eloUpdate = calculateEloUpdate({
+              currentElo: savedRanking?.elo,
+              sessionScore: result.score,
+            });
+          } catch (error) {
+            if (error?.code !== "INVALID_ELO_INPUT") throw error;
+            const invalid = sessionError("Stored ELO rating is invalid.", 503);
+            invalid.code = "RANKING_DATA_INVALID";
+            throw invalid;
+          }
+
+          // Preserve any ranking fields added by the persistence owner.
+          updatedRanking = {
+            ...savedRanking,
+            ...pointsUpdate,
+            elo: eloUpdate.newElo,
+          };
+
+          // Record the *awarded* change on this session for stable history.
+          // Store a signed string because the results frontend expects one.
+          result.previousElo = eloUpdate.previousElo;
+          result.newElo = eloUpdate.newElo;
+          result.eloChange = eloUpdate.eloChange > 0
+            ? `+${eloUpdate.eloChange}`
+            : String(eloUpdate.eloChange);
         }
 
         const timestamp =

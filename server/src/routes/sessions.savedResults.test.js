@@ -29,6 +29,7 @@ function createApp({
       questionsUnanswered: 0,
       completionStatus,
       rankEligible,
+      ...(rankEligible && completionStatus === "completed" ? { eloChange: "+13" } : {}),
     },
   };
 
@@ -133,7 +134,7 @@ describe(
         );
 
       expect(response.status).toBe(200);
-      expect(response.body.eloChange).toBe("+2");
+      expect(response.body.eloChange).toBe("+13");
 
       expect(
         response.body.breakdownAvailable

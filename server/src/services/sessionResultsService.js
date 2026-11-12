@@ -74,18 +74,15 @@ function toPipelineError(error) {
   }
 }
 
-// Display estimate only.
-// This function does not update a ranking database.
-function calculateEloChange(score) {
-  if (score >= 70) {
-    return "+2";
-  }
-
-  if (score >= 50) {
-    return "+1";
-  }
-
-  return "-2";
+// Return only the rating change awarded by the completion transaction.
+// Older sessions without a saved ELO change must not show a fake estimate.
+function persistedEloChange(result) {
+  return result?.rankEligible === true &&
+    result?.completionStatus === "completed" &&
+    typeof result.eloChange === "string" &&
+    /^[+-]?[0-9]+$/.test(result.eloChange)
+    ? result.eloChange
+    : null;
 }
 
 function toIsoString(value) {
@@ -333,13 +330,7 @@ function createSessionResultsService({
             completedSession.completedAt
           ),
 
-        eloChange:
-          result.rankEligible === true &&
-          result.completionStatus === "completed"
-            ? calculateEloChange(
-                result.score
-              )
-            : null,
+        eloChange: persistedEloChange(result),
 
         breakdown,
         breakdownAvailable,
@@ -401,11 +392,6 @@ function createSessionResultsService({
       const result =
         session.result || null;
 
-      const isRanked =
-        result?.rankEligible === true &&
-        result?.completionStatus === "completed" &&
-        Number.isFinite(result?.score);
-
       return {
         id: session.id || sessionId,
         status: session.status,
@@ -439,12 +425,7 @@ function createSessionResultsService({
           session.rankEligible ??
           null,
 
-        eloChange:
-          isRanked
-            ? calculateEloChange(
-                result.score
-              )
-            : null,
+        eloChange: persistedEloChange(result),
 
         breakdown,
         breakdownAvailable,
@@ -476,5 +457,5 @@ module.exports = {
   createSessionResultsService,
   ResultsPipelineError,
   RESULTS_ERROR_CODES,
-  calculateEloChange,
+  persistedEloChange,
 };
