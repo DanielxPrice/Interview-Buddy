@@ -394,6 +394,36 @@ describe("SCRUM-109 application friend-request routes", () => {
     );
   });
 
+  test("unauthorized decline returns 403", async () => {
+    const f = fixture();
+
+    f.friendshipRepository.declineRequest.mockRejectedValueOnce(
+      Object.assign(
+        new Error("Only the recipient may respond."),
+        {
+          code: "friend-request-forbidden",
+          statusCode: 403,
+        }
+      )
+    );
+
+    const response = await signedIn(f.app, "carol")
+      .post("/api/friends/requests/alice/decline");
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe(
+      "friend-request-forbidden"
+    );
+
+    expect(
+      f.friendshipRepository.declineRequest
+    ).toHaveBeenCalledWith(
+      "alice",
+      "carol",
+      "carol"
+    );
+  });
+
   test("pending lists expose only public user data", async () => {
     const f = fixture();
 
