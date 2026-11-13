@@ -705,9 +705,9 @@ class FirestoreSessionRepository extends SessionRepository {
           session.activeExpiresAtMs <= this.now().getTime();
         if (expired) result.rankEligible = false;
 
-        // SCRUM-84 + SCRUM-112: Award ranking points and ELO atomically with
-        // the session completion. Repeated, partial, abandoned, and expired
-        // completions do not award either kind of ranking credit.
+        // Award ELO and retain legacy score statistics atomically. Sessions
+        // with fewer than five questions, partial/abandoned/expired sessions,
+        // and duplicate completions never change either ranking field.
         let userRef = null;
         let updatedRanking = null;
         if (result.rankEligible === true && result.completionStatus === "completed") {
@@ -724,6 +724,8 @@ class FirestoreSessionRepository extends SessionRepository {
             eloUpdate = calculateEloUpdate({
               currentElo: savedRanking?.elo,
               sessionScore: result.score,
+              experienceLevel: session.experienceLevel,
+              questionCount: session.questionCount,
             });
           } catch (error) {
             if (error?.code !== "INVALID_ELO_INPUT") throw error;

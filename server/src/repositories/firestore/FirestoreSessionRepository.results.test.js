@@ -319,12 +319,7 @@ describe("SCRUM-82 server-side results persistence", () => {
         answeredAverageScore: 85,
 
         completionStatus: "completed",
-        rankEligible: true,
-
-        // SCRUM-112: ELO changes are persisted with the completed session.
-        previousElo: 1000,
-        newElo: 1011,
-        eloChange: "+11",
+        rankEligible: false,
       });
 
       expect(

@@ -250,8 +250,7 @@ class FirestoreFriendshipRepository extends FriendshipRepository {
 
   /**
    * Fetch ONLY accepted friends' public ranking fields; never scan every user.
-   * Reuse the current global ranking sorter/tie policy, without changing it.
-   * ELO is reported only when ranking.elo actually exists (SCRUM-117 is separate).
+   * Use the same ELO ordering and competition ranks as the global board.
    */
   async listFriendsLeaderboard(userUid) {
     const friends = await this.listFriends(userUid);
@@ -271,11 +270,7 @@ class FirestoreFriendshipRepository extends FriendshipRepository {
         if (doc.exists) profiles.push({ ...doc.data(), uid: doc.id });
       }
     }
-    const byUid = new Map(profiles.map((profile) => [profile.uid, profile]));
-    return rankProfiles(profiles).map((entry) => {
-      const elo = byUid.get(entry.uid)?.ranking?.elo;
-      return { ...entry, elo: Number.isFinite(elo) && elo >= 0 ? elo : null };
-    });
+    return rankProfiles(profiles);
   }
 }
 

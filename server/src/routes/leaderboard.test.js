@@ -2,9 +2,9 @@ const express = require("express");
 const request = require("supertest");
 const createLeaderboardRouter = require("./leaderboard");
 
-const profile = (uid, points, username = uid) => ({
+const profile = (uid, elo, username = uid) => ({
   uid, username,
-  ranking: { points, rankedSessions: 1, averageScore: points },
+  ranking: { elo, rankedSessions: 1, points: 0, averageScore: 0 },
   email: `${uid}@private.example`,
   role: "admin",
 });
@@ -24,8 +24,8 @@ function buildApp(userRepository, uid = "viewer", friendshipRepository = null) {
   return app;
 }
 
-describe("SCRUM-85 leaderboard API contract", () => {
-  const rows = [profile("viewer", 70), profile("top", 90), profile("low", 35)];
+describe("ELO leaderboard API contract", () => {
+  const rows = [profile("viewer", 1050), profile("top", 1300), profile("low", 900)];
   let userRepository;
   let friendshipRepository;
   let app;
@@ -46,9 +46,9 @@ describe("SCRUM-85 leaderboard API contract", () => {
     const response = await request(app).get("/api/leaderboard/global");
     expect(response.status).toBe(200);
     expect(response.headers["cache-control"]).toBe("private, no-store");
-    expect(response.body.rankings.map((row) => [row.uid, row.rank, row.points]))
-      .toEqual([["top", 1, 90], ["viewer", 2, 70], ["low", 3, 35]]);
-    expect(response.body.rankings[0].elo).toBe(null);
+    expect(response.body.rankings.map((row) => [row.uid, row.rank, row.elo]))
+      .toEqual([["top", 1, 1300], ["viewer", 2, 1050], ["low", 3, 900]]);
+    expect(response.body.rankings[0]).not.toHaveProperty("points");
     expect(JSON.stringify(response.body)).not.toContain("@private.example");
     expect(JSON.stringify(response.body)).not.toContain('"role"');
   });
@@ -56,7 +56,7 @@ describe("SCRUM-85 leaderboard API contract", () => {
   test("GET /me selects authenticated UID, not query parameters", async () => {
     const response = await request(app).get("/api/leaderboard/me?uid=top");
     expect(response.status).toBe(200);
-    expect(response.body.ranking).toMatchObject({ uid: "viewer", rank: 2, points: 70 });
+    expect(response.body.ranking).toMatchObject({ uid: "viewer", rank: 2, elo: 1050 });
   });
 
   test("GET /me returns null for a user with no eligible ranked sessions", async () => {
@@ -75,18 +75,18 @@ describe("SCRUM-85 leaderboard API contract", () => {
 
   test("GET /global returns at most 50 users", async () => {
     userRepository.listRankingProfiles.mockResolvedValue(
-      Array.from({ length: 65 }, (_, i) => profile(`uid-${i}`, 65 - i))
+      Array.from({ length: 65 }, (_, i) => profile(`uid-${i}`, 1200 - i))
     );
     const response = await request(app).get("/api/leaderboard/global");
     expect(response.status).toBe(200);
     expect(response.body.rankings).toHaveLength(50);
-    expect(response.body.rankings[0].points).toBe(65);
+    expect(response.body.rankings[0].elo).toBe(1200);
   });
 
   test("GET /me works when user is beyond the global top 50", async () => {
     userRepository.listRankingProfiles.mockResolvedValue([
-      ...Array.from({ length: 51 }, (_, i) => profile(`uid-${i}`, 100 - i)),
-      profile("viewer", 1),
+      ...Array.from({ length: 51 }, (_, i) => profile(`uid-${i}`, 1200 - i)),
+      profile("viewer", 900),
     ]);
     const response = await request(app).get("/api/leaderboard/me");
     expect(response.status).toBe(200);
@@ -100,9 +100,6 @@ describe("SCRUM-85 leaderboard API contract", () => {
         uid: "bob",
         username: "Bob",
         rank: 1,
-        points: 80,
-        rankedSessions: 1,
-        averageScore: 80,
         elo: 1200,
         email: "private@example.test",
         role: "admin",
@@ -111,10 +108,7 @@ describe("SCRUM-85 leaderboard API contract", () => {
         uid: "carol",
         username: "Carol",
         rank: 2,
-        points: 65,
-        rankedSessions: 1,
-        averageScore: 65,
-        elo: null,
+        elo: 1000,
       },
     ]);
 
@@ -135,19 +129,13 @@ describe("SCRUM-85 leaderboard API contract", () => {
           uid: "bob",
           username: "Bob",
           rank: 1,
-          points: 80,
-          rankedSessions: 1,
-          averageScore: 80,
           elo: 1200,
         },
         {
           uid: "carol",
           username: "Carol",
           rank: 2,
-          points: 65,
-          rankedSessions: 1,
-          averageScore: 65,
-          elo: null,
+          elo: 1000,
         },
       ],
     });

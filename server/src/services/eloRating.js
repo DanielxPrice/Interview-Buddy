@@ -1,16 +1,20 @@
-
 "use strict";
 
-// SCRUM-111: Application-layer ELO calculation only.
-// SCRUM-112 will call this from the session-completion workflow.
-// SCRUM-117 owns storing and retrieving ELO in Firestore.
-// Parameters are proposed until the team approves the final rating policy.
+// Performance-based ELO: each interview uses one trusted session difficulty.
 const ELO_CONFIG = Object.freeze({
   initialElo: 1000,
-  benchmarkElo: 1000,
   kFactor: 32,
   ratingScale: 400,
   minimumElo: 0,
+  minimumRankedQuestions: 5,
+  maximumLengthWeightQuestions: 20,
+  lengthBaselineQuestions: 10,
+  difficultyBenchmarks: Object.freeze({
+    beginner: 850,
+    intermediate: 1000,
+    experienced: 1150,
+    veteran: 1300,
+  }),
 });
 
 function invalidEloInput(message) {
@@ -21,72 +25,61 @@ function invalidEloInput(message) {
 }
 
 function resolveCurrentElo(currentElo) {
-  // Older accounts may not have an ELO field yet. Zero is a valid rating.
-  if (currentElo === null || currentElo === undefined) {
-    return ELO_CONFIG.initialElo;
-  }
-
+  // Legacy profiles without a saved rating start at 1000. Zero remains valid.
+  if (currentElo === null || currentElo === undefined) return ELO_CONFIG.initialElo;
   if (!Number.isSafeInteger(currentElo) || currentElo < ELO_CONFIG.minimumElo) {
     throw invalidEloInput("Current ELO must be a nonnegative safe integer.");
   }
-
   return currentElo;
 }
 
 /**
- * Calculate the proposed performance-based ELO change for a completed session.
+ * Calculates the ELO adjustment for a completed, single-difficulty interview.
+ * N < 5: no change. N >= 5:
+ * expected = 1 / (1 + 10 ^ ((difficultyBenchmark - previousElo) / 400))
+ * K = 32 * min(N, 20) / 10
+ * newElo = max(0, round(previousElo + K * (sessionScore / 100 - expected)))
  *
- * expected = 1 / (1 + 10 ^ ((benchmarkElo - previousElo) / ratingScale))
- * actual   = sessionScore / 100
- * newElo   = round(max(minimumElo, previousElo + kFactor * (actual - expected)))
+ * Only pass the server-persisted difficulty and assigned question count, never
+ * client-supplied completion values. Eligibility and idempotency belong to the
+ * session completion transaction, not to this pure function.
  *
- * This function does not read/write Firestore or decide session eligibility.
- * Call only after the server has calculated an authoritative 0-100 session score.
- *
- * @param {{ currentElo?: number | null, sessionScore: number }} input
+ * @param {{ currentElo?: number | null, sessionScore: number, experienceLevel: string, questionCount: number }} input
  * @returns {{ previousElo: number, newElo: number, eloChange: number }}
  */
 function calculateEloUpdate(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw invalidEloInput("ELO input must be an object.");
   }
-
-  const { currentElo, sessionScore } = input;
-  if (
-    !Number.isSafeInteger(sessionScore) ||
-    sessionScore < 0 ||
-    sessionScore > 100
-  ) {
+  const { currentElo, sessionScore, experienceLevel, questionCount } = input;
+  if (!Number.isSafeInteger(sessionScore) || sessionScore < 0 || sessionScore > 100) {
     throw invalidEloInput("Session score must be an integer from 0 to 100.");
+  }
+  if (!Number.isSafeInteger(questionCount) || questionCount < 1 || questionCount > 20) {
+    throw invalidEloInput("Question count must be an integer from 1 to 20.");
+  }
+  const difficulty = typeof experienceLevel === "string"
+    ? experienceLevel.trim().toLowerCase() : "";
+  if (!Object.hasOwn(ELO_CONFIG.difficultyBenchmarks, difficulty)) {
+    throw invalidEloInput("Experience level must be Beginner, Intermediate, Experienced, or Veteran.");
   }
 
   const previousElo = resolveCurrentElo(currentElo);
-  const expectedPerformance =
-    1 /
-    (1 +
-      Math.pow(
-        10,
-        (ELO_CONFIG.benchmarkElo - previousElo) / ELO_CONFIG.ratingScale
-      ));
-  const actualPerformance = sessionScore / 100;
+  if (questionCount < ELO_CONFIG.minimumRankedQuestions) {
+    return { previousElo, newElo: previousElo, eloChange: 0 };
+  }
 
-  const newElo = Math.round(
-    Math.max(
-      ELO_CONFIG.minimumElo,
-      previousElo +
-        ELO_CONFIG.kFactor * (actualPerformance - expectedPerformance)
-    )
-  );
-
+  const expected = 1 / (1 + Math.pow(10,
+    (ELO_CONFIG.difficultyBenchmarks[difficulty] - previousElo) / ELO_CONFIG.ratingScale));
+  const effectiveK = ELO_CONFIG.kFactor *
+    Math.min(questionCount, ELO_CONFIG.maximumLengthWeightQuestions) /
+    ELO_CONFIG.lengthBaselineQuestions;
+  const newElo = Math.max(ELO_CONFIG.minimumElo,
+    Math.round(previousElo + effectiveK * (sessionScore / 100 - expected)));
   if (!Number.isSafeInteger(newElo)) {
     throw invalidEloInput("Calculated ELO is outside the supported range.");
   }
-
-  return {
-    previousElo,
-    newElo,
-    eloChange: newElo - previousElo,
-  };
+  return { previousElo, newElo, eloChange: newElo - previousElo };
 }
 
 module.exports = { ELO_CONFIG, calculateEloUpdate };
