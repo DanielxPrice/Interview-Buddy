@@ -88,9 +88,8 @@ function fixture() {
   return { ...store, repository };
 }
 
-function ranking(points, rankedSessions = 1, elo) {
-  return { points, rankedSessions, averageScore: points / rankedSessions,
-    ...(elo === undefined ? {} : { elo }) };
+function ranking(points, rankedSessions = 1, elo = 1000) {
+  return { points, rankedSessions, averageScore: rankedSessions ? points / rankedSessions : 0, elo };
 }
 
 async function friend(repository, requester, recipient) {
@@ -206,18 +205,19 @@ describe("SCRUM-116 friends-only ranking query", () => {
     assert.equal(f.calls.getAll.length, 0);
   });
 
-  test("reads accepted friends only, sorts by current point rules and preserves stored ELO", async () => {
+  test("reads accepted friends only, sorts by ELO and excludes private fields", async () => {
     const f = fixture();
     await friend(f.repository, "alice", "bob");
     await friend(f.repository, "carol", "alice");
     await f.repository.createRequest("alice", "dave");
     f.seed("users", "bob", { username: "Bob", ranking: ranking(90, 1, 1234), email: "secret@example.com" });
-    f.seed("users", "carol", { username: "Carol", ranking: ranking(150, 2), email: "also-private" });
+    f.seed("users", "carol", { username: "Carol", ranking: ranking(150, 2, 1500), email: "also-private" });
     f.seed("users", "dave", { username: "Dave", ranking: ranking(100, 1, 2400) });
     const result = await f.repository.listFriendsLeaderboard("alice");
     assert.deepEqual(result.map((row) => row.uid), ["carol", "bob"]);
     assert.deepEqual(result.map((row) => row.rank), [1, 2]);
-    assert.deepEqual(result.map((row) => row.elo), [null, 1234]);
+    assert.deepEqual(result.map((row) => row.elo), [1500, 1234]);
+    assert.ok(result.every((row) => !Object.hasOwn(row, "points")));
     assert.ok(result.every((row) => !Object.hasOwn(row, "email")));
     assert.deepEqual(f.calls.getAll[0].ids.sort(), ["bob", "carol"]);
     assert.deepEqual(f.calls.getAll[0].options.fieldMask, ["username", "ranking", "deleting", "status"]);
@@ -255,10 +255,10 @@ describe("SCRUM-116 friends-only ranking query", () => {
     const f = fixture();
     await friend(f.repository, "alice", "bob");
     await friend(f.repository, "alice", "carol");
-    f.seed("users", "bob", { username: "Bob", ranking: ranking(40) });
-    f.seed("users", "carol", { username: "Carol", ranking: ranking(70) });
+    f.seed("users", "bob", { username: "Bob", ranking: ranking(40, 1, 1100) });
+    f.seed("users", "carol", { username: "Carol", ranking: ranking(70, 1, 1200) });
     assert.deepEqual((await f.repository.listFriendsLeaderboard("alice")).map((r) => r.uid), ["carol", "bob"]);
-    f.seed("users", "bob", { username: "Bob", ranking: ranking(99) });
+    f.seed("users", "bob", { username: "Bob", ranking: ranking(99, 1, 1300) });
     assert.deepEqual((await f.repository.listFriendsLeaderboard("alice")).map((r) => r.uid), ["bob", "carol"]);
   });
 });

@@ -18,6 +18,7 @@ function fixture({
     assignmentStatus,
     questionCount,
     assignedQuestionIds,
+    experienceLevel: "Intermediate",
   };
 
   const responsesRef = {};
@@ -93,11 +94,9 @@ function answer(id, score) {
 describe("SEC-03 Firestore session completion integrity", () => {
   test("full assignment produces a ranked completed record", async () => {
     const f = fixture({
-      responses: [
-        answer("q1", 90),
-        answer("q2", 90),
-        answer("q3", 90),
-      ],
+      questionCount: 5,
+      assignedQuestionIds: ["q1", "q2", "q3", "q4", "q5"],
+      responses: ["q1", "q2", "q3", "q4", "q5"].map((id) => answer(id, 90)),
     });
 
     const finished =
@@ -113,8 +112,8 @@ describe("SEC-03 Firestore session completion integrity", () => {
 
       result: {
         score: 90,
-        questionsAssigned: 3,
-        questionsAnswered: 3,
+        questionsAssigned: 5,
+        questionsAnswered: 5,
       },
     });
 

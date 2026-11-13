@@ -1,83 +1,75 @@
+"use strict";
 const { rankProfiles, GLOBAL_LEADERBOARD_LIMIT } = require("./leaderboardRanking");
-
-const person = (uid, username, points, rankedSessions = 1) => ({
-  uid, username,
-  ranking: {
-    points,
-    rankedSessions,
-    averageScore: Math.round((points / rankedSessions) * 100) / 100,
-  },
+const person = (uid, username, elo, rankedSessions = 1, points = 90) => ({
+  uid, username, ranking: { elo, rankedSessions, points,
+    averageScore: rankedSessions ? points / rankedSessions : 0 },
 });
 
-describe("SCRUM-85 points-based ranking", () => {
-  test("orders highest points first and assigns competition rank", () => {
+describe("ELO-based global rankings", () => {
+  test("orders highest ELO first even if historical points disagree", () => {
     const rankings = rankProfiles([
-      person("c", "Zoe", 45),
-      person("b", "Bob", 90),
-      person("a", "Amy", 90),
-      person("d", "Dan", 30),
+      person("c", "Zoe", 950, 4, 400),
+      person("b", "Bob", 1200, 1, 40),
+      person("a", "Amy", 1200, 1, 25),
+      person("d", "Dan", 900, 2, 190),
     ]);
-    expect(rankings.map((row) => [row.uid, row.rank])).toEqual([
-      ["a", 1], ["b", 1], ["c", 3], ["d", 4],
+    expect(rankings.map((row) => [row.uid, row.rank, row.elo])).toEqual([
+      ["a", 1, 1200], ["b", 1, 1200], ["c", 3, 950], ["d", 4, 900],
     ]);
   });
 
-  test("ties with equal username use UID for stable ordering", () => {
-    expect(rankProfiles([person("z", "Sam", 50), person("a", "sam", 50)])
+  test("equal username and ELO use UID for deterministic ordering", () => {
+    expect(rankProfiles([person("z", "Sam", 1000), person("a", "sam", 1000)])
       .map((row) => row.uid)).toEqual(["a", "z"]);
   });
 
-  test("ignores new accounts with zero ranked sessions", () => {
-    const rows = [
-      { uid: "fresh", username: "Fresh", ranking: { points: 0, rankedSessions: 0, averageScore: 0 } },
-      person("scored", "Scored", 0),
-    ];
-    expect(rankProfiles(rows).map((row) => row.uid)).toEqual(["scored"]);
+  test("new accounts without a ranked interview are excluded", () => {
+    expect(rankProfiles([person("fresh", "Fresh", 1000, 0, 0),
+      person("scored", "Scored", 1000, 1, 0)]).map((row) => row.uid))
+      .toEqual(["scored"]);
   });
 
-  test("skips missing, malformed and inconsistent ranking records", () => {
+  test("legacy accounts missing ELO use the 1000 starting rating", () => {
+    const legacy = { uid: "legacy", username: "Legacy",
+      ranking: {points: 90, rankedSessions: 1, averageScore: 90} };
+    expect(rankProfiles([legacy])[0]).toEqual({
+      uid: "legacy", username: "Legacy", elo: 1000, rank: 1,
+    });
+  });
+
+  test("malformed ELO and missing ranking records are omitted", () => {
     const rows = [
-      { uid: "noRanking", username: "Missing" },
-      person("invalid", "Negative", -5),
-      { uid: "badAverage", username: "Bad", ranking: { points: 80, rankedSessions: 1, averageScore: 99 } },
-      { uid: "overMax", username: "Over", ranking: { points: 101, rankedSessions: 1, averageScore: 100 } },
-      { uid: "nonNumber", username: "Nonnumeric", ranking: { points: "90", rankedSessions: 1, averageScore: 90 } },
-      person("valid", "Valid", 90),
+      {uid: "none", username: "None"},
+      person("bad", "Bad", -1),
+      person("string", "String", "1100"),
+      person("invalid", "Invalid", NaN),
+      person("badCount", "BadCount", 1400, -1),
+      person("valid", "Valid", 1234),
     ];
     expect(rankProfiles(rows).map((row) => row.uid)).toEqual(["valid"]);
   });
 
-  test("excludes deleting accounts and blank usernames", () => {
-    const deleting = { ...person("delete", "Deleted", 90), deleting: true };
-    const deletingStatus = { ...person("status", "Gone", 80), status: "deleting" };
-    const missingUsername = person("empty", "  ", 70);
-    expect(rankProfiles([deleting, deletingStatus, missingUsername])).toEqual([]);
+  test("excludes deleted users and blank names", () => {
+    expect(rankProfiles([
+      {...person("delete", "Deleted", 1300), deleting: true},
+      {...person("status", "Gone", 1400), status: "deleting"},
+      person("empty", " ", 1300),
+    ])).toEqual([]);
   });
 
-  test("allows zero-point completed sessions", () => {
-    const [entry] = rankProfiles([person("zero", "Zero", 0)]);
-    expect(entry).toMatchObject({ rank: 1, points: 0, rankedSessions: 1 });
+  test("returns only public ELO fields, never points or private data", () => {
+    const [entry] = rankProfiles([{
+      ...person("u", "User", 1100), email: "secret", role: "admin",
+    }]);
+    expect(entry).toEqual({uid: "u", username: "User", elo: 1100, rank: 1});
   });
 
-  test("never labels points as final ELO", () => {
-    const [entry] = rankProfiles([person("u", "User", 100)]);
-    expect(entry).toMatchObject({ points: 100, elo: null, rank: 1 });
-    expect(entry).not.toHaveProperty("email");
-    expect(entry).not.toHaveProperty("role");
+  test("accepts a real zero ELO", () => {
+    expect(rankProfiles([person("u", "Zero", 0)])[0].elo).toBe(0);
   });
 
-  test("removes private user fields", () => {
-    const [entry] = rankProfiles([{ ...person("u", "User", 50), email: "private@example.com", role: "admin", settings: { theme: "dark" } }]);
-    expect(Object.keys(entry).sort()).toEqual(
-      ["uid", "username", "points", "rankedSessions", "averageScore", "rank", "elo"].sort()
-    );
-  });
-
-  test("requires an array of profiles", () => {
+  test("expects profile arrays and limits global results to fifty", () => {
     expect(() => rankProfiles(null)).toThrow("Ranking profiles must be an array.");
-  });
-
-  test("defines a bounded global response size", () => {
     expect(GLOBAL_LEADERBOARD_LIMIT).toBe(50);
   });
 });

@@ -300,34 +300,44 @@ describe("impact on ELO", () => {
     ).score;
   }
 
+  function eloForFiveQuestionSession(score) {
+    return calculateEloUpdate({
+      currentElo: 1000,
+      sessionScore: score,
+      experienceLevel: "Intermediate",
+      questionCount: 5,
+    });
+  }
+
   test("clean code earns a better ELO change than messy code with the same logic", () => {
+    // Five questions are required for a ranked session, not the old 3-question sample.
     const cleanScore = sessionScore([
       [60, 15, 10, 10, 5],
       [54, 12, 9, 9, 5],
       [48, 12, 8, 9, 4],
+      [60, 15, 10, 10, 5],
+      [54, 12, 9, 9, 5],
     ]);
     const messyScore = sessionScore([
       [60, 15, 10, 2, 5],
       [54, 12, 9, 3, 5],
       [48, 12, 8, 2, 4],
+      [60, 15, 10, 2, 5],
+      [54, 12, 9, 3, 5],
     ]);
 
-    const clean = calculateEloUpdate({ currentElo: 1000, sessionScore: cleanScore });
-    const messy = calculateEloUpdate({ currentElo: 1000, sessionScore: messyScore });
+    const clean = eloForFiveQuestionSession(cleanScore);
+    const messy = eloForFiveQuestionSession(messyScore);
 
     expect(clean.eloChange).toBeGreaterThan(messy.eloChange);
   });
 
-  test("style costs at most about 3 ELO per session", () => {
-    const best = calculateEloUpdate({
-      currentElo: 1000,
-      sessionScore: sessionScore([[60, 15, 10, 10, 5]]),
-    });
-    const worst = calculateEloUpdate({
-      currentElo: 1000,
-      sessionScore: sessionScore([[60, 15, 10, 0, 5]]),
-    });
+  test("style alone costs 2 ELO in a five-question Intermediate session", () => {
+    const clean = Array.from({ length: 5 }, () => [60, 15, 10, 10, 5]);
+    const messy = Array.from({ length: 5 }, () => [60, 15, 10, 0, 5]);
+    const best = eloForFiveQuestionSession(sessionScore(clean));
+    const worst = eloForFiveQuestionSession(sessionScore(messy));
 
-    expect(best.eloChange - worst.eloChange).toBeLessThanOrEqual(4);
+    expect(best.eloChange - worst.eloChange).toBe(2);
   });
 });

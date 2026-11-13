@@ -222,18 +222,22 @@ describe("prompt and request settings", () => {
 
 describe("impact on ELO", () => {
   test("two sessions with similar answers get the same ELO change", () => {
-    // Session A and B answer the same 3 questions with the same substance;
-    // the model's raw points differ slightly between the two runs.
+    // Five-question sessions meet the new minimum ELO eligibility rule.
+    // The model's raw points differ slightly, but the technical substance matches.
     const sessionA = [
-      normalizeEvaluation(rawEvaluation([41, 10, 7, 3]), codeRubric),
-      normalizeEvaluation(rawEvaluation([62, 13, 9, 4]), codeRubric),
-      normalizeEvaluation(rawEvaluation([30, 6, 5, 2]), codeRubric),
-    ];
+      [41, 10, 7, 3],
+      [62, 13, 9, 4],
+      [30, 6, 5, 2],
+      [41, 10, 7, 3],
+      [62, 13, 9, 4],
+    ].map((points) => normalizeEvaluation(rawEvaluation(points), codeRubric));
     const sessionB = [
-      normalizeEvaluation(rawEvaluation([44, 11, 7.4, 3.2]), codeRubric),
-      normalizeEvaluation(rawEvaluation([64, 13.4, 9, 4.2]), codeRubric),
-      normalizeEvaluation(rawEvaluation([27, 6.4, 5.2, 2.2]), codeRubric),
-    ];
+      [44, 11, 7.4, 3.2],
+      [64, 13.4, 9, 4.2],
+      [27, 6.4, 5.2, 2.2],
+      [44, 11, 7.4, 3.2],
+      [64, 13.4, 9, 4.2],
+    ].map((points) => normalizeEvaluation(rawEvaluation(points), codeRubric));
 
     const scoreA = aggregateSessionScore(
       sessionA.map((evaluation) => ({ evaluation }))
@@ -244,8 +248,12 @@ describe("impact on ELO", () => {
 
     expect(scoreA).toBe(scoreB);
 
-    const eloA = calculateEloUpdate({ currentElo: 1000, sessionScore: scoreA });
-    const eloB = calculateEloUpdate({ currentElo: 1000, sessionScore: scoreB });
+    const eloA = calculateEloUpdate({
+      currentElo: 1000, sessionScore: scoreA, experienceLevel: "Intermediate", questionCount: 5,
+    });
+    const eloB = calculateEloUpdate({
+      currentElo: 1000, sessionScore: scoreB, experienceLevel: "Intermediate", questionCount: 5,
+    });
 
     expect(eloA).toEqual(eloB);
   });

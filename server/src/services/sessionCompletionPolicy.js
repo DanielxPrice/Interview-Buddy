@@ -161,9 +161,10 @@ function calculateSessionCompletion(
 
     completionStatus,
 
+    // A fully answered interview of fewer than five questions still appears
+    // in History, but is unranked and cannot change the user's rating.
     rankEligible:
-      completionStatus ===
-      COMPLETION_STATUSES.COMPLETED,
+      completionStatus === COMPLETION_STATUSES.COMPLETED && count >= 5,
   };
 }
 

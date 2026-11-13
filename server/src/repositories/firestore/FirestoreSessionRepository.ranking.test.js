@@ -4,7 +4,7 @@ const FirestoreSessionRepository = require("./FirestoreSessionRepository");
 
 // Deterministic transaction stub. This does not substitute for Firestore
 // emulator concurrency tests (reserved for SCRUM-86).
-function fixture({ responses = [80], userExists = true, ranking = undefined,
+function fixture({ responses = Array(5).fill(80), userExists = true, ranking = undefined,
   expired = false } = {}) {
   const docs = new Map();
   const sessionId = "session-a";
@@ -14,7 +14,7 @@ function fixture({ responses = [80], userExists = true, ranking = undefined,
   const now = Date.parse("2026-10-29T19:00:00.000Z");
 
   docs.set(sessionPath, {
-    userId, status: "active", mode: "Quiz Style", questionCount: responses.length || 1,
+    userId, status: "active", mode: "Quiz Style", experienceLevel: "Intermediate", questionCount: responses.length || 1,
     assignmentStatus: "assigned", assignedQuestionIds: responses.map((_, i) => `q${i}`),
     ...(expired ? { activeExpiresAtMs: now - 1 } : {}),
   });
@@ -58,7 +58,7 @@ function fixture({ responses = [80], userExists = true, ranking = undefined,
 
 describe("SCRUM-84 atomic score-based ranking persistence", () => {
   test("first full interview awards its server-computed score exactly once", async () => {
-    const f = fixture({ responses: [90, 70] });
+    const f = fixture({ responses: [90, 70, 80, 80, 80] });
     const result = await f.repository.finalizeSessionWithResults("session-a", "user-a");
     expect(result.result).toMatchObject({ score: 80, rankEligible: true });
     expect(f.docs.get(f.userPath).ranking).toMatchObject({
@@ -70,7 +70,7 @@ describe("SCRUM-84 atomic score-based ranking persistence", () => {
   });
 
   test("an existing ranking accumulates another eligible completion", async () => {
-    const f = fixture({ ranking: { points: 90, rankedSessions: 1, averageScore: 90 }, responses: [50] });
+    const f = fixture({ ranking: { points: 90, rankedSessions: 1, averageScore: 90 }, responses: Array(5).fill(50) });
     await f.repository.finalizeSessionWithResults("session-a", "user-a");
     expect(f.docs.get(f.userPath).ranking).toMatchObject({
       points: 140, rankedSessions: 2, averageScore: 70,
@@ -86,7 +86,7 @@ describe("SCRUM-84 atomic score-based ranking persistence", () => {
   });
 
   test("expired completed assignment cannot award ranking points", async () => {
-    const f = fixture({ expired: true, responses: [100] });
+    const f = fixture({ expired: true, responses: Array(5).fill(100) });
     await f.repository.finalizeSessionWithResults("session-a", "user-a");
     expect(f.docs.get(f.userPath).ranking).toBeUndefined();
   });

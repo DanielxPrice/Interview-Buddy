@@ -46,6 +46,7 @@ function fixture({ ranking, userExists = true, expired = false } = {}) {
     const path = `sessions/${id}`;
     docs.set(path, {
       userId: "owner", status: "active", mode: "Quiz Style",
+      experienceLevel: options.experienceLevel || "Intermediate",
       assignmentStatus: "assigned", questionCount: scores.length,
       assignedQuestionIds: scores.map((_, i) => `q${i}`),
       ...(options.expired || expired ? { activeExpiresAtMs: now - 1 } : {}),
@@ -64,7 +65,7 @@ function fixture({ ranking, userExists = true, expired = false } = {}) {
 describe("SCRUM-112 atomic ELO completion and persistence", () => {
   test("first perfect interview saves +16 ELO on both user and session", async () => {
     const f = fixture();
-    const path = f.addSession("one", [100]);
+    const path = f.addSession("one", Array(10).fill(100));
     const completed = await f.repository.finalizeSessionWithResults("one", "owner");
     expect(f.docs.get(f.userPath).ranking).toMatchObject({
       points: 100, rankedSessions: 1, averageScore: 100, elo: 1016,
@@ -77,7 +78,7 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
 
   test("low-scoring full interview subtracts ELO while awarding points", async () => {
     const f = fixture();
-    const path = f.addSession("one", [0]);
+    const path = f.addSession("one", Array(10).fill(0));
     await f.repository.finalizeSessionWithResults("one", "owner");
     expect(f.docs.get(f.userPath).ranking).toMatchObject({
       points: 0, rankedSessions: 1, averageScore: 0, elo: 984,
@@ -89,8 +90,8 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
 
   test("later sessions calculate ELO from the previous saved rating", async () => {
     const f = fixture();
-    f.addSession("one", [100]);
-    f.addSession("two", [0]);
+    f.addSession("one", Array(10).fill(100));
+    f.addSession("two", Array(10).fill(0));
     await f.repository.finalizeSessionWithResults("one", "owner");
     await f.repository.finalizeSessionWithResults("two", "owner");
     expect(f.docs.get(f.userPath).ranking).toMatchObject({
@@ -103,7 +104,7 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
 
   test("an unchanged ELO is recorded as 0", async () => {
     const f = fixture();
-    const path = f.addSession("one", [50]);
+    const path = f.addSession("one", Array(10).fill(50));
     await f.repository.finalizeSessionWithResults("one", "owner");
     expect(f.docs.get(path).result.eloChange).toBe("0");
     expect(f.docs.get(f.userPath).ranking.elo).toBe(1000);
@@ -114,7 +115,7 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
       points: 70, rankedSessions: 1, averageScore: 70,
       elo: 1200, skillTier: "senior", customFlag: true,
     } });
-    f.addSession("one", [50]);
+    f.addSession("one", Array(10).fill(50));
     await f.repository.finalizeSessionWithResults("one", "owner");
     expect(f.docs.get(f.userPath).ranking).toMatchObject({
       points: 120, rankedSessions: 2, averageScore: 60,
@@ -122,9 +123,27 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
     });
   });
 
+  test("a four-question interview completes without any ranking change", async () => {
+    const f = fixture({ranking: { points: 0, rankedSessions: 0, averageScore: 0, elo: 1000 }});
+    const path = f.addSession("short", [100, 100, 100, 100], {experienceLevel: "Veteran"});
+    const saved = await f.repository.finalizeSessionWithResults("short", "owner");
+    expect(saved.result).toMatchObject({completionStatus: "completed", rankEligible: false});
+    expect(saved.result).not.toHaveProperty("eloChange");
+    expect(f.docs.get(f.userPath).ranking.elo).toBe(1000);
+    expect(f.docs.get(f.userPath).ranking.rankedSessions).toBe(0);
+    expect(f.docs.get(path).status).toBe("completed");
+  });
+
+  test("Veteran difficulty rewards 50% performance at 10 questions", async () => {
+    const f = fixture();
+    f.addSession("veteran", Array(10).fill(50), {experienceLevel: "Veteran"});
+    await f.repository.finalizeSessionWithResults("veteran", "owner");
+    expect(f.docs.get(f.userPath).ranking.elo).toBe(1011);
+  });
+
   test("duplicate completion does not award points or ELO again", async () => {
     const f = fixture();
-    f.addSession("one", [100]);
+    f.addSession("one", Array(10).fill(100));
     const first = await f.repository.finalizeSessionWithResults("one", "owner");
     const original = f.docs.get(f.userPath);
     const replay = await f.repository.finalizeSessionWithResults("one", "owner");
@@ -143,7 +162,7 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
 
   test("expired completion never changes ELO or points", async () => {
     const f = fixture({ expired: true });
-    const path = f.addSession("one", [100]);
+    const path = f.addSession("one", Array(10).fill(100));
     await f.repository.finalizeSessionWithResults("one", "owner");
     expect(f.docs.get(f.userPath).ranking).toBeUndefined();
     expect(f.docs.get(path).rankEligible).toBe(false);
@@ -153,7 +172,7 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
   test("invalid stored ELO aborts both session and ranking updates", async () => {
     const ranking = { points: 80, rankedSessions: 1, averageScore: 80, elo: "999" };
     const f = fixture({ ranking });
-    const path = f.addSession("one", [100]);
+    const path = f.addSession("one", Array(10).fill(100));
     await expect(f.repository.finalizeSessionWithResults("one", "owner"))
       .rejects.toMatchObject({ statusCode: 503, code: "RANKING_DATA_INVALID" });
     expect(f.docs.get(path).status).toBe("active");
@@ -163,7 +182,7 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
   test("corrupt points state aborts the session before awarding ELO", async () => {
     const ranking = { points: -1, rankedSessions: 1, averageScore: 50, elo: 1000 };
     const f = fixture({ ranking });
-    const path = f.addSession("one", [100]);
+    const path = f.addSession("one", Array(10).fill(100));
     await expect(f.repository.finalizeSessionWithResults("one", "owner"))
       .rejects.toMatchObject({ code: "RANKING_DATA_INVALID" });
     expect(f.docs.get(path).status).toBe("active");
@@ -172,7 +191,7 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
 
   test("missing user profile cannot award ELO or finalize", async () => {
     const f = fixture({ userExists: false });
-    const path = f.addSession("one", [100]);
+    const path = f.addSession("one", Array(10).fill(100));
     await expect(f.repository.finalizeSessionWithResults("one", "owner"))
       .rejects.toMatchObject({ statusCode: 503 });
     expect(f.docs.get(path).status).toBe("active");
@@ -180,7 +199,7 @@ describe("SCRUM-112 atomic ELO completion and persistence", () => {
 
   test("unauthorized user cannot award ELO on someone else's session", async () => {
     const f = fixture();
-    const path = f.addSession("one", [100]);
+    const path = f.addSession("one", Array(10).fill(100));
     await expect(f.repository.finalizeSessionWithResults("one", "attacker"))
       .rejects.toMatchObject({ statusCode: 403 });
     expect(f.docs.get(path).status).toBe("active");
