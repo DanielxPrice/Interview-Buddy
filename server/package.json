@@ -1,3 +1,4 @@
+
 {
   "name": "interview-buddy-server",
   "version": "0.1.0",
@@ -19,7 +20,8 @@
     "reset-google-test-accounts": "node scripts/resetGoogleTestAccounts.js",
     "test": "jest",
     "lint": "eslint src",
-    "test:emulator": "node --test --test-concurrency=1 test/firestore.emulator.test.cjs"
+    "test:emulator": "node --test --test-concurrency=1 test/firestore.emulator.test.cjs",
+    "test:session:emulator": "node --test --test-concurrency=1 test/session.integration.emulator.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
