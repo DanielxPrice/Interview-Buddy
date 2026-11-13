@@ -110,7 +110,7 @@ describe("FirestoreUserRepository", () => {
         usernameLower: "testuser",
         email: "test@example.com",
         role: "user",
-        ranking: { points: 0, rankedSessions: 0, averageScore: 0 },
+        ranking: { points: 0, rankedSessions: 0, averageScore: 0, elo: 1000 },
 
         settings: {
           theme: "light",
@@ -126,7 +126,7 @@ describe("FirestoreUserRepository", () => {
         usernameLower: "testuser",
         email: "test@example.com",
         role: "user",
-        ranking: { points: 0, rankedSessions: 0, averageScore: 0 },
+        ranking: { points: 0, rankedSessions: 0, averageScore: 0, elo: 1000 },
 
         settings: {
           theme: "light",
