@@ -110,8 +110,15 @@ async function createUser(t) {
     body: JSON.stringify({ email, password, returnSecureToken: true }),
     signal: AbortSignal.timeout(15000),
   });
-  assert.equal(response.status, 200, `Auth emulator sign-in failed: ${await response.text()}`);
-  const { idToken } = await response.json();
+  const signInResult = await response.json();
+
+assert.equal(
+  response.status,
+  200,
+  `Auth emulator sign-in failed: ${JSON.stringify(signInResult)}`
+);
+
+const { idToken } = signInResult;
   assert.ok(idToken, "Auth Emulator must issue an actual ID token");
   return { uid, token: idToken };
 }
