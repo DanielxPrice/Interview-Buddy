@@ -43,7 +43,15 @@ function RankingMessage({ title = "Loading rankings", children, type = "status" 
   );
 }
 
-function RankingTable({ data, currentUserId, currentUsername, onRemove, saving = false }) {
+function RankingTable({
+  data,
+  currentUserId,
+  currentUsername,
+  onRemove,
+  saving = false,
+  emptyTitle = "No available data",
+  emptyDescription = "There are no rankings to display yet.",
+}) {
   const { status, error, data: users } = data;
   if (status === "loading") {
     return <RankingMessage>Loading rankings from the server...</RankingMessage>;
@@ -54,8 +62,14 @@ function RankingTable({ data, currentUserId, currentUsername, onRemove, saving =
   if (status === "error") {
     return <RankingMessage title="Unable to load rankings" type="alert">{error}</RankingMessage>;
   }
+
+  //Allows Global and Friends to show the same table component while displaying diff messages when empty
   if (!users.length) {
-    return <RankingMessage title="No available data">There are no rankings to display yet.</RankingMessage>;
+    return (
+      <RankingMessage title={emptyTitle}>
+        {emptyDescription}
+      </RankingMessage>
+    );
   }
 
   return (
@@ -312,6 +326,17 @@ function LeaderboardPage({ currentPage, onNavigate }) {
   const friendCount = hasFriends ? acceptedFriends.data.length : null;
   const rankedFriendCount = friends.status === "success" ? friendRankings.length : null;
 
+  //Empty messages for no friends or no ranked friends
+  const friendsEmptyTitle = hasFriends
+    ? (friendCount === 0 ? "No friends yet" : "No ranked friends yet")
+    : "No available data";
+
+  const friendsEmptyDescription = hasFriends
+    ? (friendCount === 0
+        ? "Add a friend to compare ELO rankings here."
+        : "Your accepted friends will appear here once they have a ranked interview.")
+    : "There are no rankings to display yet.";
+
   //Make sure no items are loading
   const canRefresh = [
     global,
@@ -493,11 +518,50 @@ function LeaderboardPage({ currentPage, onNavigate }) {
             </section>
           ) : (
             <div id="ib-friends-panel" role="tabpanel" aria-labelledby="ib-friends-tab" className="ibRankingFriendsContent">
+              <section className="ibRankingPanel" aria-label="Friends leaderboard">
+                <div className="ibRankingPanelTitle">
+                  <h2>Friends Rankings</h2>
+                  <span>
+                    {rankedFriendCount == null
+                      ? "No available data"
+                      : `${rankedFriendCount} ranked ${
+                          rankedFriendCount === 1 ? "friend" : "friends"
+                        }`}
+                  </span>
+                </div>
+
+                <RankingTable
+                  data={{
+                    ...friends,
+                    data: friends.data.slice(0, visibleFriends),
+                  }}
+                  currentUserId={user?.uid}
+                  currentUsername={currentUser?.username}
+                  onRemove={hasFriends ? handleRemoveFriend : undefined}
+                  saving={saving}
+                  emptyTitle={friendsEmptyTitle}
+                  emptyDescription={friendsEmptyDescription}
+                />
+
+                {friends.status === "success" &&
+                  visibleFriends < friends.data.length && (
+                    <button
+                      type="button"
+                      className="ibRankingLoadMore"
+                      onClick={() =>
+                        setVisibleFriends((count) => count + PAGE_SIZE)
+                      }
+                    >
+                      Load More Friends
+                    </button>
+                  )}
+              </section>
+
               <section className="ibRankingAddCard" aria-labelledby="ib-add-friend-title">
                 <div className="ibRankingAddHeading">
                   <div>
                     <h2 id="ib-add-friend-title">Add a Friend</h2>
-                    <p>Send a request by username when the friends service is available.</p>
+                    <p>Send a friend request by username.</p>
                   </div>
                   <span className="ibRankingAddIcon" aria-hidden="true">+</span>
                 </div>
@@ -532,23 +596,6 @@ function LeaderboardPage({ currentPage, onNavigate }) {
                 onRemove={handleRemoveFriend}
                 saving={saving}
               />
-
-              <section className="ibRankingPanel" aria-label="Friends leaderboard">
-                <div className="ibRankingPanelTitle">
-                  <h2>Friends Rankings</h2>
-                  <span>
-                    {rankedFriendCount == null
-                      ? "No available data"
-                      : `${rankedFriendCount} ranked ${
-                          rankedFriendCount === 1 ? "friend" : "friends"
-                        }`}
-                  </span>
-                </div>
-                <RankingTable data={{ ...friends, data: friends.data.slice(0, visibleFriends) }} currentUserId={user?.uid} currentUsername={currentUser?.username} onRemove={hasFriends ? handleRemoveFriend : undefined} saving={saving} />
-                {friends.status === "success" && visibleFriends < friends.data.length && (
-                  <button type="button" className="ibRankingLoadMore" onClick={() => setVisibleFriends((count) => count + PAGE_SIZE)}>Load More Friends</button>
-                )}
-              </section>
             </div>
           )}
           <p className="ibRankingFootnote">Global and friends rankings are ordered by ELO. Complete at least five questions in an interview to earn or lose ELO. No sample rankings are displayed.</p>

@@ -68,7 +68,8 @@ test("successful empty backend responses show No available data and zero friends
   fireEvent.click(screen.getByRole("tab", { name: "Friends" }));
   expect(screen.getByRole("button", { name: "Add Friend" })).toBeDisabled(); // Requires a username.
   expect(screen.getByRole("textbox", { name: "Username" })).toBeEnabled();
-  expect(screen.getByText("There are no rankings to display yet.")).toBeInTheDocument();
+  expect(screen.getByText("No friends yet")).toBeInTheDocument();
+  expect(screen.getByText("Add a friend to compare ELO rankings here.")).toBeInTheDocument();
 });
 
 test("renders current ELO, global standing and user's saved rank badge", async () => {
@@ -94,6 +95,118 @@ test("renders current ELO, global standing and user's saved rank badge", async (
   expect(screen.queryByText("Total Points")).not.toBeInTheDocument();
   expect(screen.getByAltText(/ELO rank badge/)).toBeInTheDocument();
   expect(screen.getByText("No friends available yet.")).toBeInTheDocument();
+});
+
+//Verifies that Global and Friends are two views of the same page and that swithcing displays correct data
+test("switches between global and friends rankings in one leaderboard view", async () => {
+  leaderboardService.getGlobalLeaderboard.mockResolvedValue([
+    { uid: "global-1", username: "GlobalLeader", rank: 1, elo: 1600 },
+  ]);
+
+  leaderboardService.getFriendsLeaderboard.mockResolvedValue([
+    { uid: "friend-1", username: "FriendLeader", rank: 1, elo: 1400 },
+  ]);
+
+  leaderboardService.getAcceptedFriends.mockResolvedValue([
+    { uid: "friend-1", username: "FriendLeader" },
+  ]);
+
+  leaderboardService.getUserRanking.mockResolvedValue(null);
+
+  render(
+    <LeaderboardPage
+      currentPage="/leaderboard"
+      onNavigate={() => {}}
+    />
+  );
+
+  // Verify global rankings display first.
+  const globalPanel = screen.getByRole("tabpanel", {
+    name: "Global",
+  });
+
+  expect(
+    await within(globalPanel).findByText("GlobalLeader")
+  ).toBeInTheDocument();
+
+  expect(
+    within(globalPanel).queryByText("FriendLeader")
+  ).not.toBeInTheDocument();
+
+  // Switch to Friends.
+  fireEvent.click(screen.getByRole("tab", { name: "Friends" }));
+
+  const friendsPanel = screen.getByRole("tabpanel", {
+    name: "Friends",
+  });
+
+  const rankings = within(friendsPanel).getByRole("region", {
+    name: "Friends leaderboard",
+  });
+
+  expect(
+    await within(rankings).findByText("FriendLeader")
+  ).toBeInTheDocument();
+
+  expect(
+    within(rankings).queryByText("GlobalLeader")
+  ).not.toBeInTheDocument();
+
+  // Friends Rankings must appear first.
+  expect(
+    within(friendsPanel).getAllByRole("region")[0]
+  ).toBe(rankings);
+
+  // Return to Global.
+  fireEvent.click(screen.getByRole("tab", { name: "Global" }));
+
+  expect(
+    within(
+      screen.getByRole("tabpanel", { name: "Global" })
+    ).getByText("GlobalLeader")
+  ).toBeInTheDocument();
+
+  expect(
+    screen.queryByRole("region", { name: "Friends leaderboard" })
+  ).not.toBeInTheDocument();
+});
+
+//Accepted friend should still exist in friend list even without ELO
+test("friends view explains when no accepted friends have rankings yet", async () => {
+  leaderboardService.getGlobalLeaderboard.mockResolvedValue([]);
+
+  leaderboardService.getFriendsLeaderboard.mockResolvedValue([]);
+
+  leaderboardService.getAcceptedFriends.mockResolvedValue([
+    { uid: "unranked-1", username: "UnrankedFriend" },
+  ]);
+
+  render(
+    <LeaderboardPage
+      currentPage="/leaderboard"
+      onNavigate={() => {}}
+    />
+  );
+
+  fireEvent.click(screen.getByRole("tab", { name: "Friends" }));
+
+  const rankings = screen.getByRole("region", {
+    name: "Friends leaderboard",
+  });
+
+  expect(
+    await within(rankings).findByText("No ranked friends yet")
+  ).toBeInTheDocument();
+
+  expect(
+    within(rankings).getByText(
+      "Your accepted friends will appear here once they have a ranked interview."
+    )
+  ).toBeInTheDocument();
+
+  expect(
+    screen.getByRole("region", { name: "Accepted Friends" })
+  ).toHaveTextContent("UnrankedFriend");
 });
 
 test("friends tab retains ELO labels for the future friends service", async () => {
@@ -138,7 +251,7 @@ test("friend request and removal call APIs, not local fake changes", async () =>
   await waitFor(() => expect(screen.getByRole("button", { name: "Remove Taylor from friends" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Remove Taylor from friends" }));
   await waitFor(() => expect(leaderboardService.removeFriend).toHaveBeenCalledWith("friend-1"));
-  expect(await screen.findByText("No available data", { selector: "h2" })).toBeInTheDocument();
+  expect(await screen.findByText("No friends yet")).toBeInTheDocument();
 });
 
 test("failed requests do not claim a friend was added", async () => {
@@ -490,7 +603,7 @@ test("displays accepted friends even without ranking data", async () => {
   ).toBeInTheDocument();
 
   expect(
-    within(rankings).getByText("No available data")
+    within(rankings).getByText("No ranked friends yet")
   ).toBeInTheDocument();
 });
 
