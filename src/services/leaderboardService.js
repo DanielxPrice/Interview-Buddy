@@ -5,14 +5,14 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 
 /**
- * Frontend-only contract for future database-backed leaderboard/friend APIs.
+ * Authenticated API client for database-backed ELO leaderboards and friends.
  *
- * These endpoints DO NOT exist in the current backend. A 404/501 is reported
- * as feature-unavailable, never treated as a successful empty result.
+ * A missing route (404/501 without an application code) is reported as
+ * feature-unavailable, never treated as a successful empty result.
  * All requests use the current Firebase ID token; the React client does not
  * access Firestore directly (the project's Firestore rules forbid that).
  *
- * Future expected responses:
+ * Current leaderboard response contracts:
  *   GET /leaderboard/global  -> { rankings: [{ uid, username, rank, elo }] }
  *   GET /leaderboard/friends -> { rankings: [{ uid, username, rank, elo }] }
  *   GET /leaderboard/me     -> { ranking: { uid, username, rank, elo } | null }
@@ -88,9 +88,6 @@ function normalizeRanking(row) {
 
   const rank = Number(row.rank);
   const elo = Number(row.elo);
-  const points = Number(row.points);
-  const rankedSessions = Number(row.rankedSessions);
-  const averageScore = Number(row.averageScore);
 
   return {
     uid: row.uid ?? row.userId ?? row.id ?? null,
@@ -107,34 +104,10 @@ function normalizeRanking(row) {
     elo:
       row.elo != null &&
       row.elo !== "" &&
-      Number.isFinite(elo)
+      Number.isSafeInteger(elo) && elo >= 0
         ? elo
         : null,
 
-    points:
-      row.points != null &&
-      row.points !== "" &&
-      Number.isSafeInteger(points) &&
-      points >= 0
-        ? points
-        : null,
-
-    rankedSessions:
-      row.rankedSessions != null &&
-      row.rankedSessions !== "" &&
-      Number.isSafeInteger(rankedSessions) &&
-      rankedSessions >= 0
-        ? rankedSessions
-        : null,
-
-    averageScore:
-      row.averageScore != null &&
-      row.averageScore !== "" &&
-      Number.isFinite(averageScore) &&
-      averageScore >= 0 &&
-      averageScore <= 100
-        ? averageScore
-        : null,
   };
 }
 

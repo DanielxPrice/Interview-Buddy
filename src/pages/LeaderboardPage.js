@@ -43,7 +43,7 @@ function RankingMessage({ title = "Loading rankings", children, type = "status" 
   );
 }
 
-function RankingTable({ data, currentUserId, currentUsername, onRemove, saving = false, scoreType = "elo" }) {
+function RankingTable({ data, currentUserId, currentUsername, onRemove, saving = false }) {
   const { status, error, data: users } = data;
   if (status === "loading") {
     return <RankingMessage>Loading rankings from the server...</RankingMessage>;
@@ -65,7 +65,7 @@ function RankingTable({ data, currentUserId, currentUsername, onRemove, saving =
           <tr>
             <th scope="col">Rank</th>
             <th scope="col">User</th>
-            <th scope="col">{scoreType === "points" ? "Points" : "ELO Score"}</th>
+            <th scope="col">ELO Score</th>
             {onRemove && <th scope="col" className="ibRankingActionHeading">Action</th>}
           </tr>
         </thead>
@@ -83,9 +83,7 @@ function RankingTable({ data, currentUserId, currentUsername, onRemove, saving =
                     {isCurrentUser && <span className="ibRankingYou">You</span>}
                   </div>
                 </td>
-                <td className="ibRankingScore">{(scoreType === "points" ? entry.points : entry.elo) == null
-                  ? "—"
-                  : scoreFormatter.format(scoreType === "points" ? entry.points : entry.elo)}</td>
+                <td className="ibRankingScore">{entry.elo == null ? "—" : scoreFormatter.format(entry.elo)}</td>
                 {onRemove && (
                   <td className="ibRankingActionCell">
                     <button
@@ -488,7 +486,7 @@ function LeaderboardPage({ currentPage, onNavigate }) {
 
           {activeTab === "global" ? (
             <section className="ibRankingPanel" role="tabpanel" id="ib-global-panel" aria-labelledby="ib-global-tab">
-              <RankingTable data={{ ...global, data: global.data.slice(0, visibleGlobal) }} currentUserId={user?.uid} currentUsername={currentUser?.username} scoreType="points" />
+              <RankingTable data={{ ...global, data: global.data.slice(0, visibleGlobal) }} currentUserId={user?.uid} currentUsername={currentUser?.username} />
               {global.status === "success" && visibleGlobal < global.data.length && (
                 <button type="button" className="ibRankingLoadMore" onClick={() => setVisibleGlobal((count) => count + PAGE_SIZE)}>Load More Rankings</button>
               )}
@@ -553,7 +551,7 @@ function LeaderboardPage({ currentPage, onNavigate }) {
               </section>
             </div>
           )}
-          <p className="ibRankingFootnote">Global rankings use cumulative points earned from completed interviews, not ELO. Friends features and ELO progression are separate upcoming work. No sample rankings are displayed.</p>
+          <p className="ibRankingFootnote">Global and friends rankings are ordered by ELO. Complete at least five questions in an interview to earn or lose ELO. No sample rankings are displayed.</p>
         </div>
 
         <aside className="ibRankingAside" aria-label="Ranking summary">
@@ -577,7 +575,7 @@ function LeaderboardPage({ currentPage, onNavigate }) {
               <span>Global Rank</span>
             </div>
             <div className="ibRankingStandingStats">
-              <div><span>Total Points</span><strong>{currentUser?.points != null ? scoreFormatter.format(currentUser.points) : "—"}</strong></div>
+              <div><span>Current ELO</span><strong>{currentUser?.elo != null ? scoreFormatter.format(currentUser.elo) : "—"}</strong></div>
               <div><span>Friends</span><strong>{friendCount == null ? "—" : friendCount}</strong></div>
             </div>
             {standing.status === "loading" && <p className="ibRankingStandingHint">Loading your standing...</p>}

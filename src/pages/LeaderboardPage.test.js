@@ -71,29 +71,28 @@ test("successful empty backend responses show No available data and zero friends
   expect(screen.getByText("There are no rankings to display yet.")).toBeInTheDocument();
 });
 
-test("renders real points and global standing without claiming ELO exists", async () => {
+test("renders current ELO, global standing and user's saved rank badge", async () => {
   leaderboardService.getGlobalLeaderboard.mockResolvedValue([
-    { uid: "someone", username: "Sam", points: 180, rankedSessions: 2, averageScore: 90, elo: null, rank: 1 },
-    { uid: "test-user", username: "Me", points: 160, rankedSessions: 2, averageScore: 80, elo: null, rank: 2 },
+    { uid: "someone", username: "Sam", elo: 1400, rank: 1 },
+    { uid: "test-user", username: "Me", elo: 1160, rank: 2 },
   ]);
   leaderboardService.getFriendsLeaderboard.mockRejectedValue(unavailable());
   leaderboardService.getUserRanking.mockResolvedValue({
-    uid: "test-user", username: "Me", rank: 2,
-    points: 160, rankedSessions: 2, averageScore: 80, elo: null,
+    uid: "test-user", username: "Me", rank: 2, elo: 1160,
   });
 
   render(<LeaderboardPage currentPage="/leaderboard" onNavigate={() => {}} />);
   const table = await screen.findByRole("table");
-  expect(within(table).getByRole("columnheader", { name: "Points" })).toBeInTheDocument();
+  expect(within(table).getByRole("columnheader", { name: "ELO Score" })).toBeInTheDocument();
   expect(within(table).getByText("Sam")).toBeInTheDocument();
   expect(within(table).getByText("Me")).toBeInTheDocument();
   expect(within(table).getByText("You")).toBeInTheDocument();
-  expect(within(table).getByText("180")).toBeInTheDocument();
+  expect(within(table).getByText("1,400")).toBeInTheDocument();
   expect(screen.getByText("#2")).toBeInTheDocument();
-  expect(screen.getByText("Total Points")).toBeInTheDocument();
-  expect(screen.getAllByText("160").length).toBeGreaterThan(0);
-  expect(screen.getByRole("img", { name: "Rank badge unavailable" })).toBeInTheDocument();
-  expect(screen.queryByAltText(/ELO rank badge/)).not.toBeInTheDocument();
+  expect(screen.getByText("Current ELO")).toBeInTheDocument();
+  expect(screen.getAllByText("1,160").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Total Points")).not.toBeInTheDocument();
+  expect(screen.getByAltText(/ELO rank badge/)).toBeInTheDocument();
   expect(screen.getByText("No friends available yet.")).toBeInTheDocument();
 });
 
