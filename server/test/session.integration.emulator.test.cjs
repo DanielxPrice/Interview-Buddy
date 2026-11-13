@@ -80,6 +80,15 @@ const quiz2 = {
   correctAnswer: "GET",
 };
 
+// Use five distinct assigned questions for ranked ELO integration scenarios.
+// All use the same fixed answer so both perfect and zero-score sessions are
+// deterministic without relying on question selection randomness.
+const rankedQuizzes = Array.from({ length: 5 }, (_, index) => ({
+  ...quiz,
+  id: `cicd20-ranked-quiz-${index + 1}`,
+  prompt: `Which HTTP status indicates success? (Question ${index + 1})`,
+}));
+
 function setup(count = 1) {
   return {
     mode: "Quiz Style", jobRole: "Backend Developer",
@@ -154,8 +163,19 @@ async function finish(user, session) {
 }
 
 async function seedQuestions() {
-  await db.collection("questions").doc(quiz.id).set(quiz);
-  await db.collection("questions").doc(quiz2.id).set(quiz2);
+  await Promise.all([quiz, quiz2, ...rankedQuizzes].map((question) =>
+    db.collection("questions").doc(question.id).set(question)
+  ));
+}
+
+async function createAnsweredRankedSession(user, choice = "Success") {
+  const session = await startSession(user, rankedQuizzes.length);
+  await assign(session, user, rankedQuizzes);
+  for (const question of rankedQuizzes) {
+    const response = await answer(user, session, question, choice);
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+  }
+  return session;
 }
 
 beforeEach(async () => {
@@ -231,56 +251,48 @@ test("CI20-04: real Quiz submission saves one graded response; duplicate is reje
 
 test("CI20-05: completed interview atomically persists results, points, ELO and result retrieval", async (t) => {
   const user = await createUser(t);
-  const session = await startSession(user);
-  await assign(session, user);
-  assert.equal((await answer(user, session)).status, 200);
+  const session = await createAnsweredRankedSession(user);
   const completed = await finish(user, session);
   assert.equal(completed.status, 200, JSON.stringify(completed.body));
   assert.equal(completed.body.result.score, 100);
   assert.equal(completed.body.result.completionStatus, "completed");
   assert.equal(completed.body.result.rankEligible, true);
-  assert.equal(completed.body.eloChange, "+16");
+  assert.equal(completed.body.eloChange, "+5");
   const persisted = await sessions.findById(session.id);
   assert.equal(persisted.status, "completed");
   assert.equal(persisted.result.previousElo, 1000);
-  assert.equal(persisted.result.newElo, 1016);
-  assert.equal(persisted.result.eloChange, "+16");
+  assert.equal(persisted.result.newElo, 1005);
+  assert.equal(persisted.result.eloChange, "+5");
   assert.ok(persisted.completedAt.toDate() instanceof Date);
   const profile = (await db.collection("users").doc(user.uid).get()).data();
   assert.equal(profile.ranking.points, 100);
   assert.equal(profile.ranking.rankedSessions, 1);
-  assert.equal(profile.ranking.elo, 1016);
+  assert.equal(profile.ranking.elo, 1005);
   const storedResults = await request(api).get(`/api/sessions/${session.id}/results`).set(asUser(user));
   assert.equal(storedResults.status, 200, JSON.stringify(storedResults.body));
   assert.equal(storedResults.body.result.score, 100);
   assert.equal(storedResults.body.breakdownAvailable, true);
-  assert.equal(storedResults.body.breakdown.length, 1);
-  assert.equal(storedResults.body.breakdown[0].userAnswer, "Success");
-  assert.equal(storedResults.body.eloChange, "+16");
+  assert.equal(storedResults.body.breakdown.length, 5);
+  assert.ok(storedResults.body.breakdown.every((item) => item.userAnswer === "Success"));
+  assert.equal(storedResults.body.eloChange, "+5");
 });
 
 test("CI20-06: incorrect answer persists zero score and lowers ELO", async (t) => {
   const user = await createUser(t);
-  const session = await startSession(user);
-  await assign(session, user);
-  const response = await answer(user, session, quiz, "Not Found");
-  assert.equal(response.status, 200);
-  assert.equal(response.body.isCorrect, false);
+  const session = await createAnsweredRankedSession(user, "Not Found");
   const completed = await finish(user, session);
   assert.equal(completed.status, 200, JSON.stringify(completed.body));
   assert.equal(completed.body.result.score, 0);
-  assert.equal(completed.body.result.eloChange, "-16");
+  assert.equal(completed.body.result.eloChange, "-11");
   const profile = (await db.collection("users").doc(user.uid).get()).data();
   assert.equal(profile.ranking.points, 0);
   assert.equal(profile.ranking.rankedSessions, 1);
-  assert.equal(profile.ranking.elo, 984);
+  assert.equal(profile.ranking.elo, 989);
 });
 
 test("CI20-07: repeated completion is idempotent and does not award ranking twice", async (t) => {
   const user = await createUser(t);
-  const session = await startSession(user);
-  await assign(session, user);
-  assert.equal((await answer(user, session)).status, 200);
+  const session = await createAnsweredRankedSession(user);
   const first = await finish(user, session);
   assert.equal(first.status, 200);
   const before = await sessions.findById(session.id);
@@ -292,8 +304,29 @@ test("CI20-07: repeated completion is idempotent and does not award ranking twic
   assert.equal(afterSaved.completedAt.toMillis(), before.completedAt.toMillis());
   assert.equal(profile.ranking.points, 100);
   assert.equal(profile.ranking.rankedSessions, 1);
-  assert.equal(profile.ranking.elo, 1016);
-  assert.equal(again.body.eloChange, "+16");
+  assert.equal(profile.ranking.elo, 1005);
+  assert.equal(again.body.eloChange, "+5");
+});
+
+test("CI20-14: fully answered one-question interview remains unranked", async (t) => {
+  const user = await createUser(t);
+  const session = await startSession(user);
+  await assign(session, user);
+  assert.equal((await answer(user, session)).status, 200);
+  const completed = await finish(user, session);
+  assert.equal(completed.status, 200, JSON.stringify(completed.body));
+  assert.equal(completed.body.result.score, 100);
+  assert.equal(completed.body.result.completionStatus, "completed");
+  assert.equal(completed.body.result.rankEligible, false);
+  assert.equal(completed.body.eloChange, null);
+  const profile = (await db.collection("users").doc(user.uid).get()).data();
+  assert.equal(profile.ranking.points, 0);
+  assert.equal(profile.ranking.rankedSessions, 0);
+  assert.equal(profile.ranking.elo, 1000);
+  const result = await request(api).get(`/api/sessions/${session.id}/results`).set(asUser(user));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.result.score, 100);
+  assert.equal(result.body.eloChange, null);
 });
 
 test("CI20-08: partial completion persists partial result without ranking credit", async (t) => {
