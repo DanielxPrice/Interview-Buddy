@@ -10,6 +10,7 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "seed": "node scripts/seedQuestions.js",
+    "apply-code-style-rubric": "node scripts/applyCodeStyleRubric.js",
     "set-role": "node scripts/setUserRole.js",
     "backfill-user-roles": "node scripts/backfillUserRoles.js",
     "cleanup-orphaned-users": "node scripts/cleanupOrphanedUsers.js",
