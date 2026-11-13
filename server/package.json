@@ -43,7 +43,8 @@
   },
   "jest": {
     "testPathIgnorePatterns": [
-      "<rootDir>/test/firestore\\.emulator\\.test\\.cjs$"
+      "<rootDir>/test/firestore\\.emulator\\.test\\.cjs$",
+      "<rootDir>/test/session\\.integration\\.emulator\\.test\\.cjs$"
     ]
   }
 }
