@@ -109,14 +109,14 @@ describe("SEC-05 bounded active session lifecycle", () => {
     expect([...f.docs.keys()].filter((key) => /^sessions\/[^/]+$/.test(key))).toHaveLength(2);
   });
 
-  test("normal completion atomically frees a slot and retains a ranked full result", async () => {
+  test("short completed session frees a slot without awarding ranking", async () => {
     const f = fixture({ limit: 1 });
     const first = await f.create();
     f.assign(first.id);
     f.answers(first.id, [["q1", 90], ["q2", 100]]);
     const completed = await f.repository.finalizeSessionWithResults(first.id, "u1");
     expect(completed).toMatchObject({
-      status: "completed", completionStatus: "completed", rankEligible: true,
+      status: "completed", completionStatus: "completed", rankEligible: false,
       result: { score: 95, questionsAnswered: 2 },
     });
     expect(f.slot("u1", 0)).toBeUndefined();

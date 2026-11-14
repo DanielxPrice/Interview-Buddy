@@ -3,7 +3,7 @@ const {
   createSessionResultsService,
   ResultsPipelineError,
   RESULTS_ERROR_CODES,
-  calculateEloChange,
+  persistedEloChange,
 } = require("./sessionResultsService");
 
 function repositoryError(
@@ -65,6 +65,9 @@ describe("sessionResultsService", () => {
 
             completionStatus: "completed",
             rankEligible: true,
+            eloChange: "+2",
+            previousElo: 1000,
+            newElo: 1002,
           },
         }),
 
@@ -133,7 +136,7 @@ describe("sessionResultsService", () => {
         totalScore: 110,
       },
 
-      eloChange: "+1",
+      eloChange: "+2",
 
       completedAt:
         "2026-10-25T20:00:00.000Z",
@@ -372,18 +375,23 @@ describe("sessionResultsService", () => {
   });
 
   test.each([
-    [100, "+2"],
-    [70, "+2"],
-    [69, "+1"],
-    [50, "+1"],
-    [49, "-2"],
-    [0, "-2"],
-  ])(
-    "score %i gives ELO change %s",
-    (score, expected) => {
-      expect(
-        calculateEloChange(score)
-      ).toBe(expected);
-    }
-  );
+    [{ completionStatus: "completed", rankEligible: true, eloChange: "+16" }, "+16"],
+    [{ completionStatus: "completed", rankEligible: true, eloChange: "-16" }, "-16"],
+    [{ completionStatus: "completed", rankEligible: true, eloChange: "0" }, "0"],
+    [{ completionStatus: "completed", rankEligible: true }, null],
+    [{ completionStatus: "partial", rankEligible: false, eloChange: "+16" }, null],
+    [{ completionStatus: "completed", rankEligible: true, eloChange: "fake" }, null],
+  ])("shows only a persisted eligible ELO change (%j)", (result, expected) => {
+    expect(persistedEloChange(result)).toBe(expected);
+  });
+
+  test("legacy completed interviews do not fabricate an ELO change", async () => {
+    sessionRepository.finalizeSessionWithResults.mockResolvedValue({
+      ...activeSession,
+      status: "completed",
+      result: { score: 100, completionStatus: "completed", rankEligible: true },
+    });
+    const completed = await service.completeSession({ sessionId: "session-1", userId: "user-1" });
+    expect(completed.eloChange).toBeNull();
+  });
 });

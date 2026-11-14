@@ -9,6 +9,15 @@ async function cleanupDeletedAccount(db, uid) {
     if (snapshot.empty) break;
     for (const document of snapshot.docs) await db.recursiveDelete(document.ref);
   }
+  // Catch relationships for both requester and recipient, including declined
+  // requests. Requery in pages so repeat executions safely resume cleanup.
+  const relationships = db.collection("friendRelationships")
+    .where("participants", "array-contains", uid);
+  while (true) {
+    const snapshot = await relationships.limit(50).get();
+    if (snapshot.empty) break;
+    for (const document of snapshot.docs) await db.recursiveDelete(document.ref);
+  }
   const claims = await db.collection("usernames").where("uid", "==", uid).get();
   for (const document of claims.docs) {
     await db.runTransaction(async (transaction) => {

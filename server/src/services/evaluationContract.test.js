@@ -282,8 +282,10 @@ describe("evaluationContract", () => {
       expect(
         formatRubric(validQuestion.gradingCriteria)
       ).toBe(
-        "1. Accuracy (60 points): Correctly explains lexical scope.\n" +
-          "2. Clarity (40 points): Explains the idea clearly."
+                "1. Accuracy (60 points; allowed: 0, 6, 12, 18, 24, 30, 36, 42, 48, 54, 60): " +
+          "Correctly explains lexical scope.\n" +
+          "2. Clarity (40 points; allowed: 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40): " +
+          "Explains the idea clearly."
       );
     });
   });
@@ -296,7 +298,7 @@ describe("evaluationContract", () => {
           validQuestion.gradingCriteria
         )
       ).toEqual({
-        score: 85,
+        score: 86,
         feedback: "Good answer overall.",
         strengths: ["Accurate explanation"],
         weaknesses: ["Could include an example"],
@@ -304,13 +306,13 @@ describe("evaluationContract", () => {
         criterionResults: [
           {
             name: "Accuracy",
-            awardedPoints: 55,
+            awardedPoints: 54,
             maxPoints: 60,
             feedback: "Mostly accurate.",
           },
           {
             name: "Clarity",
-            awardedPoints: 30,
+            awardedPoints: 32,
             maxPoints: 40,
             feedback: "Clear explanation.",
           },
@@ -325,7 +327,7 @@ describe("evaluationContract", () => {
       );
 
       expect(validEvaluation.score).toBeUndefined();
-      expect(result.score).toBe(85);
+      expect(result.score).toBe(86);
     });
 
     it("calculates the score itself instead of trusting an AI-provided score", () => {
@@ -337,10 +339,10 @@ describe("evaluationContract", () => {
         validQuestion.gradingCriteria
       );
 
-      expect(result.score).toBe(85);
+      expect(result.score).toBe(86);
     });
 
-    it("rounds individual awarded points to one decimal place", () => {
+    it("snaps awarded points to the nearest score band", () => {
       const result = normalizeEvaluation(
         {
           ...validEvaluation,
@@ -362,11 +364,11 @@ describe("evaluationContract", () => {
 
       expect(
         result.criterionResults[0].awardedPoints
-      ).toBe(55.6);
+      ).toBe(54);
 
       expect(
         result.criterionResults[1].awardedPoints
-      ).toBe(30.3);
+      ).toBe(32);
 
       expect(result.score).toBe(86);
     });
@@ -640,14 +642,14 @@ describe("evaluationContract", () => {
       validQuestion.gradingCriteria
     );
 
-    expect(result.score).toBe(85);
+    expect(result.score).toBe(86);
 
     expect(result.criterionResults.map((item) => item.name)).toEqual([
       "Accuracy",
       "Clarity",
     ]);
 
-    expect(result.criterionResults[0].awardedPoints).toBe(55);
-    expect(result.criterionResults[1].awardedPoints).toBe(30);
+    expect(result.criterionResults[0].awardedPoints).toBe(54);
+    expect(result.criterionResults[1].awardedPoints).toBe(32);
   });
 });

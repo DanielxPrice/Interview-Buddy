@@ -629,6 +629,79 @@
   outline-offset: 2px;
 }
 
+/* Pending friend request panels */
+.ibRankingRequestBody {
+  padding: 0 24px 20px;
+  color: var(--ib-text-secondary);
+  font-size: 0.84rem;
+}
+
+.ibRankingRequestList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ibRankingRequestRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--ib-border);
+  border-radius: 8px;
+}
+
+.ibRankingRequestRow strong {
+  color: var(--ib-text);
+  overflow-wrap: anywhere;
+}
+
+.ibRankingPendingLabel {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--ib-surface-muted);
+  color: var(--ib-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.ibRankingRequestActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ibRankingAcceptButton,
+.ibRankingDeclineButton {
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ibRankingAcceptButton {
+  background: var(--ib-accent-soft);
+  color: var(--ib-accent-700);
+}
+
+.ibRankingDeclineButton {
+  background: var(--ib-danger-soft);
+  color: var(--ib-danger);
+}
+
+.ibRankingAcceptButton:disabled,
+.ibRankingDeclineButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Dark-theme medal colors */
 [data-theme="dark"] .ibRankingRank--1 {
   background: #42371c;

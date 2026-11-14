@@ -1,6 +1,7 @@
 const { createHash } = require("node:crypto");
 const UserRepository = require("../contracts/UserRepository");
 const { initialRanking } = require("../../services/rankingScore");
+const { ELO_CONFIG } = require("../../services/eloRating");
 const {
   DEFAULT_USER_ROLE,
 } = require("../../config/roles");
@@ -78,7 +79,7 @@ class FirestoreUserRepository extends UserRepository {
       usernameLower,
       email: normalizedEmail,
       role: DEFAULT_USER_ROLE,
-      ranking: initialRanking(),
+      ranking: { ...initialRanking(), elo: ELO_CONFIG.initialElo },
       settings: {theme: "light",},
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -119,6 +120,37 @@ class FirestoreUserRepository extends UserRepository {
       id: document.id,
       ...document.data(),
     };
+  }
+
+  /**
+   * SCRUM-117: Read the ELO saved at users/{uid}.ranking.elo.
+   * Legacy profiles without an ELO field read as the configured initial
+   * rating, without modifying their points or writing to Firestore.
+   * ELO writes are already atomic in SCRUM-112's session-completion transaction.
+   */
+  async getElo(uid) {
+    const user = await this.findById(uid);
+    if (!user) return null;
+
+    if (user.ranking != null &&
+        (typeof user.ranking !== "object" || Array.isArray(user.ranking))) {
+      const error = new Error("Stored ranking data is invalid.");
+      error.code = "ELO_DATA_INVALID";
+      error.statusCode = 503;
+      throw error;
+    }
+
+    const savedElo = user.ranking?.elo;
+    if (savedElo === null || savedElo === undefined) {
+      return ELO_CONFIG.initialElo;
+    }
+    if (!Number.isSafeInteger(savedElo) || savedElo < ELO_CONFIG.minimumElo) {
+      const error = new Error("Stored ELO must be a nonnegative safe integer.");
+      error.code = "ELO_DATA_INVALID";
+      error.statusCode = 503;
+      throw error;
+    }
+    return savedElo;
   }
 
   async findByUsername(username) {

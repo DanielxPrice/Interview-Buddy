@@ -11,7 +11,7 @@ async function main() {
   // listDocuments also includes missing parent docs with orphan subcollections.
   const references = await db.collection("users").listDocuments();
   const candidates = new Set(references.map((reference) => reference.id));
-  // Include session-only and reservation-only orphans with no users/{uid} tree.
+  // Include session-, reservation- and relationship-only orphans with no users/{uid} tree.
   const sessions = await db.collection("sessions").select("userId").get();
   const claims = await db.collection("usernames").select("uid").get();
   for (const document of sessions.docs) {
@@ -19,6 +19,16 @@ async function main() {
   }
   for (const document of claims.docs) {
     if (document.data().uid) candidates.add(document.data().uid);
+  }
+  // A deleted account might leave only a top-level friendRelationship record.
+  // A dry run enumerates BOTH participants, then checks each against Auth.
+  const relationships = await db.collection("friendRelationships").select("participants").get();
+  for (const document of relationships.docs) {
+    const participants = document.data().participants;
+    if (!Array.isArray(participants) || participants.length !== 2) {
+      throw new Error(`Invalid participants on relationship ${document.id}; stopping cleanup.`);
+    }
+    for (const uid of participants) candidates.add(uid);
   }
   for (const uid of candidates) {
     if (typeof uid !== "string" || !uid || uid.includes("/")) {

@@ -109,6 +109,7 @@ describe("FirestoreUserRepository", () => {
           points: 0,
           rankedSessions: 0,
           averageScore: 0,
+          elo: 1000,
         },
         settings: {
           theme: "light",
@@ -127,6 +128,7 @@ describe("FirestoreUserRepository", () => {
           points: 0,
           rankedSessions: 0,
           averageScore: 0,
+          elo: 1000,
         },
         settings: {
           theme: "light",

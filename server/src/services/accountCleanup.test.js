@@ -9,8 +9,13 @@ test("Auth deletion cleanup removes sessions, claims, and all profile descendant
     .mockResolvedValue({ empty: true, docs: [] });
   const sessions = { where: jest.fn(() => ({ limit: () => ({ get: getSessions }) })) };
   const claims = { where: jest.fn(() => ({ get: async () => ({ docs: [{ ref: { delete: removeClaim } }] }) })) };
+  const friendQuery = { get: jest.fn().mockResolvedValueOnce({
+    empty: false, docs: [{ ref: { path: "friendRelationships/one" } }],
+  }).mockResolvedValue({ empty: true, docs: [] }) };
+  const friendships = { where: jest.fn(() => ({ limit: () => friendQuery })) };
   const db = {
-    collection: (name) => name === "sessions" ? sessions : name === "usernames" ? claims : { doc: () => profile },
+    collection: (name) => name === "sessions" ? sessions : name === "usernames" ? claims
+      : name === "friendRelationships" ? friendships : { doc: () => profile },
     recursiveDelete: jest.fn().mockResolvedValue(),
     runTransaction: (callback) => callback({
       get: async () => ({ exists: true, data: () => ({ uid: "u1" }) }),
@@ -21,6 +26,8 @@ test("Auth deletion cleanup removes sessions, claims, and all profile descendant
   await cleanupDeletedAccount(db, "u1");
   expect(sessions.where).toHaveBeenCalledWith("userId", "==", "u1");
   expect(claims.where).toHaveBeenCalledWith("uid", "==", "u1");
+  expect(friendships.where).toHaveBeenCalledWith("participants", "array-contains", "u1");
+  expect(db.recursiveDelete).toHaveBeenCalledWith({ path: "friendRelationships/one" });
   expect(db.recursiveDelete).toHaveBeenCalledWith(session);
   expect(db.recursiveDelete).toHaveBeenLastCalledWith(profile);
   expect(removeClaim).toHaveBeenCalled();
@@ -29,4 +36,16 @@ test("Auth deletion cleanup removes sessions, claims, and all profile descendant
 test("cleanup errors propagate to trigger retries", async () => {
   const db = { collection: () => ({ where: () => ({ limit: () => ({ get: async () => { throw new Error("offline"); } }) }) }) };
   await expect(cleanupDeletedAccount(db, "u1")).rejects.toThrow("offline");
+});
+
+
+test("Auth deletion cleanup propagates relationship failures for retries", async () => {
+  const db = {
+    collection: (name) => name === "sessions" ? {
+      where: () => ({ limit: () => ({ get: async () => ({ empty: true, docs: [] }) }) }),
+    } : {
+      where: () => ({ limit: () => ({ get: async () => { throw new Error("friend cleanup offline"); } }) }),
+    },
+  };
+  await expect(cleanupDeletedAccount(db, "u1")).rejects.toThrow("friend cleanup offline");
 });

@@ -32,7 +32,15 @@ function response(id, score, overrides = {}) {
 }
 
 describe("SEC-03 authoritative completion policy", () => {
-  test("full completion uses the assigned count and is rank eligible", () => {
+  test("a fully answered five-question interview becomes eligible for ELO", () => {
+    const rated = {...session, questionCount: 5,
+      assignedQuestionIds: ["q1", "q2", "q3", "q4", "q5"]};
+    const result = calculateSessionCompletion(rated,
+      ["q1", "q2", "q3", "q4", "q5"].map((id) => response(id, 80)));
+    expect(result).toMatchObject({score: 80, completionStatus: "completed", rankEligible: true});
+  });
+
+  test("a full three-question interview is completed but unranked", () => {
     const result = calculateSessionCompletion(
       session,
       [
@@ -49,7 +57,7 @@ describe("SEC-03 authoritative completion policy", () => {
       questionsAssigned: 3,
       questionsUnanswered: 0,
       completionStatus: "completed",
-      rankEligible: true,
+      rankEligible: false,
     });
   });
 
@@ -243,7 +251,7 @@ describe("SEC-03 authoritative completion policy", () => {
         expect(result.score).toBeLessThanOrEqual(100);
         expect(result.questionsAnswered).toBe(3);
         expect(result.completionStatus).toBe("completed");
-        expect(result.rankEligible).toBe(true);
+        expect(result.rankEligible).toBe(false);
       }
     );
 

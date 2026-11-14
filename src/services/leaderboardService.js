@@ -5,14 +5,14 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 
 /**
- * Frontend-only contract for future database-backed leaderboard/friend APIs.
+ * Authenticated API client for database-backed ELO leaderboards and friends.
  *
- * These endpoints DO NOT exist in the current backend. A 404/501 is reported
- * as feature-unavailable, never treated as a successful empty result.
+ * A missing route (404/501 without an application code) is reported as
+ * feature-unavailable, never treated as a successful empty result.
  * All requests use the current Firebase ID token; the React client does not
  * access Firestore directly (the project's Firestore rules forbid that).
  *
- * Future expected responses:
+ * Current leaderboard response contracts:
  *   GET /leaderboard/global  -> { rankings: [{ uid, username, rank, elo }] }
  *   GET /leaderboard/friends -> { rankings: [{ uid, username, rank, elo }] }
  *   GET /leaderboard/me     -> { ranking: { uid, username, rank, elo } | null }
@@ -53,7 +53,10 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (response.status === 404 || response.status === 501) {
+    if (
+      (response.status === 404 || response.status === 501) &&
+      !payload?.code
+    ) {
       const error = new Error("Ranking and friends data is not available yet.");
       error.code = "feature-unavailable";
       throw error;
@@ -85,9 +88,6 @@ function normalizeRanking(row) {
 
   const rank = Number(row.rank);
   const elo = Number(row.elo);
-  const points = Number(row.points);
-  const rankedSessions = Number(row.rankedSessions);
-  const averageScore = Number(row.averageScore);
 
   return {
     uid: row.uid ?? row.userId ?? row.id ?? null,
@@ -104,34 +104,10 @@ function normalizeRanking(row) {
     elo:
       row.elo != null &&
       row.elo !== "" &&
-      Number.isFinite(elo)
+      Number.isSafeInteger(elo) && elo >= 0
         ? elo
         : null,
 
-    points:
-      row.points != null &&
-      row.points !== "" &&
-      Number.isSafeInteger(points) &&
-      points >= 0
-        ? points
-        : null,
-
-    rankedSessions:
-      row.rankedSessions != null &&
-      row.rankedSessions !== "" &&
-      Number.isSafeInteger(rankedSessions) &&
-      rankedSessions >= 0
-        ? rankedSessions
-        : null,
-
-    averageScore:
-      row.averageScore != null &&
-      row.averageScore !== "" &&
-      Number.isFinite(averageScore) &&
-      averageScore >= 0 &&
-      averageScore <= 100
-        ? averageScore
-        : null,
   };
 }
 
@@ -163,6 +139,60 @@ export const leaderboardService = {
     return payload.ranking == null ? null : normalizeRanking(payload.ranking);
   },
 
+
+  //For accepted friends that do not have a ranking (wont appear in leaderboard)
+  async getAcceptedFriends() {
+    const payload = await request("/friends");
+
+    if (!Array.isArray(payload?.friends)) {
+      throw new Error(
+        "The server returned an invalid friends response."
+      );
+    }
+
+    return payload.friends.map((friend) => {
+      if (
+        !friend ||
+        typeof friend.uid !== "string" ||
+        !friend.uid.trim() ||
+        typeof friend.username !== "string" ||
+        !friend.username.trim()
+      ) {
+        throw new Error(
+          "The server returned an invalid friend record."
+        );
+      }
+
+      return {
+        uid: friend.uid,
+        username: friend.username.trim(),
+      };
+    }).sort((a, b) =>
+      a.username.localeCompare(b.username)
+    );
+  },
+
+  //Uses existing authenticated request helper to retrieve pending incoming and outgoing
+  //requests from Firebase through backend
+  async getFriendRequests() {
+    const payload = await request("/friends/requests");
+
+    if (
+      !Array.isArray(payload?.incoming) ||
+      !Array.isArray(payload?.outgoing)
+    ) {
+      throw new Error(
+        "The server returned an invalid friend requests response."
+      );
+    }
+
+    return {
+      incoming: payload.incoming,
+      outgoing: payload.outgoing,
+    };
+  },
+
+  //Friend related endpoints
   async sendFriendRequest(username) {
     const name = String(username || "").trim();
     if (!name) throw new Error("Enter a username to send a friend request.");
@@ -171,6 +201,28 @@ export const leaderboardService = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: name }),
     });
+  },
+
+  async acceptFriendRequest(requesterUid) {
+    if (typeof requesterUid !== "string" || !requesterUid.trim()) {
+      throw new Error("A requester UID is required.");
+    }
+
+    return request(
+      `/friends/requests/${encodeURIComponent(requesterUid)}/accept`,
+      { method: "POST" }
+    );
+  },
+
+  async declineFriendRequest(requesterUid) {
+    if (typeof requesterUid !== "string" || !requesterUid.trim()) {
+      throw new Error("A requester UID is required.");
+    }
+
+    return request(
+      `/friends/requests/${encodeURIComponent(requesterUid)}/decline`,
+      { method: "POST" }
+    );
   },
 
   async removeFriend(uid) {

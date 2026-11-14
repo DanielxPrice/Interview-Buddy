@@ -319,7 +319,7 @@ describe("SCRUM-82 server-side results persistence", () => {
         answeredAverageScore: 85,
 
         completionStatus: "completed",
-        rankEligible: true,
+        rankEligible: false,
       });
 
       expect(

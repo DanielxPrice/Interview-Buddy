@@ -264,6 +264,11 @@ jobs:
       - name: Run Firestore Emulator integration and SOC 2 security matrix
         run: npm run test:soc
 
+      # SCRUM-187 / CI/CD-20: full authenticated session lifecycle using
+      # real Firebase Auth and Firestore Emulator transactions. Fails CI on errors.
+      - name: Run Firebase Session Integration Tests
+        run: npm run test:session:firebase
+
       - name: Upload SOC 2 CC6.3 security test evidence
         if: always()
         uses: actions/upload-artifact@v4

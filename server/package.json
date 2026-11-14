@@ -1,3 +1,4 @@
+
 {
   "name": "interview-buddy-server",
   "version": "0.1.0",
@@ -10,6 +11,7 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "seed": "node scripts/seedQuestions.js",
+    "apply-code-style-rubric": "node scripts/applyCodeStyleRubric.js",
     "set-role": "node scripts/setUserRole.js",
     "backfill-user-roles": "node scripts/backfillUserRoles.js",
     "cleanup-orphaned-users": "node scripts/cleanupOrphanedUsers.js",
@@ -18,7 +20,8 @@
     "reset-google-test-accounts": "node scripts/resetGoogleTestAccounts.js",
     "test": "jest",
     "lint": "eslint src",
-    "test:emulator": "node --test --test-concurrency=1 test/firestore.emulator.test.cjs"
+    "test:emulator": "node --test --test-concurrency=1 test/firestore.emulator.test.cjs",
+    "test:session:emulator": "node --test --test-concurrency=1 test/session.integration.emulator.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
@@ -40,7 +43,8 @@
   },
   "jest": {
     "testPathIgnorePatterns": [
-      "<rootDir>/test/firestore\\.emulator\\.test\\.cjs$"
+      "<rootDir>/test/firestore\\.emulator\\.test\\.cjs$",
+      "<rootDir>/test/session\\.integration\\.emulator\\.test\\.cjs$"
     ]
   }
 }

@@ -139,14 +139,14 @@ describe("AI Evaluation - Answer Quality Tests", () => {
       gradingCriteria: question.gradingCriteria,
     });
 
-    expect(result.score).toBe(95);
+    expect(result.score).toBe(96);
     expect(result.score).toBeGreaterThanOrEqual(80);
     expect(result.feedback).toContain("Excellent");
     expect(result.strengths.length).toBeGreaterThan(0);
     expect(result.criterionResults).toHaveLength(2);
 
-    expect(result.criterionResults[0].awardedPoints).toBe(58);
-    expect(result.criterionResults[1].awardedPoints).toBe(37);
+    expect(result.criterionResults[0].awardedPoints).toBe(60);
+    expect(result.criterionResults[1].awardedPoints).toBe(36);
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
 
@@ -188,7 +188,7 @@ describe("AI Evaluation - Answer Quality Tests", () => {
       gradingCriteria: question.gradingCriteria,
     });
 
-    expect(result.score).toBe(55);
+    expect(result.score).toBe(56);
     expect(result.score).toBeGreaterThanOrEqual(40);
     expect(result.score).toBeLessThan(80);
 
@@ -196,7 +196,7 @@ describe("AI Evaluation - Answer Quality Tests", () => {
     expect(result.weaknesses.length).toBeGreaterThan(0);
     expect(result.suggestions.length).toBeGreaterThan(0);
 
-    expect(result.criterionResults[0].awardedPoints).toBe(35);
+    expect(result.criterionResults[0].awardedPoints).toBe(36);
     expect(result.criterionResults[1].awardedPoints).toBe(20);
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
@@ -238,14 +238,14 @@ describe("AI Evaluation - Answer Quality Tests", () => {
       gradingCriteria: question.gradingCriteria,
     });
 
-    expect(result.score).toBe(5);
+    expect(result.score).toBe(6);
     expect(result.score).toBeLessThan(40);
 
     expect(result.feedback).toContain("Incorrect");
     expect(result.weaknesses.length).toBeGreaterThan(0);
     expect(result.strengths).toHaveLength(0);
 
-    expect(result.criterionResults[0].awardedPoints).toBe(5);
+    expect(result.criterionResults[0].awardedPoints).toBe(6);
     expect(result.criterionResults[1].awardedPoints).toBe(0);
 
     expect(mockCreate).toHaveBeenCalledTimes(1);

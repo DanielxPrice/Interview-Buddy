@@ -27,6 +27,24 @@ function createAccountDeletionService({ db, authClient }) {
     return count;
   }
 
+  // Friendships are top-level documents, not nested under users/{uid}.
+  // Include pending, accepted and declined relationships, regardless of direction.
+  async function removeFriendRelationships(uid) {
+    const query = db.collection("friendRelationships")
+      .where("participants", "array-contains", uid);
+    let count = 0;
+    while (true) {
+      const snapshot = await query.limit(50).get();
+      if (snapshot.empty) break;
+      for (const document of snapshot.docs) {
+        // recursiveDelete also handles any future nested relationship data.
+        await db.recursiveDelete(document.ref);
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   async function deleteAccount(uid) {
     if (typeof uid !== "string" || !uid.trim()) {
       throw new Error("An authenticated user ID is required.");
@@ -38,6 +56,8 @@ function createAccountDeletionService({ db, authClient }) {
     // failure so a retry can finish without reopening the account.
     await profile.set({ deleting: true, status: "deleting" }, { merge: true });
     const deletedSessions = await removeSessions(uid);
+    // Must finish before removing Auth so a failure can be retried safely.
+    await removeFriendRelationships(uid);
     const subcollections = await profile.listCollections();
 
     for (const collection of subcollections) {
